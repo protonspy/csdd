@@ -117,7 +117,7 @@ func HookFiles(efs fs.FS) (map[string]string, error) {
 }
 
 // CommandFiles returns every shipped slash command under templates/commands/,
-// keyed by on-disk filename (e.g. "commit.md").
+// keyed by on-disk filename (e.g. "csdd-commit.md").
 func CommandFiles(efs fs.FS) (map[string]string, error) {
 	return staticTree(efs, "templates/commands")
 }

@@ -32,9 +32,9 @@ commit before review is clean; do not push before the commit exists.
 - The reviewers do not write — they only report. You apply fixes, then re-review until clean.
 
 ### 3) Commit (only after review is clean)
-- Run the `/commit` command — Claude generates the commit message from the diff
+- Run the `/csdd-commit` command — Claude generates the commit message from the diff
   and the active spec and creates the commit. **Do not commit while a Blocker is open.**
-- `/commit` writes a Conventional Commits message referencing the spec feature
+- `/csdd-commit` writes a Conventional Commits message referencing the spec feature
   and the task IDs this slice completes, one logical slice per commit.
 
 ### 4) Push — tests run here
