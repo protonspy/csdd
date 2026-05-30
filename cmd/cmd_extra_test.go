@@ -761,14 +761,17 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 		".claude/settings.json",
 		".github/pull_request_template.md",
 		".claude/rules/definition-of-done.md",
+		".githooks/pre-push",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("init did not scaffold %s: %v", f, err)
 		}
 	}
-	info, err := os.Stat(filepath.Join(dir, ".claude/hooks/block-destructive.sh"))
-	if err != nil || info.Mode()&0o111 == 0 {
-		t.Errorf("hook script must be executable: err=%v mode=%v", err, info.Mode())
+	for _, exe := range []string{".claude/hooks/block-destructive.sh", ".githooks/pre-push"} {
+		info, err := os.Stat(filepath.Join(dir, exe))
+		if err != nil || info.Mode()&0o111 == 0 {
+			t.Errorf("%s must be executable: err=%v mode=%v", exe, err, info.Mode())
+		}
 	}
 }
 
