@@ -1,0 +1,17 @@
+---
+inclusion: {{.Inclusion}}{{if eq .Inclusion "fileMatch"}}
+fileMatchPattern: [{{range $i, $p := .Patterns}}{{if $i}}, {{end}}"{{$p}}"{{end}}]{{end}}{{if eq .Inclusion "auto"}}
+name: {{.AutoName}}
+description: {{.Description}}{{end}}
+---
+
+# {{.Title}}
+
+## Purpose
+[Why this steering exists and what it constrains.]
+
+## Rules
+- [Rule with rationale, not just an imperative.]
+
+## Examples
+[Before/after snippets where they clarify the rule.]

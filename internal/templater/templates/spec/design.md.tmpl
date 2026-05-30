@@ -1,0 +1,101 @@
+# Design
+
+## Overview
+- **Purpose**: ...
+- **Users**: ...
+- **Impact**: ...
+
+## Goals
+- ...
+
+## Non-Goals
+- ...
+
+## Existing Architecture Analysis
+[How this fits into what exists. What is reused, what is new.]
+
+## Architecture Pattern & Boundary Map
+
+```mermaid
+graph TD
+    Client[Client] --> API[API Layer]
+    API --> ServiceA
+    API --> ServiceB
+```
+
+## Technology Stack
+| Layer | Choice | Role | Notes |
+|---|---|---|---|
+| Frontend | ... | UI | existing/new |
+| Backend | ... | API | existing/new |
+| Database | ... | persistence | existing/new |
+
+## File Structure Plan
+
+```text
+src/
+├── domain/
+│   └── <component-a>/        # ServiceA boundary
+└── api/
+    └── <component-a>/        # API boundary
+```
+
+### Modified files
+- ...
+
+## System Flows
+
+```mermaid
+sequenceDiagram
+    Client->>API: <request>
+    API->>ServiceA: <call>
+    ServiceA-->>API: <result>
+    API-->>Client: <response>
+```
+
+## Requirements Traceability
+| Requirement | Components | Interfaces | Flows |
+|---|---|---|---|
+| 1.1 | ServiceA | createX() | flow-1 |
+
+## Components and Interfaces
+
+### ServiceA
+- **Intent**: ...
+- **Requirements**: 1.1, 1.2
+- **Responsibilities**: ...
+- **Dependencies**:
+  - Inbound: ...
+  - Outbound: ...
+  - External: ...
+- **Contract**:
+  ```
+  // language-appropriate contract definition
+  ```
+
+## Error Handling & Resilience
+- Retry policy: ...
+- Timeouts: ...
+- Idempotency: ...
+- Failure modes and recovery: ...
+
+## Observability
+- Logs: ...
+- Metrics: ...
+- Traces: ...
+
+## Security & Privacy
+- Authentication/authorization considerations: ...
+- Data classification: ...
+- Audit trail: ...
+
+## Migration / Rollout / Rollback
+- ...
+
+## Testing Strategy
+- Unit: ...
+- Integration: ...
+- E2E: ...
+
+## Trade-offs and Rejected Alternatives
+- ...

@@ -1,0 +1,19 @@
+# Tasks Parallel Analysis
+
+Parallel-safety rules for `(P)` tasks. Run before claiming tasks.md is ready.
+
+## Safety Rules
+- Two `(P)` tasks MUST NOT share a boundary.
+- A `(P)` task MUST NOT modify files that another concurrent task reads/writes.
+- A `(P)` task MAY depend on completed non-parallel work via `_Depends:_`.
+
+## Detection Routine
+1. Collect every `(P)` task with its `_Boundary:_` value.
+2. Group by boundary; any group with > 1 task is an immediate failure.
+3. Build the file set each task touches (from design.md File Structure Plan).
+4. Reject any pair of `(P)` tasks with overlapping file sets.
+5. Walk `_Depends:_` edges; reject cycles.
+
+## Output
+A parallel-safety report appended to tasks.md as a comment block when issues
+are found. The report SHALL list each violation with the offending task IDs.

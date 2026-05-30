@@ -1,0 +1,2304 @@
+# Kiro Workflow Development Specification — Complete Technical Guide for Agents, Skills, and Agentic SDLC
+
+**Version:** 1.0
+**Date:** 2026-05-28
+**Status:** Canonical spec base for Kiro workflow development and team adoption
+**Target audience:** software engineering, tech leads, architecture, AI/agent platform teams, DevOps/Platform, QA, security, and technical management.
+**Scope:** consolidated reference covering (1) Kiro.dev IDE/CLI/Web usage, (2) Agentic Spec-Driven Development (SDD), (3) Agent Skill authoring, (4) custom-agent and sub-agent design, and (5) the operational, security, and governance practices required to run all of the above in production.
+
+---
+
+## 0. How to read this document
+
+This is the **single canonical reference** for any team building or running workflows on Kiro.dev (whether natively in the IDE or through any Kiro-compatible agent platform such as Claude Code, Codex, Cursor, or the Kiro CLI). It serves two purposes simultaneously:
+
+1. **As the spec base** for designing new Kiro workflows — every workflow, skill, hook, MCP integration, and custom agent must conform to the standards declared here.
+2. **As the developer onboarding handbook** — engineers joining the team can use this guide to understand the full lifecycle from feature intake to merge.
+
+Sections 1–4 are foundational and required reading for every contributor. Sections 5–10 describe the layered artifact model (steering, specs, rules, skills) and are required reading before authoring or modifying any of those artifacts. Sections 11–15 are operational and required reading for platform/DevOps and security. Sections 16–24 are practical playbooks, checklists, prompts, and metrics.
+
+When this document says **SHALL**, conformance is required. **SHOULD** is strongly recommended. **MAY** is permitted but optional. **MUST NOT** is prohibited.
+
+---
+
+## 1. Executive summary
+
+1. **Specs are contracts, not documentation.** Code remains the source of truth; specs are the human-reviewed boundaries inside which agents and humans build.
+2. **Specification (the contract) is human-reviewed. Design (the internals) is agent-driven.** Humans approve at phase gates; agents are free inside the design layer.
+3. **Boundaries are first-class.** `_Boundary:_` and `_Depends:_` annotations on tasks enable safe parallel autonomous execution.
+4. **Phase gates are non-negotiable** for production work. `Quick Plan` / `-y` are reserved for explicitly fast-track, low-risk cases.
+5. **Steering is project memory.** Document patterns and rationale; never file listings or secrets.
+6. **EARS is the requirement language.** Fixed English keywords; testable, single-behavior, objective.
+7. **Skills are the executable workflow.** Each skill is a directory with `SKILL.md` + `references/` + `assets/` + `scripts/`.
+8. **Review gates run mechanically** before human approval — checklists, not opinions.
+9. **Long-running implementation** = fresh implementer + independent reviewer + auto-debug, one task per iteration.
+10. **Least privilege everywhere.** MCP, hooks, trusted commands, CI agents, Kiro Web sandbox, and `.kiroignore` are configured before the agent touches the repository.
+11. **Supervised mode is a review workflow, not a security control.** Combine it with `.kiroignore`, trusted-command policy, and MCP least privilege.
+12. **Skills are written from real expertise**, not from generic LLM output. Every correction during execution becomes a gotcha; every reinvented logic becomes a script.
+
+---
+
+## 2. Foundational concepts
+
+### 2.1 What is Spec-Driven Development (SDD)
+
+SDD is a methodology where specifications become **executable, first-class artifacts that directly generate working implementations** rather than merely guiding them.
+
+Core principles:
+
+- **Specifications as the source of truth** — start from precise, machine-readable specs.
+- **Executable specifications** — specs drive generation of plans, tasks, and code scaffolding.
+- **Traceability** — changes to specs propagate automatically through plans, tasks, and implementation.
+- **Reduced divergence** — minimizes unintended assumptions and misalignment between intent and execution.
+
+The shift is from "vibe coding" (free-form prompting that produces unreviewable change sets) to **executable specs + traceability + intentional human approval**.
+
+### 2.2 Specification vs Design — the foundational distinction
+
+Two ideas are often collapsed together. Separating them is the foundation of the entire workflow.
+
+- **Specification** — the contract, the boundary, the pre-conditions a piece of work must respect. `requirements.md`, the File Structure Plan inside `design.md`, and the `_Boundary:_`/`_Depends:_` annotations on `tasks.md` form the specification.
+- **Design** — the free exploration space *inside* that contract. Components, interfaces, implementation decisions, sequencing inside each task.
+
+> **The human reviews and approves at the specification layer. The agent is free inside the design layer.**
+
+### 2.3 Phase-gate approval model
+
+Work moves through four explicit phases. Each requires human approval before the next begins.
+
+```
+Discovery → Requirements → Design → Tasks → Implementation
+              ↑              ↑       ↑           ↑
+            human         human   human       human
+            review        review  review     review
+```
+
+Approvals are tracked in `spec.json` for each feature. Implementation is blocked until prior phases are approved.
+
+### 2.4 Boundary-first discipline
+
+Tasks are not just an ordered list. Each task declares:
+
+- **Which boundary it lives inside** (`_Boundary: ComponentName_`) — derived from the File Structure Plan in `design.md`.
+- **What it requires from outside its boundary** (`_Depends: 3.1, 4.2_`) — only cross-boundary dependencies; sequential ordering is implicit.
+- **Whether it can run in parallel** (`(P)` marker) with other tasks in different boundaries.
+
+This is what enables long-running autonomous execution: an agent can be spawned per task with confidence that nobody else is touching its boundary.
+
+### 2.5 Where Kiro fits in the SDD landscape
+
+Kiro.dev is an AI-powered IDE (fork of VS Code / Code OSS) that places SDD at the center of the developer experience. It pairs Specs (requirements/design/tasks artifacts) with Steering (project memory), Hooks (event-driven automation), MCP (external tool integration), Powers (packaged knowledge bundles), and CLI/Web surfaces for headless and multi-repo work.
+
+Compared to alternatives:
+
+| Aspect | GitHub Spec Kit | BMAD-METHOD | Kiro |
+|---|---|---|---|
+| **Primary focus** | Spec → code for software | Multi-agent orchestration | IDE with native SDD |
+| **Scope** | Software development | Multiple domains | Software development |
+| **Communication** | CLI + structured prompts | Markdown story files between agents | Integrated IDE + Hooks |
+| **Autonomy model** | Human-in-the-loop per phase | Structured orchestration with role separation | Autopilot with approval gates |
+| **Governance lever** | `/constitution` command | Orchestrator + expansion packs | Steering + Specs + Hooks |
+| **Best fit** | Greenfield, CLI-first teams | Cross-domain, role-heavy teams | IDE-centric engineering teams |
+
+The three approaches are complementary, not mutually exclusive. A mature organization may run Kiro natively in the IDE for day-to-day work, use Spec Kit in CI to enforce spec-to-code traceability, and adopt BMAD's role decomposition pattern for cross-domain initiatives.
+
+In short: **Spec Kit** is a CLI-first, agent-agnostic spec→code pipeline governed by a `/constitution` command and human approval at every phase; **BMAD-METHOD** is a multi-agent orchestration framework whose roles (analyst, PM, architect, developer, QA) communicate through markdown story files and span software and non-software domains; **Kiro** integrates SDD natively in the IDE with Specs, Steering, Hooks, and MCP. This guide standardizes the **Kiro** approach while remaining portable to any compatible agent platform (§2.6).
+
+**When to choose which:**
+
+| Situation | Recommended |
+|---|---|
+| New service, CLI-first team, tool-agnostic pipeline | **Spec Kit** |
+| Cross-functional initiative with multiple AI roles (analyst, PM, dev, QA) | **BMAD** |
+| Engineering team that lives in an IDE and wants SDD natively | **Kiro** |
+| Non-software domain (content, strategy) needing structured AI workflows | **BMAD** |
+| Regulated software project requiring strict approval gates | **Spec Kit** or **Kiro** with Steering + Hooks |
+| Repository with many event-driven validations (save, commit, agent stop) | **Kiro** |
+
+### 2.6 Portability principle
+
+The pattern documented here is derived from the `cc-sdd` reference implementation (open-source, MIT) and is **portable**: it works whether the team uses Kiro IDE natively, Claude Code, Codex, Cursor, or another agent platform. Paths in `{}` are conventions that can be moved (e.g., `--kiro-dir docs`), but the artifact model and phase-gate flow are invariant.
+
+---
+
+## 3. Operating principles
+
+These principles are non-negotiable and apply to every workflow, skill, and integration built on this stack.
+
+### 3.1 Spec-first for production
+
+For relevant features, architectural changes, critical integrations, and complex bug fixes, the team SHALL use **Specs**. Specs generate versionable, reviewable artifacts: `requirements.md` or `bugfix.md`, `design.md`, and `tasks.md`.
+
+Free chat (or "Vibe" mode) is allowed for discovery, quick questions, and prototyping. Promote to a Spec when there is production impact, cross-team dependencies, regression risk, non-trivial requirements, or the need for technical history.
+
+### 3.2 Persistent context before repetitive prompts
+
+Recurring team patterns SHALL go into **Steering**, not into manually repeated prompts. Examples: official stack, folder structure, API patterns, security, testing, logging, observability, naming, architecture, and product constraints.
+
+### 3.3 Deterministic automation before creative automation
+
+Use **Shell Command hooks** for objective validations such as lint, format, typecheck, tests, and security scripts. Use **Agent Prompt hooks** only when the action depends on contextual interpretation.
+
+### 3.4 Least privilege
+
+Configure MCP, headless CLI, Kiro Web, trusted commands, and hooks with the smallest functional scope possible. Avoid `trust-all`, `autoApprove: ["*"]`, and open internet access by default.
+
+### 3.5 Human review at decision points
+
+The team SHALL review requirements, design, tasks, diffs, command permissions, PRs, and MCP/Powers configurations. Supervised mode helps with the review workflow but MUST NOT be treated as a sandbox or access control.
+
+### 3.6 Security through configuration
+
+Before using Kiro in a repository, configure `.kiroignore`, protect secrets, reduce access to local credentials, review trusted commands, and isolate sensitive workspaces.
+
+### 3.7 Traceability
+
+Relevant changes SHALL have a clear link between requirement, design, task, commit, test, and PR. Kiro can help generate commit messages and PRs, but the team must review the content before publishing.
+
+### 3.8 Real expertise over generic instruction
+
+Skills, agent prompts, and steering content SHALL be grounded in real expertise (hands-on tasks or synthesized project artifacts) and not generated by an LLM without domain context.
+
+---
+
+## 4. Repository structure
+
+Every project adopting this workflow SHALL have the following layout. Paths in `{}` are conventions that may be moved (e.g., `--kiro-dir docs`).
+
+```text
+repo/
+├── CLAUDE.md or AGENTS.md             # entry point — paths, workflow, guidelines
+├── .kiro/
+│   ├── settings/
+│   │   ├── mcp.json                   # workspace-scope MCP servers
+│   │   ├── rules/                     # generation rules + review gates
+│   │   │   ├── design-principles.md
+│   │   │   ├── design-review-gate.md
+│   │   │   ├── design-discovery-full.md
+│   │   │   ├── design-discovery-light.md
+│   │   │   ├── design-synthesis.md
+│   │   │   ├── ears-format.md
+│   │   │   ├── gap-analysis.md
+│   │   │   ├── requirements-review-gate.md
+│   │   │   ├── steering-principles.md
+│   │   │   ├── tasks-generation.md
+│   │   │   └── tasks-parallel-analysis.md
+│   │   └── templates/
+│   │       ├── specs/                 # requirements, design, tasks, research, init.json
+│   │       ├── steering/              # product, tech, structure
+│   │       └── steering-custom/       # domain-specific (api, security, testing, ...)
+│   ├── steering/                      # project memory (always loaded by the agent)
+│   │   ├── product.md
+│   │   ├── tech.md
+│   │   ├── structure.md
+│   │   ├── security.md
+│   │   ├── testing.md
+│   │   ├── api-conventions.md
+│   │   └── <custom files>.md
+│   └── specs/
+│       └── <feature-name>/
+│           ├── spec.json              # phase + per-phase approval state
+│           ├── requirements.md        # EARS acceptance criteria
+│           ├── design.md              # arch + boundary map + File Structure Plan
+│           ├── tasks.md               # with _Boundary:_ / _Depends:_ / (P)
+│           └── research.md            # optional, evidence-based decisions
+├── .agents/skills/                    # or .claude/skills/, .cursor/skills/, etc.
+│   └── <skill-name>/
+│       ├── SKILL.md                   # frontmatter + body
+│       ├── references/                # loaded on trigger
+│       ├── assets/                    # templates, static files
+│       └── scripts/                   # reusable deterministic logic
+├── .github/workflows/                 # CI: agent dispatch, publish, stale
+├── .kiroignore                        # secrets and sensitive paths
+└── docs/
+    └── guides/                        # this document and other team guides
+```
+
+### 4.1 Why this layout
+
+- **`.kiro/steering/`** is project memory — always loaded by the agent before any task.
+- **`.kiro/settings/`** is the *style guide* for how the agent generates artifacts. Treat it as code-reviewed configuration.
+- **`.kiro/settings/mcp.json`** is workspace-scope MCP. User-scope MCP lives in `~/.kiro/settings/mcp.json`.
+- **`.kiro/specs/`** is the living technical history of every approved contract.
+- **`.agents/skills/`** (or platform-specific equivalent: `.claude/skills/`, `.cursor/skills/`) contains the executable workflow as installable skills.
+- **`CLAUDE.md` / `AGENTS.md`** is the entry-point that tells any compatible agent where to find the workflow.
+
+### 4.2 Minimum per-repository checklist
+
+Every repository that uses Kiro SHALL have, at a minimum:
+
+- `.kiro/steering/{product,tech,structure}.md`
+- `.kiro/steering/{security,testing,api-conventions}.md` for any non-trivial codebase
+- `.kiroignore` configured with secrets and credentials
+- `.kiro/settings/mcp.json` declaring only the project-specific MCPs that are reviewed and approved
+- Entry-point file (`CLAUDE.md` or `AGENTS.md`) describing the workflow and pointing to this document
+
+---
+
+## 5. The steering layer (project memory)
+
+Steering files are loaded as project memory on every interaction. They define **what the agent must know without being told**.
+
+### 5.1 Foundational files
+
+Three files form the baseline. Every project SHALL have them.
+
+**`product.md`** — purpose, users, value.
+
+```markdown
+---
+inclusion: always
+---
+
+# Product
+
+## Purpose
+[One-paragraph description of what this product does and for whom.]
+
+## Core Capabilities
+- [3-5 key capabilities, not exhaustive]
+
+## Target Use Cases
+[Primary scenarios the product serves.]
+
+## Value Proposition
+[Why this product exists.]
+```
+
+**`tech.md`** — stack and standards.
+
+```markdown
+---
+inclusion: always
+---
+
+# Technology
+
+## Architecture Approach
+[High-level pattern: monolith, microservices, event-driven, etc.]
+
+## Core Technologies
+- Language: [version]
+- Framework: [name and version]
+- Runtime: [name and version]
+
+## Key Libraries
+[Only major libraries that shape the codebase.]
+
+## Development Standards
+- Type Safety: [policy]
+- Code Quality: [linter, formatter]
+- Testing: [framework, coverage targets]
+
+## Key Technical Decisions
+[Architectural decisions with rationale — not exhaustive.]
+```
+
+**`structure.md`** — organization and naming.
+
+```markdown
+---
+inclusion: always
+---
+
+# Structure
+
+## Organization Philosophy
+[How the codebase is organized and why.]
+
+## Directory Patterns
+| Location | Purpose | Example |
+|---|---|---|
+| `src/domain/` | Business logic | `src/domain/orders/` |
+
+## Naming Conventions
+- Files: [convention]
+- Components: [convention]
+- Functions: [convention]
+
+## Import Organization
+[Path aliases, import order, etc.]
+
+## Code Organization Principles
+[Principles for module boundaries, dependency direction, etc.]
+```
+
+### 5.2 Custom steering files
+
+Add files for cross-cutting concerns — `security.md`, `api-conventions.md`, `testing.md`, `observability.md`, `frontend-components.md`, `database.md`, `deployment.md`, `performance.md`, `accessibility.md`.
+
+Each uses YAML frontmatter to declare inclusion mode:
+
+```yaml
+---
+inclusion: always       # always loaded
+---
+
+---
+inclusion: fileMatch    # loaded when matching files are touched
+fileMatchPattern: ["app/api/**/*", "**/*Controller.*"]
+---
+
+---
+inclusion: manual       # only on demand
+---
+
+---
+inclusion: auto         # auto-loaded when relevant
+name: api-design
+description: REST API design patterns. Use when creating or modifying endpoints.
+---
+```
+
+### 5.3 The steering golden rule
+
+> **If new code follows existing patterns, steering should not need updating.**
+
+Document organizational patterns, naming conventions, import strategies, architectural decisions, and technology standards — **not file listings** or implementation detail. Never include secrets or agent-specific tooling directories.
+
+### 5.4 `security.md` template
+
+```markdown
+---
+inclusion: always
+---
+
+# Security Guidelines
+
+## Principles
+- Never log secrets, tokens, passwords, cookies, or personal data.
+- Validate inputs at boundaries: API, queues, jobs, external integrations.
+- Use least privilege for permissions and credentials.
+- Prefer temporary and scoped credentials.
+- Do not create authentication/authorization bypasses without explicit approval.
+
+## When modifying code
+- Check the impact on authentication, authorization, and data exposure.
+- Add tests for access denial and invalid inputs.
+- Ensure that errors do not leak internal details.
+
+## Review
+- In PRs with security impact, include a "Security considerations" section.
+```
+
+### 5.5 `api-conventions.md` template
+
+```markdown
+---
+inclusion: fileMatch
+fileMatchPattern: ["app/api/**/*", "src/api/**/*", "**/*Controller.*", "**/*Route.*"]
+---
+
+# API Conventions
+
+- Use plural resource names.
+- Return standardized errors with code, message, and correlationId.
+- Do not return sensitive data.
+- Validate payloads before calling domain services.
+- Separate controller/route from business rules.
+- Include tests for success, validation, authorization, and external errors.
+- Use pagination on lists.
+```
+
+### 5.6 Steering best practices
+
+- One domain per file.
+- Descriptive name.
+- Include the "why", not just the rule.
+- Use before/after examples where they clarify.
+- Do not include secrets, tokens, credentials, customer data, or sensitive information.
+- Review during architecture and planning changes.
+- Version with the repository when project-specific.
+- Require code review for relevant steering changes.
+- Use global steering only for broad team/company policies.
+
+---
+
+## 6. The spec layer (per-feature contracts)
+
+Each feature lives in `.kiro/specs/<feature-name>/` and produces four to five artifacts.
+
+### 6.1 `spec.json` — phase and approval state
+
+```json
+{
+  "feature_name": "photo-albums",
+  "language": "en",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": { "generated": true, "approved": true },
+    "design": { "generated": true, "approved": true },
+    "tasks": { "generated": true, "approved": false }
+  },
+  "ready_for_implementation": false,
+  "created_at": "2026-05-28T10:00:00Z"
+}
+```
+
+Implementation tooling reads this file before starting work. `ready_for_implementation: false` blocks execution.
+
+### 6.2 `requirements.md` — EARS acceptance criteria
+
+```markdown
+# Requirements
+
+## Introduction
+[2-3 sentences on purpose and users.]
+
+## Requirements
+
+### Requirement 1: Album Management
+
+**Objective**
+As a [persona], I want [capability], so that [benefit].
+
+**Acceptance Criteria**
+1. WHEN a user creates an album with a valid name THEN the system SHALL persist the album and return its ID within 500ms.
+2. IF a user submits an empty album name THEN the system SHALL return error code `ALBUM_NAME_REQUIRED` with HTTP 400.
+3. WHILE an album is being deleted THEN the system SHALL block new uploads to that album.
+4. WHERE the album feature is enabled THEN the system SHALL show the album creation button on the gallery page.
+5. The system SHALL log album creation events with non-sensitive metadata.
+
+### Requirement 2: ...
+```
+
+**EARS rules** (formal definition in `ears-format.md`):
+
+- Event-Driven: `WHEN [event] THE SYSTEM SHALL [response]`
+- State-Driven: `WHILE [precondition] THE SYSTEM SHALL ...`
+- Unwanted Behavior: `IF [trigger] THEN the system SHALL ...`
+- Optional Feature: `WHERE [feature] THE SYSTEM SHALL ...`
+- Ubiquitous: `THE SYSTEM SHALL ...`
+
+Trigger keywords (WHEN/WHILE/IF/WHERE/SHALL) are fixed in English. Localize only the variable parts. Use `shall`, not `should`. Each criterion must be **testable, single-behavior, objectively phrased**.
+
+**Minimum quality bar for `requirements.md`:**
+
+- User stories with persona, goal, and value.
+- Testable acceptance criteria.
+- Requirements in EARS when possible.
+- Error behavior covered.
+- Permissions and authentication considered.
+- Non-functional requirements: latency, resilience, observability, accessibility, compatibility.
+- Integration constraints declared.
+- Edge cases and invalid data covered.
+- No implementation language ("how") — only behavior ("what").
+
+### 6.3 `design.md` — architecture and File Structure Plan
+
+```markdown
+# Design
+
+## Overview
+- **Purpose**: ...
+- **Users**: ...
+- **Impact**: ...
+
+## Goals
+- ...
+
+## Non-Goals
+- ...
+
+## Existing Architecture Analysis
+[How this fits into what exists. What is reused, what is new.]
+
+## Architecture Pattern & Boundary Map
+
+```mermaid
+graph TD
+    Client[Client] --> API[API Layer]
+    API --> AlbumService
+    API --> PhotoService
+    AlbumService --> AlbumRepo[(Album Repo)]
+    PhotoService --> PhotoRepo[(Photo Repo)]
+    PhotoService --> Storage[(Object Storage)]
+```
+
+## Technology Stack
+| Layer | Choice | Role | Notes |
+|---|---|---|---|
+| Frontend | React 18 | UI | existing |
+| State | Zustand | client state | new |
+| Backend | Node 20 + Fastify | API | existing |
+| Database | Postgres 16 | persistence | existing |
+| Storage | S3 | photo blobs | new |
+
+## File Structure Plan
+
+```text
+src/
+├── domain/
+│   └── albums/                       # AlbumService boundary
+│       ├── AlbumService.ts
+│       ├── AlbumRepository.ts
+│       └── types.ts
+├── domain/
+│   └── photos/                       # PhotoService boundary
+│       ├── PhotoService.ts
+│       ├── PhotoRepository.ts
+│       └── PhotoStorage.ts
+└── api/
+    └── albums/                       # API boundary
+        ├── albumRoutes.ts
+        └── photoRoutes.ts
+```
+
+### Modified files
+- `src/api/index.ts` — register new routes
+- `src/db/migrations/` — add albums and photos tables
+
+## System Flows
+
+```mermaid
+sequenceDiagram
+    Client->>API: POST /albums
+    API->>AlbumService: create(name)
+    AlbumService->>AlbumRepo: insert
+    AlbumRepo-->>AlbumService: id
+    AlbumService-->>API: Album
+    API-->>Client: 201 Created
+```
+
+## Requirements Traceability
+| Requirement | Components | Interfaces | Flows |
+|---|---|---|---|
+| 1.1 | AlbumService | createAlbum() | flow-1 |
+| 1.2 | AlbumService | validation | flow-1 |
+
+## Components and Interfaces
+
+### AlbumService
+- **Intent**: own the lifecycle of albums.
+- **Requirements**: 1.1, 1.2, 1.3
+- **Responsibilities**: create, rename, delete albums; enforce invariants.
+- **Dependencies**:
+  - Inbound: API layer
+  - Outbound: AlbumRepository
+  - External: none
+- **Contract**:
+  ```typescript
+  interface AlbumService {
+    create(input: CreateAlbumInput): Promise<Album>;
+    rename(id: AlbumId, name: string): Promise<Album>;
+    delete(id: AlbumId): Promise<void>;
+  }
+  ```
+```
+
+**Warning:** if `design.md` is approaching 1,000 lines, the feature is probably too big — split it into multiple specs.
+
+**`design.md` minimum checklist:**
+
+- Components and responsibilities documented.
+- API/event contracts present.
+- Data models declared.
+- Call flow and sequence documented.
+- External dependencies identified.
+- Errors, retry, timeout, idempotency addressed.
+- Observability included.
+- Security and privacy considered.
+- Migration and compatibility plan when applicable.
+- Testing strategy declared.
+- Trade-offs and rejected alternatives recorded.
+
+### 6.4 `tasks.md` — implementation plan with boundaries
+
+```markdown
+# Tasks
+
+## Phase 1: Foundation
+
+- [ ] 1. Add database schema for albums and photos
+  - [ ] 1.1 Create migration for `albums` table
+    - columns: id, name, owner_id, created_at, deleted_at
+    - _Requirements: 1.1, 1.5_
+  - [ ] 1.2 Create migration for `photos` table _Boundary: PhotoService_ (P)
+    - columns: id, album_id, storage_key, uploaded_at
+    - _Requirements: 2.1_
+    - _Depends: 1.1_
+
+## Phase 2: Core
+
+- [ ] 2. Implement AlbumService _Boundary: AlbumService_
+  - [ ] 2.1 Implement create/rename/delete with invariants
+    - _Requirements: 1.1, 1.2, 1.3_
+  - [ ] 2.2 Add unit tests for invariants
+    - _Requirements: 1.1, 1.2_
+
+- [ ] 3. Implement PhotoService _Boundary: PhotoService_ (P)
+  - [ ] 3.1 Implement upload with S3 storage
+    - _Requirements: 2.1, 2.3_
+    - _Depends: 1.2_
+
+## Phase 3: Integration
+
+- [ ] 4. Wire API routes
+  - [ ] 4.1 POST /albums, PATCH /albums/:id, DELETE /albums/:id
+    - _Requirements: 1.1, 1.2, 1.3_
+    - _Depends: 2.1_
+
+## Phase 4: Validation
+
+- [ ] 5. End-to-end tests for golden path and error cases
+  - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.3_
+  - _Depends: 4.1, 3.1_
+```
+
+**Task annotation rules** (formal definition in `tasks-generation.md`):
+
+- `_Requirements: 1.1, 1.2_` — numeric IDs only, no descriptions.
+- `_Boundary: ComponentName_` — required on `(P)` tasks; matches component names from `design.md`.
+- `_Depends: 3.1, 4.2_` — **cross-boundary** dependencies only; sequential dependencies are implicit in order.
+- `(P)` — parallel-capable, runs alongside other `(P)` tasks in different boundaries.
+
+**Task sizing rules:**
+
+- Major tasks: 3–10 sub-tasks.
+- Sub-tasks: 1–3 hours of focused work.
+- Phases: Foundation → Core → Integration → Validation.
+
+**Avoid generic tasks** like "implement the backend". Prefer concrete, verifiable units:
+
+```text
+- Create POST /sessions endpoint with payload validation, 201 response, and 400 error for invalid data.
+- Add a unit test for login lockout after 5 failed attempts.
+- Add metric auth.login.failed with non-sensitive labels.
+```
+
+### 6.5 `research.md` — optional, evidence-based decisions
+
+Use when the domain requires investigation before committing to a design (RAG systems, novel integrations, performance-critical choices).
+
+```markdown
+# Research
+
+## Summary
+- **Feature**: ...
+- **Discovery Scope**: Greenfield | Brownfield extension
+- **Key Findings**:
+  - ...
+
+## Research Log
+
+### Topic 1: <area under investigation>
+- **Sources Consulted**: [official docs, papers, OSS projects]
+- **Findings**:
+  - ...
+- **Implications**:
+  - ...
+```
+
+Every research finding SHALL connect to a concrete design commitment downstream.
+
+### 6.6 Bugfix Specs
+
+A Bugfix Spec replaces `requirements.md` with `bugfix.md` and SHALL explicitly contain:
+
+```text
+Current Behavior:
+WHEN [condition]
+THEN the system [incorrect behavior]
+
+Expected Behavior:
+WHEN [condition]
+THE SYSTEM SHALL [correct behavior]
+
+Unchanged Behavior:
+WHEN [condition]
+THE SYSTEM SHALL CONTINUE TO [existing behavior that must not break]
+```
+
+**Bugfix best practices:**
+
+- Include reproduction steps.
+- Include logs, stack traces, payloads, and versions.
+- Ask the agent to investigate root cause before any patch.
+- Avoid "trial-and-error fixing".
+- Require regression tests (a test that fails before the fix, passes after).
+- Require a non-regression test for unchanged behavior.
+- Limit the fix scope to the bug — no opportunistic refactors.
+
+---
+
+## 7. Generation rules and review gates
+
+Located in `.kiro/settings/rules/`. These are not advisory — they are checklists the agent runs mechanically before claiming a phase is complete.
+
+### 7.1 Required rule files
+
+| File | Purpose |
+|---|---|
+| `ears-format.md` | EARS templates, keyword rules, testability checks |
+| `requirements-review-gate.md` | Pre-approval checklist for `requirements.md` |
+| `design-principles.md` | Type safety, dependency direction, component design, error handling |
+| `design-discovery-full.md` / `design-discovery-light.md` | Discovery scope for design phase |
+| `design-synthesis.md` | Synthesis rules for design consolidation |
+| `design-review-gate.md` | Pre-approval checklist for `design.md` |
+| `gap-analysis.md` | Brownfield investigation framework |
+| `tasks-generation.md` | Task ordering, annotations, sizing |
+| `tasks-parallel-analysis.md` | Parallel-safety rules for `(P)` tasks |
+| `steering-principles.md` | What belongs in steering vs not |
+
+### 7.2 Review gate pattern
+
+Every gate file has the same shape:
+
+```markdown
+# <Phase> Review Gate
+
+## Scope and Coverage
+- [ ] [coverage check 1]
+- [ ] [coverage check 2]
+
+## Quality Criteria
+- [ ] [quality check 1]
+- [ ] [quality check 2]
+
+## Mechanical Checks
+- [ ] Numeric IDs are present and unique.
+- [ ] Cross-references resolve (e.g., `_Requirements: 1.2_` exists in requirements.md).
+- [ ] No implementation language in requirements.
+- [ ] File Structure Plan is fully populated.
+- [ ] Every component has a Contract Definition.
+```
+
+The agent SHALL run the checklist mechanically and report results before the human reviews.
+
+### 7.3 Mechanical vs judgment checks
+
+- **Mechanical checks** are executed by the agent before reporting — ID uniqueness, cross-reference resolution, presence of required sections. These do not require human judgment.
+- **Judgment checks** are reviewed by humans after the mechanical checks pass — whether the requirements actually capture intent, whether the design is the right approach, whether the boundaries are well-chosen.
+
+Mixing the two wastes human review time. Mechanical first, judgment second.
+
+---
+
+## 8. The skill layer (executable workflow)
+
+Each capability — discovery, requirements drafting, design generation, task planning, implementation, review, debug — is packaged as a **skill** living in `.agents/skills/<skill-name>/` (or the platform-specific equivalent).
+
+### 8.1 What is a skill
+
+A skill is a **reusable, well-scoped capability bundle** that an AI agent can load on demand. It contains everything the agent needs to perform a specific task: instructions, references, templates, deterministic scripts.
+
+Skills are loaded on demand based on description matches. Once loaded, the `SKILL.md` body enters the agent's active context window — so every token must earn its place.
+
+### 8.2 Foundational principle: start from real expertise
+
+The dominant pitfall in skill creation is asking an LLM to generate a skill **without providing domain-specific context**, relying solely on its general training. The result is vague, generic procedures ("handle errors appropriately," "follow best practices for authentication") rather than the specific API patterns, edge cases, and project conventions that make a skill valuable.
+
+There are two reliable ways to capture real expertise:
+
+#### 8.2.1 Extract from a hands-on task
+
+Complete a real task in conversation with an agent, providing context, corrections, and preferences along the way. Then extract the reusable pattern into a skill. Pay attention to:
+
+- **Steps that worked** — the sequence of actions that led to success.
+- **Corrections you made** — places where you steered the agent ("use library X instead of Y," "check edge case Z").
+- **Input/output formats** — what the data looked like going in and coming out.
+- **Context you provided** — project-specific facts, conventions, or constraints the agent did not already know.
+
+#### 8.2.2 Synthesize from existing project artifacts
+
+When you already have a body of knowledge, feed it into an LLM and ask it to synthesize a skill. Good source material:
+
+- Internal documentation, runbooks, style guides.
+- API specifications, schemas, configuration files.
+- Code review comments and issue trackers (capture recurring concerns and reviewer expectations).
+- Version control history — patches and fixes reveal real patterns through what actually changed.
+- Real-world failure cases and their resolutions; post-mortems.
+
+A data-pipeline skill synthesized from your team's incident reports and runbooks will outperform one synthesized from a generic "data engineering best practices" article — because it captures *your* schemas, failure modes, and recovery procedures.
+
+### 8.3 Skill structure
+
+```text
+<skill-name>/
+├── SKILL.md              # required: frontmatter + core body, < 500 lines / 5k tokens
+├── references/           # detailed material loaded on demand
+│   ├── api-errors.md
+│   └── schema.yaml
+├── assets/               # templates and static resources
+│   └── report-template.md
+└── scripts/              # reusable, deterministic, tested logic
+    ├── validate.py
+    └── analyze.py
+```
+
+Cross-cutting rules:
+
+- **`SKILL.md`** contains everything the agent needs on every run.
+- **`references/`** is loaded conditionally — `SKILL.md` SHALL specify the trigger.
+- **`assets/`** holds templates and static resources referenced by `SKILL.md`.
+- **`scripts/`** holds deterministic logic that the agent invokes instead of regenerating.
+
+### 8.4 `SKILL.md` template
+
+```markdown
+---
+name: <kebab-case-skill-name>
+description: <one-sentence trigger description — what task and when to use>
+---
+
+# <Skill Title>
+
+## Goal
+[What problem this skill solves, in one paragraph.]
+
+## Default Operation Mode
+[plan-first vs direct-implementation; what the user expects as the first deliverable.]
+
+## Collect Inputs First
+[Required context the agent must collect before editing files. Each input is a question that has to be answered.]
+
+## Execution Workflow
+
+### 1) <Phase 1 name>
+[What to do, what to read, what to produce.]
+
+### 2) <Phase 2 name>
+...
+
+## Gotchas
+- [Non-obvious facts that defy reasonable assumptions.]
+- [Each gotcha is a correction to a mistake the agent will otherwise make.]
+
+## Verification Before Reporting
+- Run: `<command>`
+- Check: `<condition>`
+- If blocked: report the blocked step explicitly, do not silently skip.
+
+## Completion Criteria
+- [ ] [Concrete artifact 1 exists at <path>]
+- [ ] [Validation 1 passes]
+- [ ] [Documentation updated]
+
+## References
+- [Pointers to references/ files with triggers: "Read references/X.md when Y."]
+```
+
+### 8.5 Spending context wisely
+
+Once a skill activates, the full `SKILL.md` body loads into the agent's context window alongside conversation history, system context, and other active skills. Every token competes for attention.
+
+#### 8.5.1 Add what the agent lacks, omit what it knows
+
+Focus on what the agent **would not know without your skill**: project-specific conventions, domain-specific procedures, non-obvious edge cases, and the particular tools or APIs to use. Do not explain what a PDF is, how HTTP works, or what a database migration does.
+
+````markdown
+<!-- Too verbose — the agent already knows what PDFs are -->
+## Extract PDF text
+
+PDF (Portable Document Format) files are a common file format that contains
+text, images, and other content. To extract text from a PDF, you'll need to
+use a library. pdfplumber is recommended because it handles most cases well.
+
+<!-- Better — jumps straight to what the agent wouldn't know -->
+## Extract PDF text
+
+Use pdfplumber for text extraction. For scanned documents, fall back to
+pdf2image with pytesseract.
+
+```python
+import pdfplumber
+with pdfplumber.open("file.pdf") as pdf:
+    text = pdf.pages[0].extract_text()
+```
+````
+
+Ask of every piece of content: **"Would the agent get this wrong without this instruction?"** If the answer is no, cut it.
+
+#### 8.5.2 Design coherent units
+
+Scope a skill like you would scope a function. It should encapsulate a coherent unit of work that composes well with other skills.
+
+- **Too narrow** — forces multiple skills to load for a single task; risks overhead and conflicting instructions.
+- **Too broad** — hard to activate precisely; the agent loads irrelevant material.
+
+A skill for querying a database and formatting the results may be one coherent unit. A skill that also covers database administration is probably trying to do too much.
+
+#### 8.5.3 Aim for moderate detail
+
+Overly comprehensive skills hurt more than they help. The agent struggles to extract what is relevant and may pursue unproductive paths triggered by instructions that do not apply.
+
+**Concise, stepwise guidance with a working example tends to outperform exhaustive documentation.** When you find yourself covering every edge case, consider whether most are better handled by the agent's own judgment.
+
+#### 8.5.4 Structure large skills with progressive disclosure
+
+Keep `SKILL.md` under **500 lines and 5,000 tokens** — just the core instructions needed on every run. When a skill legitimately needs more content, move detailed reference material to separate files in `references/` or similar directories.
+
+The key is telling the agent **when** to load each file:
+
+```markdown
+<!-- Useless: agent has no trigger -->
+See references/ for details.
+
+<!-- Useful: trigger condition is explicit -->
+Read references/api-errors.md if the API returns a non-200 status code.
+```
+
+### 8.6 Calibrating control
+
+Not every part of a skill needs the same prescriptiveness. Match the specificity of your instructions to the **fragility of the task**.
+
+#### 8.6.1 Match specificity to fragility
+
+**Give the agent freedom** when multiple approaches are valid and the task tolerates variation. Explaining *why* often outperforms rigid directives:
+
+```markdown
+## Code review process
+
+1. Check all database queries for SQL injection (use parameterized queries).
+2. Verify authentication checks on every endpoint.
+3. Look for race conditions in concurrent code paths.
+4. Confirm error messages do not leak internal details.
+```
+
+**Be prescriptive** when operations are fragile, consistency matters, or a specific sequence must be followed:
+
+````markdown
+## Database migration
+
+Run exactly this sequence:
+
+```bash
+python scripts/migrate.py --verify --backup
+```
+
+Do not modify the command or add additional flags.
+````
+
+#### 8.6.2 Provide defaults, not menus
+
+When multiple tools or approaches could work, pick a default and mention alternatives briefly. Do not present them as equal options.
+
+````markdown
+<!-- Too many options -->
+You can use pypdf, pdfplumber, PyMuPDF, or pdf2image...
+
+<!-- Clear default with escape hatch -->
+Use pdfplumber for text extraction:
+
+```python
+import pdfplumber
+```
+
+For scanned PDFs requiring OCR, use pdf2image with pytesseract instead.
+````
+
+#### 8.6.3 Favor procedures over declarations
+
+Teach the agent **how to approach a class of problems**, not what to produce for a specific instance.
+
+```markdown
+<!-- Specific answer — only useful for this exact task -->
+Join the orders table to customers on customer_id, filter where
+region = 'EMEA', and sum the amount column.
+
+<!-- Reusable method — works for any analytical query -->
+1. Read the schema from references/schema.yaml to find relevant tables.
+2. Join tables using the _id foreign key convention.
+3. Apply any filters from the user's request as WHERE clauses.
+4. Aggregate numeric columns as needed and format as a markdown table.
+```
+
+### 8.7 Patterns for effective instructions
+
+Reusable techniques for structuring skill content. Use the ones that fit the task — not every skill needs all of them.
+
+#### 8.7.1 Gotchas sections
+
+The highest-value content in many skills is a **gotchas list** — environment-specific facts that defy reasonable assumptions. Not general advice; concrete corrections to mistakes the agent will make without being told otherwise.
+
+```markdown
+## Gotchas
+
+- The `users` table uses soft deletes. Queries must include
+  `WHERE deleted_at IS NULL` or results include deactivated accounts.
+- The user ID is `user_id` in the database, `uid` in the auth service,
+  and `accountId` in the billing API. All three refer to the same value.
+- The `/health` endpoint returns 200 as long as the web server is running,
+  even if the database connection is down. Use `/ready` for full health.
+```
+
+Keep gotchas in `SKILL.md` where the agent reads them before encountering the situation. A separate reference file works if you tell the agent when to load it, but for non-obvious issues the agent may not recognize the trigger.
+
+**Iterative improvement loop:** when the agent makes a mistake you have to correct, add the correction as a gotcha. This is the most direct way to improve a skill over time.
+
+#### 8.7.2 Templates for output format
+
+When the agent must produce output in a specific format, provide a template. Agents pattern-match against concrete structures more reliably than prose descriptions.
+
+Short templates live inline in `SKILL.md`. Longer templates, or templates only needed in certain cases, go in `assets/` and are referenced from `SKILL.md` so they load only when needed.
+
+#### 8.7.3 Checklists for multi-step workflows
+
+Explicit checklists help the agent track progress and avoid skipping steps — especially when steps have dependencies or validation gates.
+
+```markdown
+## Form processing workflow
+
+Progress:
+- [ ] Step 1: Analyze the form (run scripts/analyze_form.py)
+- [ ] Step 2: Create field mapping (edit fields.json)
+- [ ] Step 3: Validate mapping (run scripts/validate_fields.py)
+- [ ] Step 4: Fill the form (run scripts/fill_form.py)
+- [ ] Step 5: Verify output (run scripts/verify_output.py)
+```
+
+#### 8.7.4 Validation loops
+
+Instruct the agent to validate its own work before moving on. Pattern: do the work, run a validator, fix issues, repeat until validation passes.
+
+```markdown
+## Editing workflow
+
+1. Make your edits.
+2. Run validation: python scripts/validate.py output/
+3. If validation fails:
+   - Review the error message.
+   - Fix the issues.
+   - Run validation again.
+4. Only proceed when validation passes.
+```
+
+A reference document can also serve as the validator — instruct the agent to check its work against the reference before finalizing.
+
+#### 8.7.5 Plan-validate-execute
+
+For batch or destructive operations, have the agent create an intermediate plan in a structured format, validate it against a source of truth, and only then execute.
+
+```markdown
+## PDF form filling
+
+1. Extract form fields: python scripts/analyze_form.py input.pdf → form_fields.json
+2. Create field_values.json mapping each field name to its intended value.
+3. Validate: python scripts/validate_fields.py form_fields.json field_values.json
+4. If validation fails, revise field_values.json and re-validate.
+5. Fill the form: python scripts/fill_form.py input.pdf field_values.json output.pdf
+```
+
+Error messages produced by the validator MUST be **self-correcting** — for example, "Field `signature_date` not found — available fields: customer_name, order_total, signature_date_signed" gives the agent enough information to fix the plan without human intervention.
+
+#### 8.7.6 Bundling reusable scripts
+
+When iterating on a skill, compare execution traces across test cases. If the agent **independently reinvents the same logic each run** — building charts, parsing a specific format, validating output — that is a signal to write a tested script once and bundle it in `scripts/`.
+
+Benefits:
+
+- Determinism — script behavior does not vary between runs.
+- Token savings — the agent calls the script instead of regenerating logic.
+- Testability — the script can have its own unit tests.
+
+### 8.8 The canonical 17-skill set for SDD workflows
+
+This is the workflow surface area implemented in `cc-sdd`. Adopt as many as the team needs.
+
+| Skill | Purpose |
+|---|---|
+| `kiro-discovery` | Route work: extend existing spec, implement directly, create one spec, decompose into many, or mixed. Writes `brief.md` and `roadmap.md`. |
+| `kiro-steering` | Capture project memory into `.kiro/steering/`. |
+| `kiro-steering-custom` | Manage custom steering files. |
+| `kiro-spec-init` | Create the per-feature workspace under `.kiro/specs/`. |
+| `kiro-spec-requirements` | Draft `requirements.md` with EARS criteria. |
+| `kiro-spec-design` | Draft `design.md` and optional `research.md`. |
+| `kiro-spec-tasks` | Generate `tasks.md` with boundary/depends annotations. |
+| `kiro-spec-quick` | Fast-track single-spec creation (skips gates). |
+| `kiro-spec-batch` | Multi-spec batch from `roadmap.md`. |
+| `kiro-spec-status` | Progress reporting per feature. |
+| `kiro-validate-gap` | Validate requirements against existing code (brownfield). |
+| `kiro-validate-design` | Run design review gate. |
+| `kiro-impl` | Long-running autonomous implementation, one task per iteration. |
+| `kiro-validate-impl` | Feature-level validation gate. |
+| `kiro-review` | Task-local adversarial review used by reviewer subagents. |
+| `kiro-debug` | Root-cause-first debugging used by debugger subagents. |
+| `kiro-verify-completion` | Fresh-evidence gate before any completion claim. |
+
+### 8.9 Skill authoring checklist
+
+**Before writing a skill:**
+
+- [ ] Real expertise captured (hands-on task or synthesized artifacts).
+- [ ] Scope defined as a coherent unit of work.
+- [ ] Inputs, outputs, and triggers identified.
+- [ ] At least one concrete test case ready.
+
+**During authoring:**
+
+- [ ] `SKILL.md` under 500 lines / 5,000 tokens.
+- [ ] No content the agent already knows from general training.
+- [ ] Defaults chosen; alternatives mentioned briefly.
+- [ ] Specificity calibrated to fragility (prescriptive where fragile, flexible where not).
+- [ ] Gotchas section present for non-obvious facts.
+- [ ] Output templates where format matters.
+- [ ] Triggers for `references/` files are explicit ("Read X when Y").
+
+**After authoring:**
+
+- [ ] Skill run against at least one real task.
+- [ ] Execution trace reviewed, not just final output.
+- [ ] False positives, missed cases, and dead instructions identified.
+- [ ] Gotchas added for every correction made during the run.
+- [ ] Repeated logic refactored into `scripts/`.
+
+---
+
+## 9. Agent development best practices
+
+Beyond skills, the workflow uses three classes of agent: the **primary agent** (the human-facing assistant), **sub-agents** (delegated, scoped roles like reviewer/debugger), and **CI/headless agents** (non-interactive automation).
+
+### 9.1 Custom agents
+
+Use custom agents to specialize tasks such as code review, debugging, AWS, security, documentation, or architecture analysis.
+
+Useful custom-agent archetypes:
+
+- `code-reviewer` with read and grep tools only.
+- `test-writer` with read/write access in test directories.
+- `debugger` with restricted terminal access.
+- `docs-writer` with markdown access.
+- `security-reviewer` without write access.
+
+**Rule:** the more powerful the agent, the smaller the scope must be and the larger the review must be.
+
+### 9.2 Sub-agent delegation pattern
+
+For long-running implementation, the orchestrator spawns role-scoped sub-agents per task:
+
+```text
+spawn implementer (fresh context, TDD: RED → GREEN behind feature flag)
+   ↓
+spawn reviewer (fresh context, independent, adversarial)
+   ↓
+if reviewer rejects twice OR implementer is blocked:
+    spawn debugger (fresh context, root-cause first)
+   ↓
+record learnings in tasks.md ## Implementation Notes
+   ↓
+move to next task
+```
+
+**Rules:**
+
+- 1 task per iteration — context hygiene.
+- Each role gets a fresh context — no accumulated bias.
+- Safe to re-run after interruption — state lives in `spec.json` and `tasks.md`.
+- Cross-task learnings propagate via `## Implementation Notes` in `tasks.md`.
+
+### 9.3 Autopilot vs Supervised
+
+Use **Autopilot** for low-risk, well-specified tasks. Use **Supervised** when you want to review diffs before accepting changes. Supervised mode is NOT a security control; both modes have the same basic read, write, and execution capabilities, mainly differing in the review workflow.
+
+### 9.4 Context providers and efficient context use
+
+Use context providers with clear intent:
+
+- `#codebase`: broad questions about the repository.
+- `#file`: analysis of a specific file.
+- `#folder`: module/folder context.
+- `#git diff`: review of current changes.
+- `#terminal`: debugging based on terminal output.
+- `#problems`: editor errors and diagnostics.
+- `#docs`: indexed documentation.
+- `#spec`: active Spec.
+- `#steering`: project standards.
+- `#mcp`: configured external tools.
+
+**Best practices:**
+
+- Reference files and diffs explicitly.
+- Ask for a plan before a large change.
+- Ask the agent to explain assumptions.
+- Separate analysis, implementation, and validation into distinct prompts.
+- Do not mix many goals in a single request.
+
+### 9.5 Trusted commands and terminal policy
+
+Recommended policy:
+
+- **Auto-trust only** for read and validation commands.
+- **Approval required** for commands that write, remove, alter permissions, install dependencies, or access the network.
+- **Denylist** for destructive patterns.
+- **Avoid broad wildcards.**
+- **Periodic review** of trusted commands.
+
+Examples that are generally safe, depending on the project:
+
+```bash
+git status
+git diff
+npm run lint
+npm run typecheck
+npm test
+python -m pytest
+mvn test
+```
+
+Examples that SHALL require approval:
+
+```bash
+rm -rf ...
+chmod -R ...
+curl ... | sh
+npm install ...
+docker run --privileged ...
+aws ...
+```
+
+Conceptual denylist:
+
+```text
+rm -rf
+chmod -R
+chown -R
+curl * | sh
+wget * | sh
+sudo
+aws iam
+aws s3 rm
+kubectl delete
+docker system prune
+```
+
+### 9.6 Checkpoints
+
+Use checkpoints to revert changes made by Kiro when the result is out of scope. Manual changes, shell commands, and changes made by external tools may not be covered the same way.
+
+---
+
+## 10. Kiro IDE-specific features
+
+### 10.1 Hooks
+
+Hooks are event-driven automations that run shell commands or agent prompts when a trigger fires.
+
+#### 10.1.1 When to use hooks
+
+- Run lint/typecheck/tests after changes.
+- Validate security before shell commands.
+- Block risky prompts or tools.
+- Add context before a prompt.
+- Review generated code at the end of an agent run.
+- Execute checks before/after Spec tasks.
+- Create reusable manual commands.
+
+#### 10.1.2 Useful trigger types
+
+- **Prompt Submit:** adds context, blocks inappropriate prompts, logs the request.
+- **Agent Stop:** runs validations after agent changes.
+- **Pre Tool Use:** blocks or guides before a sensitive tool.
+- **Post Tool Use:** validates tool results.
+- **File Create/Save/Delete:** formats, tests, or reviews file changes.
+- **Pre/Post Task Execution:** validates Spec tasks.
+- **Manual Trigger:** creates on-demand automations such as `/security-review`.
+
+#### 10.1.3 Choosing the action
+
+Use **Shell Command** when validation is deterministic:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+python -m pytest
+mvn test
+```
+
+Use **Agent Prompt** when contextual analysis is needed:
+
+```text
+Review the recent changes and point out inconsistencies with
+.kiro/steering/security.md and .kiro/steering/api-conventions.md.
+Do not change files. Reply with findings, severity, and suggestions.
+```
+
+#### 10.1.4 Hook best practices
+
+- A hook SHALL have a single clear responsibility.
+- Prefer short, idempotent commands with timeouts.
+- Avoid slow hooks on frequent events like save.
+- Record the reason for each hook.
+- Test hooks with positive and negative scenarios.
+- Version shared hooks when possible.
+- NEVER use hooks to run destructive commands without approval.
+- Monitor credit consumption when using Agent Prompt hooks.
+
+#### 10.1.5 Recommended hook examples
+
+**Agent Stop: post-change validation**
+
+```text
+Trigger: Agent Stop
+Action: Shell Command
+Command: npm run lint && npm run typecheck
+Goal: detect basic errors right after agent changes.
+```
+
+**Pre Tool Use for sensitive shell**
+
+```text
+Trigger: Pre Tool Use
+Tool category: shell
+Action: Agent Prompt
+Prompt: Before running shell commands, check whether the command is
+destructive, alters permissions, removes files, accesses secrets, or
+sends data over the network. If there is risk, request explicit confirmation.
+```
+
+**Manual security review**
+
+```text
+Trigger: Manual
+Name: security-review
+Action: Agent Prompt
+Prompt: Review the current changes against security.md. Classify findings
+as critical/high/medium/low and suggest additional tests.
+```
+
+### 10.2 MCP (Model Context Protocol) integration
+
+#### 10.2.1 When to use MCP
+
+Use MCP when the agent needs:
+
+- Up-to-date external documentation.
+- Access to internal APIs.
+- Queries against databases or schemas.
+- Observability tooling.
+- Ticketing systems.
+- Cloud tooling.
+- Domain-specific resources.
+
+#### 10.2.2 Configuration levels
+
+- **Workspace:** `.kiro/settings/mcp.json`, for project-specific integrations.
+- **User:** `~/.kiro/settings/mcp.json`, for personal/global tools.
+
+When there is a conflict, the workspace level SHALL take precedence for the project.
+
+#### 10.2.3 Safe `mcp.json` example
+
+```json
+{
+  "mcpServers": {
+    "aws-docs": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": "aws"
+      },
+      "disabled": false,
+      "autoApprove": [],
+      "disabledTools": []
+    }
+  }
+}
+```
+
+#### 10.2.4 Security rules for MCP
+
+- Use only trusted servers.
+- Read tool descriptions before approving them.
+- Do not version credentials.
+- Use `${ENVIRONMENT_VARIABLE}` for secrets.
+- Avoid `autoApprove: ["*"]`.
+- Disable unused tools with `disabledTools`.
+- Separate MCPs by read and write permissions.
+- Review third-party MCPs before installing.
+- In CI, fail fast when a required MCP fails to start.
+
+### 10.3 Powers
+
+#### 10.3.1 When to use Powers
+
+Use Powers to package the knowledge, MCP, steering, and hooks of a specific technology or flow. Internal examples:
+
+- Backend patterns power.
+- Cloud platform power.
+- Observability power.
+- Design system power.
+- Database migration power.
+- E2E testing power.
+
+#### 10.3.2 Recommended structure
+
+```text
+my-custom-power/
+├── POWER.md
+├── mcp.json
+└── steering/
+    └── workflow.md
+```
+
+#### 10.3.3 `POWER.md` template
+
+```markdown
+---
+name: "internal-backend"
+displayName: "Internal Backend Standards"
+description: "Internal standards for APIs, services, authentication, testing, and observability"
+keywords: ["api", "backend", "service", "auth", "observability", "testing"]
+author: "Engineering Platform"
+---
+
+# Onboarding
+
+1. Verify that the project dependencies are installed.
+2. Confirm that lint, typecheck, and tests run locally.
+3. Load steering/backend.md and steering/security.md when relevant.
+
+# Workflows
+
+- For new endpoints, always validate contract, authorization, error tests, and observability.
+- For authentication changes, require security review.
+- For database changes, require a migration and rollback plan.
+```
+
+#### 10.3.4 Powers governance
+
+- Install Powers only from trusted sources.
+- Review `POWER.md`, `mcp.json`, and steering before installing.
+- Prefer internal Powers for company standards.
+- Version internal Powers in a dedicated repository.
+- Review updates before applying them.
+
+### 10.4 CLI and headless automation
+
+#### 10.4.1 When to use the CLI
+
+Use Kiro CLI for:
+
+- Terminal-based development.
+- Local automations.
+- Custom agents.
+- PR review.
+- Test generation.
+- Build troubleshooting.
+- CI/CD pipelines.
+
+#### 10.4.2 Useful commands
+
+```bash
+# start chat in the project
+kiro-cli
+
+# direct question
+kiro-cli chat "Explain this module's architecture"
+
+# non-interactive mode
+kiro-cli chat --no-interactive "Review this diff"
+
+# list models
+kiro-cli chat --list-models
+
+# resume session
+kiro-cli chat --resume
+
+# use a custom agent
+kiro-cli chat --agent code-reviewer "Review the changes"
+
+# diagnose installation/configuration
+kiro-cli doctor
+```
+
+#### 10.4.3 Headless in CI/CD
+
+GitHub Actions example:
+
+```yaml
+name: Kiro Code Review
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Kiro CLI
+        run: curl -fsSL https://cli.kiro.dev/install | bash
+      - name: Review PR changes
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
+        run: |
+          git diff origin/main...HEAD | \
+          kiro-cli chat --no-interactive --trust-tools=read,grep \
+            "Review these changes for security, correctness, tests, and maintainability. Return findings only."
+```
+
+**Best practices:**
+
+- Store `KIRO_API_KEY` as a secret.
+- NEVER hardcode the API key.
+- Rotate keys according to internal policy.
+- Use a specific `--trust-tools`, not `--trust-all-tools`.
+- Use `--require-mcp-startup` when MCP is mandatory.
+- Pass context via pipe, for example `git diff | kiro-cli chat ...`.
+- Have the job report findings, not automatically apply changes, except in tightly controlled pipelines.
+
+#### 10.4.4 Code Intelligence
+
+Use Code Intelligence features for large codebases:
+
+- Symbol search.
+- Document symbols.
+- Definition lookup.
+- AST pattern search and rewrite.
+- Codebase map.
+- Optional LSP for rename, go to definition, diagnostics, and references.
+
+**Best practices:**
+
+- Initialize LSP per project only when you need advanced features.
+- Use exact line/column positions.
+- Run a dry-run before renames/refactors.
+- Resolve diagnostics before deep analysis.
+- Be specific in searches.
+
+### 10.5 Kiro Web
+
+#### 10.5.1 When to use it
+
+- Browser-based work.
+- Creating branches and PRs.
+- Coordinating changes across multiple repositories.
+- Delegating well-defined tasks in autonomous mode.
+- Responding to PR feedback.
+
+#### 10.5.2 Work modes
+
+- **Collaborative mode:** you drive the conversation, iterate, review, and request a PR when satisfied.
+- **Autonomous mode:** the agent asks initial questions, plans, executes, delegates subagents, and opens a PR automatically.
+
+Use autonomous mode only when:
+
+- The desired outcome is clear.
+- The scope is controlled.
+- There are tests and validation.
+- The risk of the change is acceptable.
+- The team will review the PR before merge.
+
+Do NOT use autonomous mode for:
+
+- Exploratory discovery.
+- Open architectural decisions.
+- Critical security changes without review.
+- Repositories you do not trust.
+- Tasks with ambiguous requirements.
+
+#### 10.5.3 Sandbox and internet access
+
+Recommended sandbox configuration:
+
+1. Start with **Connections access only** when you do not need to install external dependencies.
+2. Use **Common dependencies** when builds require common package registries.
+3. Use a custom allowlist when there are specific dependencies.
+4. Avoid open internet access by default.
+5. Configure environment variables and secrets only when needed.
+6. Separate tasks by sensitivity level.
+
+#### 10.5.4 GitHub integration best practices
+
+- Authorize only the necessary repositories.
+- Ensure the user has write permission only where needed.
+- Use branch protection and required CI.
+- Review PR authorship according to repository rules.
+- Use PR comments to teach the agent patterns, but formalize recurring patterns in Steering.
+- Do NOT mix public and untrusted private repositories in the same session.
+
+#### 10.5.5 Data and compliance
+
+For projects with sensitive data, secrets, GDPR/LGPD, regulated customers, or critical intellectual property, consult security/compliance before using Kiro Web.
+
+---
+
+## 11. Workflow reference (lifecycle playbooks)
+
+### 11.1 Decision matrix: which mode to use
+
+| Situation | Recommended mode | Reason |
+|---|---|---|
+| Quick code question | Chat/Vibe | Low coordination cost. |
+| Initial exploration or brainstorming | Chat/Vibe | Allows iteration without formalizing too early. |
+| Feature with clear product behavior | Feature Spec Requirements-First | Ensures requirements, acceptance, and traceability. |
+| Feature driven by architecture, NFRs, or constraints | Feature Spec Design-First | Starts from the technical design and derives feasible requirements. |
+| Well-understood, low-risk feature | Quick Plan | Generates requirements/design/tasks in one pass. |
+| Complex or critical bug | Bugfix Spec | Focuses on root cause, expected behavior, and non-regression. |
+| Broad refactoring | Feature Spec or Design-First | Requires plan, dependencies, and acceptance criteria. |
+| PR review in CI | Headless CLI | Automates review without an interactive terminal. |
+| Multi-repo/PR work in the browser | Kiro Web | Uses sandbox and GitHub integration. |
+| Integration with external tooling | MCP | Gives the agent controlled access to tools/context. |
+| Packaged knowledge of a technology/process | Power | Loads tools, MCP, and steering on demand. |
+| Repetitive task on an IDE event | Hook | Automates with triggers and reduces manual variation. |
+
+### 11.2 New feature, single spec (standard flow)
+
+```text
+1. /kiro-discovery "<idea>"                # routes, writes brief.md
+2. /kiro-spec-init <feature-name>          # creates .kiro/specs/<feature-name>/
+3. /kiro-spec-requirements <feature-name>  # drafts requirements.md  [human approval]
+4. /kiro-spec-design <feature-name>        # drafts design.md (+ research.md)  [human approval]
+5. /kiro-spec-tasks <feature-name>         # drafts tasks.md  [human approval]
+6. /kiro-impl <feature-name>               # autonomous execution
+7. /kiro-validate-impl <feature-name>      # final validation gate
+```
+
+### 11.3 Brownfield extension
+
+```text
+1. /kiro-steering                          # capture current project memory
+2. /kiro-discovery "<idea>"                # routes the work
+3. /kiro-spec-init <feature-name>
+4. /kiro-spec-requirements <feature-name>
+5. /kiro-validate-gap <feature-name>       # check requirements vs existing code
+6. /kiro-spec-design <feature-name>
+7. /kiro-validate-design <feature-name>    # optional review gate
+8. /kiro-spec-tasks <feature-name>
+9. /kiro-impl <feature-name>
+```
+
+### 11.4 Multi-spec initiative
+
+```text
+1. /kiro-discovery "<large idea>"          # writes brief.md and roadmap.md
+2. /kiro-spec-batch                        # parallel multi-spec creation
+                                           # cross-spec review for contradictions
+3. /kiro-impl <feature-1>                  # per-spec implementation
+   /kiro-impl <feature-2>
+```
+
+### 11.5 Bugfix flow
+
+```text
+1. Reproduce the problem and record evidence.
+2. Create a Bugfix Spec (bugfix.md with Current / Expected / Unchanged Behavior).
+3. Ask the agent to investigate the root cause before proposing a patch.
+4. Review design.md with the root cause and fix approach.
+5. Require a test that fails before the fix and passes after.
+6. Require a non-regression test for unchanged behavior.
+7. Submit a small PR with an explicit root cause explanation.
+```
+
+### 11.6 Refactor flow
+
+```text
+1. Define the goal: readability, performance, modularity, debt removal, migration.
+2. List behaviors that must not change.
+3. Use Design-First if the refactoring is structural.
+4. Break the work into small phases.
+5. Run tests at each phase.
+6. Do NOT mix refactoring with functional changes in the same PR.
+```
+
+### 11.7 Small change, no spec
+
+```text
+1. /kiro-discovery "<change>"              # returns: "no spec needed, implement directly"
+2. <direct implementation>
+```
+
+`/kiro-discovery` is allowed to return "no spec needed" as a valid route. SDD is not about putting a formal contract around every change — only those where the contract earns its cost.
+
+### 11.8 Quick Plan policy
+
+Quick Plan still produces the same artifacts (requirements, design, tasks), but without approvals between phases. Quick Plan SHALL NOT be used for:
+
+- Regulated or sensitive domains.
+- Changes with financial, security, privacy, or availability impact.
+- Architectural changes.
+- Features with ambiguous requirements.
+- Critical bugs.
+- Flows that require cross-team alignment.
+
+---
+
+## 12. Security, privacy, and governance
+
+### 12.1 `.kiroignore`
+
+Every repository SHALL have `.kiroignore`:
+
+```gitignore
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials/
+secrets/
+private/
+
+# Cloud and local credentials
+.aws/
+.gcp/
+.azure/
+.kube/
+
+# Customer and sensitive data
+customer-data/
+pii/
+data/exports/
+*.dump
+*.sql
+*.csv
+
+# Build and dependency artifacts
+node_modules/
+dist/
+build/
+.next/
+coverage/
+target/
+.gradle/
+.venv/
+__pycache__/
+
+# Internal compliance/audit docs
+compliance/internal/
+audit-reports/
+```
+
+Enable it in settings:
+
+```json
+{
+  "kiroAgent.agentIgnoreFiles": [".kiroignore"]
+}
+```
+
+**Best practices:**
+
+- Start with credentials and secrets.
+- Document why patterns were ignored.
+- Test by asking Kiro to read an ignored file.
+- Review periodically.
+- Combine global team patterns for consistency.
+
+### 12.2 Clean environment
+
+For sensitive projects:
+
+- Use a separate workspace.
+- Avoid opening multiple unrelated repositories.
+- Remove unnecessary credentials from the environment.
+- Use temporary credentials.
+- Isolate cloud profiles.
+- Audit repository permissions.
+- Consider a container or dedicated user for agent work.
+
+### 12.3 Sensitive data
+
+Do NOT send to Kiro:
+
+- Secrets.
+- Private keys.
+- Tokens.
+- Customer credentials.
+- Unnecessary personal data.
+- Database dumps.
+- Internal regulatory documents without approval.
+
+When sensitive context is unavoidable, apply minimization, masking, internal approval, and reduced scope.
+
+### 12.4 Models and credit management
+
+Suggested policy:
+
+- Use **Auto** as the default to balance quality, latency, and cost.
+- Use stronger models for architecture, complex specs, multi-file debugging, and difficult decisions.
+- Use faster/cheaper models for simple iterations, explanations, small adjustments, and drafts.
+- Monitor credit consumption in hooks, Powers, and headless automations.
+- Avoid automatic loops with no limit.
+- In CI/CD, run Kiro only on useful events with objective prompts.
+
+---
+
+## 13. Best practices by stack
+
+### 13.1 TypeScript/JavaScript
+
+Recommended steering:
+
+- `tsconfig` patterns.
+- ESLint/Prettier.
+- Module structure.
+- Conventions for React/Next/Vite/Node.
+- Unit/integration/e2e test patterns.
+- Type policy: avoid `any`, prefer explicit types at boundaries.
+- Rules for package managers and monorepos.
+
+Useful hooks:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+### 13.2 Python
+
+Recommended steering:
+
+- Minimum Python version.
+- Use of venv/poetry/uv/pip according to team standards.
+- Lint/format with ruff/black/mypy, if used.
+- Package structure.
+- pytest conventions.
+- Typing and input validation.
+
+Useful hooks:
+
+```bash
+python -m pytest
+ruff check .
+ruff format --check .
+mypy .
+```
+
+### 13.3 Java
+
+Recommended steering:
+
+- Supported JDK.
+- Maven/Gradle.
+- Spring/Quarkus/Micronaut patterns when applicable.
+- Unit and integration tests.
+- Package conventions.
+- Exception handling.
+- Logging and observability.
+
+Useful hooks:
+
+```bash
+mvn test
+mvn verify
+./gradlew test
+./gradlew check
+```
+
+---
+
+## 14. Source control, commits, and PRs
+
+### 14.1 Commits
+
+Use conventional messages when the team adopts that standard:
+
+```text
+feat(auth): add password reset flow
+fix(api): prevent duplicate webhook processing
+test(auth): add brute-force lockout coverage
+refactor(payments): isolate provider adapter
+```
+
+Even when Kiro generates the message, review it before committing.
+
+### 14.2 PRs
+
+Every PR generated with Kiro's help SHALL contain:
+
+- Objective.
+- Link or reference to the Spec.
+- Technical summary.
+- Changed files/modules.
+- Executed tests.
+- Risks and trade-offs.
+- Screenshots/logs when applicable.
+- Rollback instructions when needed.
+
+Suggested PR template:
+
+```markdown
+## Objective
+
+## Spec / context
+
+## What changed
+
+## How it was validated
+- [ ] lint
+- [ ] typecheck
+- [ ] unit tests
+- [ ] integration/e2e tests
+- [ ] build
+
+## Risks / trade-offs
+
+## Rollback
+
+## Notes for review
+```
+
+---
+
+## 15. Operational checklists
+
+### 15.1 Before starting a Spec
+
+- [ ] Clear goal.
+- [ ] Scope and out-of-scope defined.
+- [ ] Users/personas defined.
+- [ ] Success criteria defined.
+- [ ] Security/privacy requirements mapped.
+- [ ] Known edge cases listed.
+- [ ] External dependencies identified.
+- [ ] Steering updated.
+
+### 15.2 Before approving requirements
+
+- [ ] Numeric IDs are present and unique.
+- [ ] Every requirement uses EARS phrasing.
+- [ ] Acceptance criteria are testable and single-behavior.
+- [ ] Error cases and edge cases are covered.
+- [ ] No implementation language ("how") — only behavior ("what").
+- [ ] Non-functional requirements (performance, security, observability) are present.
+- [ ] Compatibility and migration considered.
+- [ ] Ambiguities resolved.
+
+### 15.3 Before approving design
+
+- [ ] Architecture consistent with `tech.md` and `structure.md`.
+- [ ] Architecture Pattern & Boundary Map (Mermaid) is present.
+- [ ] File Structure Plan is fully populated and matches the boundary map.
+- [ ] Every requirement appears in the Requirements Traceability table.
+- [ ] Every component has Intent, Requirements, Responsibilities, Dependencies, Contract.
+- [ ] Errors, timeouts, retries, idempotency are addressed.
+- [ ] Observability is included.
+- [ ] Rollout/rollback strategy when needed.
+- [ ] Trade-offs documented.
+
+### 15.4 Before approving tasks
+
+- [ ] Tasks are small (1–3 hours per sub-task).
+- [ ] Phase ordering: Foundation → Core → Integration → Validation.
+- [ ] `_Requirements:_` is present on every task, with numeric IDs only.
+- [ ] `_Boundary:_` is present on every `(P)` task and matches a component in `design.md`.
+- [ ] `_Depends:_` is declared only for cross-boundary dependencies.
+- [ ] Parallel safety is verified by `tasks-parallel-analysis.md`.
+- [ ] Validation commands defined.
+- [ ] Optional tasks marked.
+- [ ] Clear completion criteria.
+
+### 15.5 Before claiming completion
+
+- [ ] `kiro-verify-completion` ran and produced fresh evidence.
+- [ ] All tests pass; no `.skip` left behind without an explicit ticket.
+- [ ] `spec.json` reflects current phase and approvals.
+- [ ] Implementation Notes captured in `tasks.md` for cross-task learnings.
+
+### 15.6 Security checklist
+
+- [ ] `.kiroignore` configured before exposing the repo to the agent.
+- [ ] No secrets in steering, specs, prompts, or skill files.
+- [ ] MCP servers and tools reviewed; `autoApprove` minimal.
+- [ ] Trusted commands are read/validation only by default.
+- [ ] Environment free of unnecessary credentials.
+- [ ] Sensitive data masked when context is unavoidable.
+- [ ] PR reviewed by a human.
+
+### 15.7 CI/CD with CLI checklist
+
+- [ ] `KIRO_API_KEY` stored as a secret.
+- [ ] Job uses restricted `--trust-tools`.
+- [ ] Prompt is objective.
+- [ ] Context is passed via pipe or controlled file.
+- [ ] Job does not write code without an explicit policy.
+- [ ] Required MCP uses `--require-mcp-startup`.
+- [ ] Logs do not contain secrets.
+
+---
+
+## 16. Reusable prompts
+
+### 16.1 Create a feature Spec
+
+```text
+Create a Feature Spec Requirements-First for [name].
+Goal: [goal].
+Users: [personas].
+Scope: [included].
+Out of scope: [excluded].
+Acceptance criteria: [list].
+Constraints: [security, performance, compliance, integration].
+Edge cases: [list].
+Before design, point out ambiguities and open questions.
+```
+
+### 16.2 Create a Design-First Spec
+
+```text
+Create a Feature Spec Design-First for [technical goal].
+Desired architecture: [description].
+Required stack: [stack].
+Constraints: [latency, throughput, cost, compliance, compatibility].
+Integrations: [services/APIs].
+Expected interfaces: [contracts].
+Testing strategy: [unit/integration/e2e/property-based].
+Rollout/rollback strategy: [plan].
+```
+
+### 16.3 Analyze requirements
+
+```text
+Analyze the requirements of this Spec.
+Look for ambiguities, conflicts, non-testable requirements, missing edge cases,
+security impacts, and undeclared dependencies.
+Reply with: problem, severity, why it matters, and adjustment suggestion.
+```
+
+### 16.4 Review design
+
+```text
+Review the design of this Spec against the steering files product.md, tech.md,
+structure.md, security.md, and testing.md.
+Check adherence to architecture, risks, testability, observability, rollback,
+and trade-offs.
+Do not implement code yet.
+```
+
+### 16.5 Create a Bugfix Spec
+
+```text
+Create a Bugfix Spec for the problem below.
+Symptom: [description].
+Reproduction steps: [steps].
+Current behavior: [current].
+Expected behavior: [expected].
+Behaviors that MUST NOT change: [list].
+Logs/evidence: [logs].
+First investigate the root cause, then propose design and tasks.
+```
+
+### 16.6 Review a diff
+
+```text
+Use #git diff and review the current changes.
+Evaluate correctness, security, regressions, tests, readability, adherence to
+steering, and performance impact.
+Reply in code review format: finding, severity, evidence, recommendation.
+```
+
+### 16.7 Generate tests
+
+```text
+Based on #file [file] and the active Spec, generate tests for acceptance
+criteria not yet covered.
+Include success, error, edge, and regression cases.
+Do not change production implementation without asking for confirmation.
+```
+
+---
+
+## 17. Adoption plan
+
+### Phase 1 — Foundations (week 1)
+
+- [ ] Create `.kiroignore` and configure protected paths.
+- [ ] Generate foundational steering: `product.md`, `tech.md`, `structure.md`.
+- [ ] Adopt the entry-point file (`CLAUDE.md` or `AGENTS.md`) pointing to this guide.
+- [ ] Install `cc-sdd` or copy the rules and templates manually.
+- [ ] Configure required MCPs at the correct level (workspace vs user).
+- [ ] Define a local policy for trusted commands and denylist.
+- [ ] Run one pilot spec end-to-end (small, low-risk feature).
+
+### Phase 2 — Standardization (weeks 2–3)
+
+- [ ] Add domain-specific steering: `security.md`, `api-conventions.md`, `testing.md`, `observability.md`.
+- [ ] Customize templates in `.kiro/settings/templates/` for team conventions.
+- [ ] Adopt phase-gate review in PR templates.
+- [ ] Create basic lint/test hooks.
+- [ ] Define MCP and trusted-command policy.
+- [ ] Create custom agents for review/test/debug.
+
+### Phase 3 — Automation (weeks 4–6)
+
+- [ ] Enable `/kiro-impl` autonomous mode for low-risk features.
+- [ ] Add CI workflow for agent-dispatched review.
+- [ ] Wire validation gates (`/kiro-validate-impl`) into the PR pipeline.
+- [ ] Configure headless CLI in PRs.
+- [ ] Create internal Powers for company standards.
+- [ ] Use Kiro Web for multi-repo tasks or controlled PRs.
+
+### Phase 4 — Continuous governance (ongoing)
+
+- [ ] Audit credit consumption and skill execution time.
+- [ ] Review and rotate trusted commands and MCP servers.
+- [ ] Measure quality: PR cycle time, post-merge regressions, test coverage per critical feature.
+- [ ] Update steering on every architectural change.
+
+---
+
+## 18. Recommended metrics
+
+- Percentage of PRs with an associated Spec.
+- Average cycle time per PR.
+- Rework rate in review.
+- Bugs/regressions after merge.
+- Test coverage per critical feature.
+- Number of patterns formalized in Steering.
+- Number of active hooks and average execution time.
+- Credit usage per team/project.
+- Security findings per PR.
+- Incidents caused by inappropriate agent use.
+- Time-to-first-spec for new repositories.
+- Average lifetime of a skill before retirement or major revision.
+
+---
+
+## 19. Roles and responsibilities
+
+### Developer
+
+- Create or update Specs.
+- Review generated diffs.
+- Run validations.
+- Do NOT expose secrets.
+- Update steering when learning a recurring pattern.
+
+### Tech Lead
+
+- Approve the design of relevant changes.
+- Ensure architectural adherence.
+- Review technical steering.
+- Define the policy for Autopilot/Quick Plan usage.
+
+### QA/Quality
+
+- Review acceptance criteria.
+- Validate test coverage.
+- Define testing patterns in steering.
+
+### Platform/DevOps
+
+- Govern headless CLI, MCP, CI, and secrets.
+- Standardize hooks and internal Powers.
+- Audit permissions and GitHub integration.
+
+### Security
+
+- Define denylist, base `.kiroignore`, and MCP policy.
+- Review usage in sensitive projects.
+- Audit data, credentials, and vendors.
+
+### Skill / Workflow Author
+
+- Capture real expertise (hands-on tasks or synthesized artifacts).
+- Refine skills with execution traces.
+- Add gotchas for every observed correction.
+- Refactor reinvented logic into scripts.
+- Version skills with the repository.
+
+---
+
+## 20. Anti-patterns to avoid
+
+### 20.1 SDD anti-patterns
+
+- Skipping phase gates with `-y` or `--auto` outside of explicitly fast-track cases.
+- Writing tasks as file-level instructions ("edit `albums.ts`") instead of capabilities and outcomes.
+- Omitting `_Boundary:_` on `(P)` tasks — silent breakage in parallel runs.
+- Allowing `design.md` to grow past 1,000 lines instead of decomposing the spec.
+- Treating `research.md` as optional decoration — every finding must connect to a design commitment.
+- Using `kiro-spec-quick` for regulated, security-sensitive, or ambiguous domains.
+- Letting steering accumulate stale facts — review on every architectural change.
+- Treating specs as documentation written *after* the code.
+- Mixing exploratory prompting with production-impacting changes in the same session.
+- Skipping the "why" — recording rules without the rationale that lets future reviewers judge edge cases.
+- Letting specs and code drift silently — without periodic reconciliation, SDD collapses into traditional documentation.
+
+### 20.2 Kiro IDE/operational anti-patterns
+
+- Asking "implement this" without context, requirements, or acceptance.
+- Using Autopilot for a critical task without a Spec.
+- Trusting all commands/tools for convenience.
+- Putting secrets in prompts or steering.
+- Committing `mcp.json` with credentials. Use `${ENV_VAR}` placeholders.
+- Using Quick Plan for regulated or ambiguous domains.
+- Accepting a diff without running tests.
+- Mixing large refactoring with functional change.
+- Installing Powers/MCPs from unknown sources.
+- Keeping steering out of date.
+- Treating Supervised mode as a sandbox.
+- Using Kiro Web with untrusted repositories or overly broad permissions.
+
+### 20.3 Skill authoring anti-patterns
+
+- Generating a skill from an LLM with no domain context.
+- Generic instructions ("handle errors appropriately," "follow best practices") with no concrete behavior.
+- Documenting what the agent already knows (HTTP, JSON, common languages).
+- Presenting multiple tools as equal options instead of choosing a default.
+- Mixing unrelated capabilities into a single skill.
+- Skipping iterative refinement — shipping the first draft.
+- Storing detailed reference material in `references/` without telling the agent when to load it.
+- Treating gotchas as optional polish rather than the core value of the skill.
+- Writing prose descriptions of output format instead of providing a template.
+- Reinventing deterministic logic in prompt form instead of bundling a script.
+- Putting the whole workflow inside one giant skill instead of decomposing into a coherent surface (e.g., the 17-skill set).
+
+---
+
+## 21. Glossary
+
+- **Agentic SDLC** — Software development lifecycle driven by AI agents under human-approved specifications.
+- **Boundary** — A component scope inside which a task is allowed to make changes; named in `design.md` and referenced in `tasks.md`.
+- **EARS** — Easy Approach to Requirements Syntax. A controlled-vocabulary format (WHEN/WHILE/IF/WHERE/SHALL) for testable requirements.
+- **Hook** — Event-driven automation in Kiro that runs a Shell Command or Agent Prompt on a trigger.
+- **MCP** — Model Context Protocol; the integration standard for giving agents access to external tools and resources.
+- **Phase gate** — Required human approval between Discovery → Requirements → Design → Tasks → Implementation.
+- **Power** — A bundled package of `POWER.md` + MCP + steering + hooks that an agent can install on demand.
+- **Skill** — A reusable, well-scoped capability bundle (`SKILL.md` + `references/` + `assets/` + `scripts/`) loaded on demand by an agent.
+- **Spec** — A per-feature contract: `requirements.md` (or `bugfix.md`), `design.md`, `tasks.md`, optional `research.md`, plus `spec.json` for phase/approval state.
+- **Steering** — Project memory: markdown files in `.kiro/steering/` loaded automatically into agent context.
+- **Sub-agent** — A delegated, scoped agent role (reviewer, debugger, security-reviewer) invoked by the primary agent.
+- **Vibe mode** — Free-form prompt mode used for discovery and prototyping; not allowed for production-impacting work without promotion to a Spec.
+
+---
+
+## 22. Provenance and reference implementation
+
+This guide is **self-contained** — it is the only document you need to consult. It consolidates and supersedes the source material below, whose content is inlined in the sections noted (the source files are kept only for historical provenance and need not be opened):
+
+- **Agentic SDLC playbook** (`agentic_sdlc_adoption_guide-en.md`) — the layered model and adoption steps → §§2–8, 11, 17.
+- **Native Kiro IDE usage** (`guia_kiro_boas_praticas_time_dev-en.md`) — Hooks, Specs UI, MCP, trusted commands, Kiro Web → §§5–7, 10, 12–19.
+- **Skill authoring** (`skill_creation_best_practices-en.md`) — the principles behind every `SKILL.md` → §§8–9.
+- **Methodology comparison** (`spec_driven_development_comparison-en.md`) — when to pick Kiro vs Spec Kit vs BMAD → §2.5.
+
+- **Reference implementation** — `cc-sdd` ships this entire workflow as installable Agent Skills across multiple AI coding agents. Use it as a starting point or copy the patterns piecemeal.
+
+---
+
+## 23. Compliance summary
+
+This document is the canonical specification for any Kiro workflow developed by the team. By the time a workflow is delivered, the following SHALL be true:
+
+- All steering files exist with the correct inclusion modes.
+- All specs use EARS for requirements and the boundary-annotated format for tasks.
+- All skills conform to the `SKILL.md` template, the 500-line limit, and the progressive-disclosure rule for references.
+- All MCP servers are reviewed, scoped, and free of versioned credentials.
+- All hooks declare a single responsibility and either run idempotent shell commands or contextual Agent Prompts.
+- All custom agents declare the smallest tool scope required.
+- `.kiroignore` is in place and covers secrets, customer data, and large artifacts.
+- All PRs link back to a Spec or document why no Spec was required.
+- Approvals in `spec.json` reflect actual human review at each phase gate.
+
+Any workflow that does not meet these requirements is not considered production-ready under this specification.
+
+---
+
+## 24. Versioning
+
+This document SHALL be versioned with the repository. Major revisions follow these rules:
+
+- **Major version (X.0)** — Breaking changes to the artifact model, phase-gate sequence, or skill structure.
+- **Minor version (X.Y)** — New mandatory checklists, new required steering files, new skill conventions.
+- **Patch version (X.Y.Z)** — Clarifications, additional examples, typo and link corrections.
+
+Every revision SHALL include:
+
+- A changelog entry summarizing the changes.
+- An updated `Date` in the header.
+- A note in the PR description on whether existing repositories need migration.

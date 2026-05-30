@@ -1,0 +1,28 @@
+# Tasks Generation
+
+## Sizing
+- Major tasks: 3-10 sub-tasks.
+- Sub-tasks: 1-3 hours of focused work.
+- Phases: Foundation → Core → Integration → Validation.
+
+## Annotations
+- `_Requirements: 1.1, 1.2_` — numeric IDs only, no descriptions.
+- `_Boundary: ComponentName_` — required on `(P)` tasks; matches component names from design.md.
+- `_Depends: 3.1, 4.2_` — cross-boundary dependencies only; sequential order is implicit.
+- `(P)` — parallel-capable, runs alongside other (P) tasks in different boundaries.
+
+## Avoid
+- Generic tasks like "implement the backend".
+- File-level instructions like "edit albums.ts".
+
+## Prefer
+- Capabilities and outcomes:
+  - "Create POST /sessions endpoint with payload validation, 201 response, and 400 for invalid data."
+  - "Add a unit test for login lockout after 5 failed attempts."
+  - "Add metric auth.login.failed with non-sensitive labels."
+
+## Mechanical Checks
+- [ ] Every task carries `_Requirements:_` with numeric IDs only.
+- [ ] Every `(P)` task carries `_Boundary:_`.
+- [ ] Every `_Depends:_` references a task ID that exists in this file.
+- [ ] No two `(P)` tasks share the same boundary.

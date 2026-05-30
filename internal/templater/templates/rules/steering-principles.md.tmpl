@@ -1,0 +1,23 @@
+# Steering Principles
+
+## The Golden Rule
+> If new code follows existing patterns, steering should not need updating.
+
+## What belongs in steering
+- Organizational patterns, naming conventions, import strategies.
+- Architectural decisions and their rationale.
+- Technology standards and version policy.
+- Security, testing, observability, API conventions.
+
+## What does NOT belong
+- File listings or directory dumps.
+- Implementation details derivable from the code.
+- Secrets, tokens, credentials, customer data.
+- Agent-specific tooling internals.
+
+## Per-file checklist
+- [ ] One domain per file.
+- [ ] Descriptive name.
+- [ ] Includes the "why", not just the rule.
+- [ ] Includes before/after examples where they clarify.
+- [ ] Reviewed during architecture changes.

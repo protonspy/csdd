@@ -1,0 +1,23 @@
+# Design Principles
+
+## Component Design
+- Single responsibility per component.
+- Explicit dependencies in/out — no global state for cross-component data.
+- Contracts (interfaces, message shapes) declared before bodies.
+
+## Dependency Direction
+- Outer layers depend on inner; never the reverse.
+- API → Service → Repository → Storage. Storage MUST NOT call Service.
+
+## Type Safety
+- Avoid `any` / untyped escapes; if used, document why and scope tightly.
+- Validate untrusted data at the boundary, not deep in the call stack.
+
+## Error Handling
+- Errors carry codes, messages, and correlation context; no leaking internals.
+- Distinguish recoverable (retry) from unrecoverable (fail-fast) errors.
+- Idempotency keys on every externally-triggered mutation.
+
+## Observability
+- Every component declares what it logs, what it measures, and what it traces.
+- No metric labels carry high-cardinality values.

@@ -1,0 +1,29 @@
+# EARS Format
+
+EARS (Easy Approach to Requirements Syntax) is the requirement language for
+this project. Trigger keywords are fixed English and SHALL NOT be localized.
+
+## Templates
+
+| Pattern | Template |
+|---|---|
+| Event-Driven | `WHEN [event] THE SYSTEM SHALL [response]` |
+| State-Driven | `WHILE [precondition] THE SYSTEM SHALL [behavior]` |
+| Unwanted Behavior | `IF [trigger] THEN the system SHALL [response]` |
+| Optional Feature | `WHERE [feature/flag] THE SYSTEM SHALL [behavior]` |
+| Ubiquitous | `THE SYSTEM SHALL [behavior]` |
+
+## Rules
+
+- Use `shall`, not `should`.
+- Localize only the variable parts; keep trigger keywords in English.
+- One behavior per criterion; split compound statements.
+- Phrase objectively. Avoid "fast", "robust", "user-friendly" — quantify.
+- Every criterion SHALL be testable.
+
+## Mechanical checks (run before requesting approval)
+
+- [ ] Every numbered criterion starts with `WHEN`, `WHILE`, `IF`, `WHERE`, or `THE SYSTEM`.
+- [ ] No criterion uses `should`.
+- [ ] No implementation language ("how") — only behavior ("what").
+- [ ] Numeric IDs are unique inside the file.
