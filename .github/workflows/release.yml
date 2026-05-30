@@ -1,0 +1,127 @@
+name: release
+
+# Two release flavors, both gated on the CI workflow passing first:
+#
+#   • push to main      → refreshes a rolling "latest" pre-release with fresh
+#                          cross-platform binaries (a new release every push).
+#   • push a tag v*     → publishes a stable, versioned GitHub Release.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  # Reuse the full CI gate (gofmt, vet, build, race tests) — no binaries are
+  # built or released unless this passes.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=latest-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build & package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          bin=csdd
+          [ "$GOOS" = "windows" ] && bin=csdd.exe
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/livelo/csdd/cmd.version=${VERSION}" \
+            -o "dist/${bin}" .
+          name="csdd_${VERSION}_${GOOS}_${GOARCH}"
+          cd dist
+          if [ "$GOOS" = "windows" ]; then
+            zip -q "${name}.zip" "${bin}"
+          else
+            tar -czf "${name}.tar.gz" "${bin}"
+          fi
+          rm -f "${bin}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csdd-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum * | tee checksums.txt
+
+      # --- Stable, versioned release (on tag push) ---
+      - name: Publish stable release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          make_latest: 'true'
+          files: dist/*
+
+      # --- Rolling "latest" pre-release (on main push) ---
+      # Remove the previous rolling release + tag so the new one points at the
+      # current commit, then recreate it.
+      - name: Reset previous "latest"
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes \
+            --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Publish "latest" pre-release
+        if: github.ref_type != 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          body: |
+            Rolling build from `main` — updated on every push.
+            Commit: ${{ github.sha }}
+          files: dist/*

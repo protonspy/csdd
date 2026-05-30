@@ -14,6 +14,12 @@ import (
 	"github.com/livelo/csdd/internal/render"
 )
 
+// version is the build version string. It defaults to "dev" for local builds
+// and is overridden at release time via the linker:
+//
+//	go build -ldflags "-X github.com/livelo/csdd/cmd.version=v1.2.3"
+var version = "dev"
+
 // Run dispatches `csdd <resource> <action> ...` to the appropriate handler.
 // args is os.Args[1:]. templates carries the embedded template tree.
 func Run(args []string, templates embed.FS) int {
@@ -34,7 +40,7 @@ func Run(args []string, templates embed.FS) int {
 		help(os.Stdout)
 		return 0
 	case "-v", "--version", "version":
-		fmt.Println("csdd 0.1.0")
+		fmt.Println("csdd " + version)
 		return 0
 	case "init":
 		return runInit(rest, templates)
