@@ -1,0 +1,36 @@
+---
+description: Generate a commit for the current reviewed slice — Claude writes the message from the diff and the active spec.
+argument-hint: [optional scope or note]
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git add:*), Bash(git commit:*), Bash(git log:*)
+---
+
+## Context
+- Status: !`git status --short`
+- Staged diff: !`git diff --cached`
+- Unstaged diff: !`git diff`
+- Recent commit style: !`git log --oneline -10`
+
+## Task
+
+Generate and create the commit for the current reviewed slice. **You** write the
+message — do not use a placeholder or a generic "update files".
+
+1. If nothing is staged, stage only the files that belong to this one logical
+   slice (leave unrelated changes out — split them into a separate commit).
+2. Write a Conventional Commits message inferred from the diff and the active
+   spec under `specs/`:
+   ```
+   <type>(<feature>): <imperative summary>
+
+   Implements <spec feature>; tasks <IDs>.
+   <one line on what changed and why>
+   ```
+   - `type` ∈ feat | fix | refactor | test | docs | chore.
+   - Reference the spec feature and the task IDs this slice completes.
+   - `$ARGUMENTS` may add extra scope or a note — fold it in when present.
+3. Create the commit with `git commit`. Do **not** push — the `pre-push` hook
+   runs the test gate at push time.
+4. Refuse to commit if a `code-reviewer` Blocker is still open, or if secrets
+   or debug code are present in the diff.
+
+Report the resulting commit hash and subject line.

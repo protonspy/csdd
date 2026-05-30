@@ -116,6 +116,12 @@ func HookFiles(efs fs.FS) (map[string]string, error) {
 	return staticTree(efs, "templates/hooks")
 }
 
+// CommandFiles returns every shipped slash command under templates/commands/,
+// keyed by on-disk filename (e.g. "commit.md").
+func CommandFiles(efs fs.FS) (map[string]string, error) {
+	return staticTree(efs, "templates/commands")
+}
+
 // WorkflowTemplateFiles returns the versioned templates that belong under
 // .claude/templates/. The embedded tree uses implementation-oriented
 // names; this function emits the canonical on-disk layout from the guide.
