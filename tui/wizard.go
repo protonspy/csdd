@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/protonspy/kspec/cmd"
-	"github.com/protonspy/kspec/internal/workspace"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // wizardKind picks which set of steps the wizard runs.

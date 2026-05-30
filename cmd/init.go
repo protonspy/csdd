@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/protonspy/kspec/internal/render"
-	"github.com/protonspy/kspec/internal/templater"
-	"github.com/protonspy/kspec/internal/workspace"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 func runInit(args []string, templates embed.FS) int {
@@ -46,15 +46,15 @@ func runInit(args []string, templates embed.FS) int {
 	render.Info("files created: " + intStr(created.files))
 	offerGitignore(root)
 	if !withBaseline {
-		render.Info("Run `kspec steering init` to scaffold standard steering files.")
+		render.Info("Run `csdd steering init` to scaffold standard steering files.")
 	}
 	return 0
 }
 
-// offerGitignore asks whether to add the root-level kspec artifacts (the binary
-// and kspec.md) to .gitignore, then appends the ones the user accepts. It is a
+// offerGitignore asks whether to add the root-level csdd artifacts (the binary
+// and csdd.md) to .gitignore, then appends the ones the user accepts. It is a
 // no-op when none of those files exist or when running non-interactively, so it
-// never blocks headless/agent-driven `kspec init`.
+// never blocks headless/agent-driven `csdd init`.
 func offerGitignore(root string) {
 	targets := gitignoreTargets(root)
 	if len(targets) == 0 {
@@ -107,7 +107,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 	files := map[string]string{
 		filepath.Join(root, ".kiroignore"):                   "templates/root/kiroignore.tmpl",
 		filepath.Join(root, "KIRO.md"):                       "templates/root/KIRO.md.tmpl",
-		filepath.Join(root, "kspec.md"):                      "templates/root/kspec.md.tmpl",
+		filepath.Join(root, "csdd.md"):                       "templates/root/csdd.md.tmpl",
 		filepath.Join(root, ".kiro", "settings", "mcp.json"): "templates/root/mcp.json.tmpl",
 		filepath.Join(root, "docs", "guides", "kiro_sdd.md"): "templates/guides/kiro-sdd.md.tmpl",
 	}

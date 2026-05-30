@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/protonspy/kspec/internal/frontmatter"
-	"github.com/protonspy/kspec/internal/render"
-	"github.com/protonspy/kspec/internal/templater"
-	"github.com/protonspy/kspec/internal/validator"
-	"github.com/protonspy/kspec/internal/workspace"
+	"github.com/protonspy/csdd/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/validator"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 func runSkill(args []string, templates embed.FS) int {
@@ -66,7 +66,7 @@ func skillCreate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec skill create NAME --description '...'")
+		render.Err("usage: csdd skill create NAME --description '...'")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -179,7 +179,7 @@ func skillShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec skill show NAME")
+		render.Err("usage: csdd skill show NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -217,7 +217,7 @@ func skillAddArtifact(args []string, subdir string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 2 {
-		render.Err("usage: kspec skill add-" + subdir + " SKILL FILE")
+		render.Err("usage: csdd skill add-" + subdir + " SKILL FILE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -304,7 +304,7 @@ func skillValidate(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec skill validate NAME")
+		render.Err("usage: csdd skill validate NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -340,7 +340,7 @@ func skillDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec skill delete NAME --force")
+		render.Err("usage: csdd skill delete NAME --force")
 		return 1
 	}
 	if !force {

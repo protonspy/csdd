@@ -8,7 +8,7 @@ import (
 )
 
 // TestEmbeddedGuideMatchesSource guards against drift between the human-edited
-// source guide (docs/kiro_sdd.md) and the embedded copy that `kspec init`
+// source guide (docs/kiro_sdd.md) and the embedded copy that `csdd init`
 // scaffolds. It skips gracefully when the repo source isn't reachable (e.g.
 // when the package is built from the module cache rather than the repo tree).
 func TestEmbeddedGuideMatchesSource(t *testing.T) {

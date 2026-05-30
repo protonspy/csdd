@@ -1,8 +1,8 @@
-// kspec — single-binary CLI + TUI for managing Kiro workflow artifacts.
+// csdd — single-binary CLI + TUI for managing Kiro workflow artifacts.
 //
 // Behavior summary:
-//   - `kspec` with no arguments launches the interactive TUI.
-//   - `kspec <resource> <action> ...` dispatches to the CLI surface.
+//   - `csdd` with no arguments launches the interactive TUI.
+//   - `csdd <resource> <action> ...` dispatches to the CLI surface.
 //   - The CLI exposes 100% of the TUI functionality so AI agents can drive
 //     the binary headlessly via flags.
 package main
@@ -10,9 +10,9 @@ package main
 import (
 	"os"
 
-	"github.com/protonspy/kspec/cmd"
-	"github.com/protonspy/kspec/internal/templater"
-	"github.com/protonspy/kspec/tui"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/tui"
 )
 
 func main() {

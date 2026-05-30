@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/protonspy/kspec/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/frontmatter"
 )
 
 var (

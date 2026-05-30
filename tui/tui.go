@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/protonspy/kspec/internal/workspace"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // Run is the entry point invoked by main when no CLI subcommand is provided.
@@ -141,7 +141,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) View() string {
-	header := Styles.Title.Render(" kspec — Kiro Workflow ") +
+	header := Styles.Title.Render(" csdd — Kiro Workflow ") +
 		"  " + Styles.Dim.Render("root: "+a.root)
 	footer := Styles.Hint.Render("q quit · esc back · enter confirm")
 

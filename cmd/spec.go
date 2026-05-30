@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/protonspy/kspec/internal/render"
-	"github.com/protonspy/kspec/internal/templater"
-	"github.com/protonspy/kspec/internal/validator"
-	"github.com/protonspy/kspec/internal/workspace"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/validator"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // SpecJSON mirrors the schema produced by the Python reference implementation.
@@ -72,7 +72,7 @@ func specInit(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec spec init FEATURE")
+		render.Err("usage: csdd spec init FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -112,7 +112,7 @@ func specInit(args []string, templates embed.FS) int {
 		return 1
 	}
 	render.OK("created " + workspace.Relative(r, target) + "/")
-	render.Info("next: `kspec spec generate <feature> --artifact requirements`")
+	render.Info("next: `csdd spec generate <feature> --artifact requirements`")
 	return 0
 }
 
@@ -191,7 +191,7 @@ func specShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec spec show FEATURE")
+		render.Err("usage: csdd spec show FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -275,7 +275,7 @@ func specGenerate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 || opts.Artifact == "" {
-		render.Err("usage: kspec spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix}")
+		render.Err("usage: csdd spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix}")
 		return 1
 	}
 	opts.Feature = positionals[0]
@@ -297,7 +297,7 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 	}
 	sdir := filepath.Join(r, ".kiro", "specs", opts.Feature)
 	if !pathExists(sdir) {
-		return fmt.Errorf("spec not found: %s. Run `kspec spec init %s` first", opts.Feature, opts.Feature)
+		return fmt.Errorf("spec not found: %s. Run `csdd spec init %s` first", opts.Feature, opts.Feature)
 	}
 	data, err := loadSpecJSON(sdir)
 	if err != nil {
@@ -380,7 +380,7 @@ func specApprove(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 || opts.Phase == "" {
-		render.Err("usage: kspec spec approve FEATURE --phase {requirements|design|tasks}")
+		render.Err("usage: csdd spec approve FEATURE --phase {requirements|design|tasks}")
 		return 1
 	}
 	opts.Feature = positionals[0]
@@ -472,7 +472,7 @@ func specValidate(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec spec validate FEATURE")
+		render.Err("usage: csdd spec validate FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -518,7 +518,7 @@ func validationScope(specDir string, data SpecJSON) (validator.Phase, []validato
 	}
 	return validator.PhaseAll, []validator.Issue{{
 		File: "spec.json",
-		Msg:  "no generated artifacts to validate; run `kspec spec generate <feature> --artifact requirements` first",
+		Msg:  "no generated artifacts to validate; run `csdd spec generate <feature> --artifact requirements` first",
 	}}
 }
 
@@ -533,7 +533,7 @@ func specDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec spec delete FEATURE --force")
+		render.Err("usage: csdd spec delete FEATURE --force")
 		return 1
 	}
 	feature := positionals[0]

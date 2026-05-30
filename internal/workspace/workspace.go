@@ -78,7 +78,7 @@ var ErrAlreadyExists = errors.New("already exists")
 func SteeringDir(root string) (string, error) {
 	d := filepath.Join(root, ".kiro", "steering")
 	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/steering directory at %s. Run `kspec init` first", root)
+		return "", fmt.Errorf("no .kiro/steering directory at %s. Run `csdd init` first", root)
 	}
 	return d, nil
 }
@@ -87,7 +87,7 @@ func SteeringDir(root string) (string, error) {
 func SpecsDir(root string) (string, error) {
 	d := filepath.Join(root, ".kiro", "specs")
 	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/specs directory at %s. Run `kspec init` first", root)
+		return "", fmt.Errorf("no .kiro/specs directory at %s. Run `csdd init` first", root)
 	}
 	return d, nil
 }
@@ -97,7 +97,7 @@ func SpecsDir(root string) (string, error) {
 func SettingsDir(root string) (string, error) {
 	d := filepath.Join(root, ".kiro", "settings")
 	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/settings directory at %s. Run `kspec init` first", root)
+		return "", fmt.Errorf("no .kiro/settings directory at %s. Run `csdd init` first", root)
 	}
 	return d, nil
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/protonspy/kspec/cmd"
-	"github.com/protonspy/kspec/internal/templater"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/templater"
 )
 
 // freshTUIWorkspace bootstraps a full Kiro workspace (with baseline steering)

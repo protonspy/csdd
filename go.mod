@@ -1,4 +1,4 @@
-module github.com/protonspy/kspec
+module github.com/protonspy/csdd
 
 go 1.22
 

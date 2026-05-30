@@ -375,7 +375,7 @@ func TestResourceWithoutAction(t *testing.T) {
 		t.Run(resource, func(t *testing.T) {
 			code, _, errOut := run(t, resource)
 			if code == 0 {
-				t.Errorf("`kspec %s` should fail", resource)
+				t.Errorf("`csdd %s` should fail", resource)
 			}
 			if !strings.Contains(errOut, "missing action") {
 				t.Errorf("expected 'missing action' for %s, got %q", resource, errOut)

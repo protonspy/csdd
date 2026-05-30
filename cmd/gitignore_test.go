@@ -29,12 +29,12 @@ func readGitignore(t *testing.T, root string) string {
 	return string(data)
 }
 
-// TestInitAddsArtifactsToGitignoreOnYes covers the happy path: kspec.md (always
+// TestInitAddsArtifactsToGitignoreOnYes covers the happy path: csdd.md (always
 // created by init) and a present binary are both offered and appended on "y".
 func TestInitAddsArtifactsToGitignoreOnYes(t *testing.T) {
 	dir := t.TempDir()
 	// Drop a fake binary at root so gitignoreTargets picks it up.
-	if err := os.WriteFile(filepath.Join(dir, "kspec"), []byte("ELF"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "csdd"), []byte("ELF"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	withConfirmAnswer(t, "y\n", func() {
@@ -43,7 +43,7 @@ func TestInitAddsArtifactsToGitignoreOnYes(t *testing.T) {
 		}
 	})
 	got := readGitignore(t, dir)
-	for _, want := range []string{"/kspec", "/kspec.md"} {
+	for _, want := range []string{"/csdd", "/csdd.md"} {
 		if !strings.Contains(got, want) {
 			t.Errorf(".gitignore missing %q; got:\n%s", want, got)
 		}
@@ -79,7 +79,7 @@ func TestInitNonInteractiveSkipsGitignore(t *testing.T) {
 // nothing — neither anchored nor bare duplicates.
 func TestEnsureGitignoreIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	added, err := ensureGitignore(dir, []string{"kspec", "kspec.md"})
+	added, err := ensureGitignore(dir, []string{"csdd", "csdd.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestEnsureGitignoreIsIdempotent(t *testing.T) {
 	}
 	first := readGitignore(t, dir)
 
-	added, err = ensureGitignore(dir, []string{"kspec", "kspec.md"})
+	added, err = ensureGitignore(dir, []string{"csdd", "csdd.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,22 +101,22 @@ func TestEnsureGitignoreIsIdempotent(t *testing.T) {
 }
 
 // TestEnsureGitignoreRespectsExistingBareEntry skips a name already ignored with
-// no leading slash, so an existing `kspec` line is not duplicated as `/kspec`.
+// no leading slash, so an existing `csdd` line is not duplicated as `/csdd`.
 func TestEnsureGitignoreRespectsExistingBareEntry(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gitignore")
-	if err := os.WriteFile(path, []byte("kspec\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("csdd\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	added, err := ensureGitignore(dir, []string{"kspec", "kspec.md"})
+	added, err := ensureGitignore(dir, []string{"csdd", "csdd.md"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 1 || added[0] != "/kspec.md" {
-		t.Fatalf("expected only /kspec.md added, got %v", added)
+	if len(added) != 1 || added[0] != "/csdd.md" {
+		t.Fatalf("expected only /csdd.md added, got %v", added)
 	}
-	if got := readGitignore(t, dir); strings.Contains(got, "/kspec\n") {
-		t.Errorf("bare kspec entry was duplicated as /kspec:\n%s", got)
+	if got := readGitignore(t, dir); strings.Contains(got, "/csdd\n") {
+		t.Errorf("bare csdd entry was duplicated as /csdd:\n%s", got)
 	}
 }
 
@@ -126,11 +126,11 @@ func TestGitignoreTargetsOnlyExisting(t *testing.T) {
 	if got := gitignoreTargets(dir); len(got) != 0 {
 		t.Errorf("empty dir should yield no targets, got %v", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "kspec.md"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "csdd.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := gitignoreTargets(dir)
-	if len(got) != 1 || got[0] != "kspec.md" {
-		t.Errorf("expected [kspec.md], got %v", got)
+	if len(got) != 1 || got[0] != "csdd.md" {
+		t.Errorf("expected [csdd.md], got %v", got)
 	}
 }

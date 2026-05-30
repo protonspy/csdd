@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/protonspy/kspec/internal/render"
+	"github.com/protonspy/csdd/internal/render"
 )
 
 func pathExists(p string) bool {
