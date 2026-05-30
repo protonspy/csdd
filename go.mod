@@ -1,4 +1,4 @@
-module github.com/livelo/kspec
+module github.com/livelo/csdd
 
 go 1.22
 

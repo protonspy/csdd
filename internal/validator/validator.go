@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/livelo/kspec/internal/frontmatter"
+	"github.com/livelo/csdd/internal/frontmatter"
 )
 
 var (

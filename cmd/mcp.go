@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/livelo/kspec/internal/render"
-	"github.com/livelo/kspec/internal/validator"
-	"github.com/livelo/kspec/internal/workspace"
+	"github.com/livelo/csdd/internal/render"
+	"github.com/livelo/csdd/internal/validator"
+	"github.com/livelo/csdd/internal/workspace"
 )
 
 // MCPConfig mirrors .kiro/settings/mcp.json — the workspace-scope Model Context
@@ -140,7 +140,7 @@ func mcpAdd(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec mcp add NAME (--command CMD [--arg A]... | --url URL [--type sse|http]) [--env K=V]... [--disabled] [--force]")
+		render.Err("usage: csdd mcp add NAME (--command CMD [--arg A]... | --url URL [--type sse|http]) [--env K=V]... [--disabled] [--force]")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -322,7 +322,7 @@ func mcpRemove(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec mcp remove NAME --force")
+		render.Err("usage: csdd mcp remove NAME --force")
 		return 1
 	}
 	name := positionals[0]
@@ -371,7 +371,7 @@ func mcpToggle(args []string, disabled bool) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec mcp " + verb + " NAME")
+		render.Err("usage: csdd mcp " + verb + " NAME")
 		return 1
 	}
 	name := positionals[0]
@@ -498,7 +498,7 @@ func mcpResolveLoadNamed(args []string, action string) (mcpResult, string, int) 
 		return res, "", code
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec mcp " + action + " NAME")
+		render.Err("usage: csdd mcp " + action + " NAME")
 		return res, "", 1
 	}
 	return res, positionals[0], 0

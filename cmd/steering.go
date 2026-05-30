@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/livelo/kspec/internal/frontmatter"
-	"github.com/livelo/kspec/internal/render"
-	"github.com/livelo/kspec/internal/templater"
-	"github.com/livelo/kspec/internal/validator"
-	"github.com/livelo/kspec/internal/workspace"
+	"github.com/livelo/csdd/internal/frontmatter"
+	"github.com/livelo/csdd/internal/render"
+	"github.com/livelo/csdd/internal/templater"
+	"github.com/livelo/csdd/internal/validator"
+	"github.com/livelo/csdd/internal/workspace"
 )
 
 func runSteering(args []string, templates embed.FS) int {
@@ -112,7 +112,7 @@ func steeringCreate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec steering create NAME --inclusion {always|fileMatch|manual|auto} [...]")
+		render.Err("usage: csdd steering create NAME --inclusion {always|fileMatch|manual|auto} [...]")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -252,7 +252,7 @@ func steeringShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec steering show NAME")
+		render.Err("usage: csdd steering show NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -286,7 +286,7 @@ func steeringDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec steering delete NAME")
+		render.Err("usage: csdd steering delete NAME")
 		return 1
 	}
 	name := positionals[0]

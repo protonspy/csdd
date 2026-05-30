@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/livelo/kspec/cmd"
-	"github.com/livelo/kspec/internal/templater"
+	"github.com/livelo/csdd/cmd"
+	"github.com/livelo/csdd/internal/templater"
 )
 
 // freshTUIWorkspace bootstraps a full Kiro workspace (with baseline steering)

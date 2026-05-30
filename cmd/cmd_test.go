@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/livelo/kspec/internal/templater"
+	"github.com/livelo/csdd/internal/templater"
 )
 
 // capture swaps stdout/stderr for pipes during f() and returns whatever was
@@ -39,7 +39,7 @@ func run(t *testing.T, args ...string) (int, string, string) {
 	return capture(t, func() int { return Run(args, templater.FS) })
 }
 
-// freshWorkspace creates an empty directory and runs `kspec init --root` so the
+// freshWorkspace creates an empty directory and runs `csdd init --root` so the
 // rest of the test has a normal Kiro layout to operate on.
 func freshWorkspace(t *testing.T) string {
 	t.Helper()
@@ -55,13 +55,13 @@ func freshWorkspace(t *testing.T) string {
 func TestHelpAndVersion(t *testing.T) {
 	for _, arg := range []string{"--help", "-h", "help"} {
 		code, out, _ := run(t, arg)
-		if code != 0 || !strings.Contains(out, "kspec") {
+		if code != 0 || !strings.Contains(out, "csdd") {
 			t.Errorf("%s should print help with exit 0, got code=%d out=%q", arg, code, out)
 		}
 	}
 	for _, arg := range []string{"--version", "-v", "version"} {
 		code, out, _ := run(t, arg)
-		if code != 0 || !strings.Contains(out, "kspec") {
+		if code != 0 || !strings.Contains(out, "csdd") {
 			t.Errorf("%s should print version, got code=%d out=%q", arg, code, out)
 		}
 	}
@@ -79,7 +79,7 @@ func TestUnknownResource(t *testing.T) {
 
 func TestEmptyArgsShowsHelp(t *testing.T) {
 	code, out, _ := run(t)
-	if code != 0 || !strings.Contains(out, "kspec") {
+	if code != 0 || !strings.Contains(out, "csdd") {
 		t.Errorf("empty args should print help, got code=%d out=%q", code, out)
 	}
 }
@@ -122,7 +122,7 @@ func TestInitCreatesLayout(t *testing.T) {
 		".agents/agents",
 		".kiroignore",
 		"KIRO.md",
-		"kspec.md",
+		"csdd.md",
 		"docs/guides/kiro_sdd.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
@@ -153,7 +153,7 @@ func TestInitWithoutBaseline(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init failed: %d", code)
 	}
-	if !strings.Contains(out, "kspec steering init") {
+	if !strings.Contains(out, "csdd steering init") {
 		t.Errorf("non-baseline init should hint at steering init: %s", out)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".kiro/steering/product.md")); err == nil {
@@ -231,7 +231,7 @@ func TestSteeringCreateValidationErrors(t *testing.T) {
 		{"kebab violation", []string{"steering", "create", "BadName", "--inclusion", "always", "--root", dir},
 			"kebab-case"},
 		{"missing name", []string{"steering", "create", "--inclusion", "always", "--root", dir},
-			"usage: kspec steering create"},
+			"usage: csdd steering create"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

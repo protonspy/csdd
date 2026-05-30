@@ -11,10 +11,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/livelo/kspec/internal/render"
+	"github.com/livelo/csdd/internal/render"
 )
 
-// Run dispatches `kspec <resource> <action> ...` to the appropriate handler.
+// Run dispatches `csdd <resource> <action> ...` to the appropriate handler.
 // args is os.Args[1:]. templates carries the embedded template tree.
 func Run(args []string, templates embed.FS) int {
 	if len(args) == 0 {
@@ -34,7 +34,7 @@ func Run(args []string, templates embed.FS) int {
 		help(os.Stdout)
 		return 0
 	case "-v", "--version", "version":
-		fmt.Println("kspec 0.1.0")
+		fmt.Println("csdd 0.1.0")
 		return 0
 	case "init":
 		return runInit(rest, templates)
@@ -49,7 +49,7 @@ func Run(args []string, templates embed.FS) int {
 	case "mcp":
 		return runMCP(rest)
 	case "convert":
-		// Intentionally undocumented (not in helpText / kspec.md): a silent
+		// Intentionally undocumented (not in helpText / csdd.md): a silent
 		// escape hatch to port a Kiro workspace onto another agent platform.
 		return runConvert(rest)
 	case "tui":
@@ -64,7 +64,7 @@ func Run(args []string, templates embed.FS) int {
 }
 
 // normalizeLeadingGlobalFlags supports the documented form
-// `kspec --root PATH <resource> <action>` while preserving the resource-level
+// `csdd --root PATH <resource> <action>` while preserving the resource-level
 // parsers as the single source of truth for flag semantics.
 func normalizeLeadingGlobalFlags(args []string) ([]string, error) {
 	var globals []string
@@ -95,12 +95,12 @@ func help(w *os.File) {
 }
 
 const helpText = `
-kspec — manage Kiro workflow artifacts (steering, specs, skills, custom agents).
+csdd — manage Kiro workflow artifacts (steering, specs, skills, custom agents).
 
 USAGE
-  kspec                       Launch the interactive TUI.
-  kspec tui                   Launch the TUI explicitly.
-  kspec <resource> <action> [flags]
+  csdd                       Launch the interactive TUI.
+  csdd tui                   Launch the TUI explicitly.
+  csdd <resource> <action> [flags]
 
 RESOURCES
   init                        Bootstrap a Kiro workspace.
@@ -117,26 +117,26 @@ GLOBAL FLAGS
   -v, --version      Show version.
 
 EXAMPLES
-  kspec init --with-baseline
-  kspec steering create api-conventions \
+  csdd init --with-baseline
+  csdd steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
-  kspec steering create observability \
+  csdd steering create observability \
         --inclusion auto --description 'Logging/metrics. Use when adding instrumentation.'
-  kspec spec init photo-albums
-  kspec spec generate photo-albums --artifact requirements
-  kspec spec approve photo-albums --phase requirements
-  kspec skill create kiro-spec-tasks \
+  csdd spec init photo-albums
+  csdd spec generate photo-albums --artifact requirements
+  csdd spec approve photo-albums --phase requirements
+  csdd skill create kiro-spec-tasks \
         --description 'Generate tasks.md with boundary/depends annotations.'   # .agents/skills/
-  kspec agent create code-reviewer \
+  csdd agent create code-reviewer \
         --description 'Read-only adversarial reviewer' --tools Read --tools Grep   # .agents/agents/
-  kspec mcp add filesystem \
+  csdd mcp add filesystem \
         --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .kiro/settings/mcp.json
-  kspec mcp add linear --url https://mcp.linear.app/sse --type sse
-  kspec mcp validate
+  csdd mcp add linear --url https://mcp.linear.app/sse --type sse
+  csdd mcp validate
 `
 
 // parseFlags wraps fs.Parse to allow positional arguments to appear before
-// flags (e.g., `kspec steering create api-conventions --inclusion always`).
+// flags (e.g., `csdd steering create api-conventions --inclusion always`).
 // Go's stdlib flag.Parse stops at the first non-flag token, so we resume
 // parsing after consuming each positional. The returned slice contains all
 // positional arguments in original order.
@@ -182,7 +182,7 @@ func addForce(fs *flag.FlagSet, dst *bool) {
 // parseAction extracts the action subcommand and returns the remaining args.
 func parseAction(resource string, args []string) (string, []string, error) {
 	if len(args) == 0 {
-		return "", nil, fmt.Errorf("missing action for `kspec %s`", resource)
+		return "", nil, fmt.Errorf("missing action for `csdd %s`", resource)
 	}
 	return args[0], args[1:], nil
 }

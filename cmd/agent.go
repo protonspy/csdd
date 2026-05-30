@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/livelo/kspec/internal/frontmatter"
-	"github.com/livelo/kspec/internal/render"
-	"github.com/livelo/kspec/internal/templater"
-	"github.com/livelo/kspec/internal/workspace"
+	"github.com/livelo/csdd/internal/frontmatter"
+	"github.com/livelo/csdd/internal/render"
+	"github.com/livelo/csdd/internal/templater"
+	"github.com/livelo/csdd/internal/workspace"
 )
 
 func runAgent(args []string, templates embed.FS) int {
@@ -64,7 +64,7 @@ func agentCreate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec agent create NAME --description '...'")
+		render.Err("usage: csdd agent create NAME --description '...'")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -176,7 +176,7 @@ func agentShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec agent show NAME")
+		render.Err("usage: csdd agent show NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -206,7 +206,7 @@ func agentDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: kspec agent delete NAME --force")
+		render.Err("usage: csdd agent delete NAME --force")
 		return 1
 	}
 	if !force {

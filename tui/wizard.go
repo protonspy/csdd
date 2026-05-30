@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/livelo/kspec/cmd"
-	"github.com/livelo/kspec/internal/workspace"
+	"github.com/livelo/csdd/cmd"
+	"github.com/livelo/csdd/internal/workspace"
 )
 
 // wizardKind picks which set of steps the wizard runs.

@@ -1,6 +1,6 @@
 // Package templater renders the embedded artifact templates.
 // Templates live next to this package and are embedded at compile time so
-// the kspec binary is fully self-contained. FS is exported so tests and
+// the csdd binary is fully self-contained. FS is exported so tests and
 // tools can reuse the same template tree the production binary uses.
 package templater
 

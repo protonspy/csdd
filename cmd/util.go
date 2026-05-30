@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/livelo/kspec/internal/render"
+	"github.com/livelo/csdd/internal/render"
 )
 
 func pathExists(p string) bool {

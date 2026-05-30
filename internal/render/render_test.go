@@ -61,12 +61,12 @@ func TestColorHelpersDoNotPanic(t *testing.T) {
 // subprocess pattern because Die() calls os.Exit, which would terminate the
 // test binary itself if invoked directly.
 func TestDieDefaultExitCode(t *testing.T) {
-	if os.Getenv("KSPEC_TEST_DIE") == "1" {
+	if os.Getenv("CSDD_TEST_DIE") == "1" {
 		Die("boom")
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestDieDefaultExitCode$")
-	cmd.Env = append(os.Environ(), "KSPEC_TEST_DIE=1")
+	cmd.Env = append(os.Environ(), "CSDD_TEST_DIE=1")
 	err := cmd.Run()
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok {
@@ -78,12 +78,12 @@ func TestDieDefaultExitCode(t *testing.T) {
 }
 
 func TestDieCustomExitCode(t *testing.T) {
-	if os.Getenv("KSPEC_TEST_DIE") == "7" {
+	if os.Getenv("CSDD_TEST_DIE") == "7" {
 		Die("boom", 7)
 		return
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestDieCustomExitCode$")
-	cmd.Env = append(os.Environ(), "KSPEC_TEST_DIE=7")
+	cmd.Env = append(os.Environ(), "CSDD_TEST_DIE=7")
 	err := cmd.Run()
 	exitErr, ok := err.(*exec.ExitError)
 	if !ok {
