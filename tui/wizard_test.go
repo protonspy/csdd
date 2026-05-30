@@ -10,7 +10,7 @@ import (
 	"github.com/protonspy/csdd/internal/templater"
 )
 
-// freshTUIWorkspace bootstraps a full Kiro workspace (with baseline steering)
+// freshTUIWorkspace bootstraps a full Claude Code workspace (with baseline steering)
 // so wizard submit() handlers — which call straight into the cmd package — have
 // the directory tree they expect.
 func freshTUIWorkspace(t *testing.T) string {
@@ -173,7 +173,7 @@ func TestWizardRetreat(t *testing.T) {
 func TestWizardSubmitSkill(t *testing.T) {
 	dir := freshTUIWorkspace(t)
 	w := wizardModel{kind: wizSkill, templates: templater.FS, root: dir, state: map[string]any{
-		"name":        "kiro-tasks",
+		"name":        "spec-tasks",
 		"description": "Generate tasks.md annotations.",
 		"title":       "",
 	}}
@@ -182,7 +182,7 @@ func TestWizardSubmitSkill(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("skill submit failed: %#v", msg)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".agents/skills/kiro-tasks/SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".claude/skills/spec-tasks/SKILL.md")); err != nil {
 		t.Errorf("SKILL.md not created: %v", err)
 	}
 }
@@ -191,7 +191,7 @@ func TestWizardSubmitAgentDefaultsTools(t *testing.T) {
 	dir := freshTUIWorkspace(t)
 	// Empty tools slice in state must fall back to least-privilege Read+Grep.
 	w := wizardModel{kind: wizAgent, templates: templater.FS, root: dir, state: map[string]any{
-		"name":        "code-reviewer",
+		"name":        "custom-reviewer",
 		"description": "Read-only reviewer",
 		"tools":       []string{},
 		"model":       "none",
@@ -202,7 +202,7 @@ func TestWizardSubmitAgentDefaultsTools(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("agent submit failed: %#v", msg)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".agents/agents/code-reviewer.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude/agents/custom-reviewer.md"))
 	if err != nil {
 		t.Fatalf("agent file not created: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestWizardSubmitSteeringFileMatch(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("steering submit failed: %#v", msg)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".kiro/steering/api-conv.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".claude/steering/api-conv.md"))
 	if err != nil {
 		t.Fatalf("steering file not created: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestWizardSubmitMCPStdio(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("mcp stdio submit failed: %#v", msg)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".kiro/settings/mcp.json"))
+	data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestWizardSubmitMCPRemote(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("mcp remote submit failed: %#v", msg)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".kiro/settings/mcp.json"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 	for _, want := range []string{"linear", "\"type\": \"sse\"", "\"disabled\": true"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("mcp.json missing %q:\n%s", want, data)
@@ -321,7 +321,7 @@ func TestWizardSubmitSpecInit(t *testing.T) {
 	if !ok || rm.isErr {
 		t.Fatalf("spec init submit failed: %#v", msg)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro/specs/photo-albums/spec.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "specs/photo-albums/spec.json")); err != nil {
 		t.Errorf("spec.json not created: %v", err)
 	}
 }
@@ -342,7 +342,7 @@ func TestWizardSubmitSpecGenerateAndApprove(t *testing.T) {
 	// Replace the scaffold with EARS-valid content so approval passes its
 	// validation gate without --force (the wizard never forces).
 	valid := "### Requirement 1: Thing\n\n**Acceptance Criteria**\n1. WHEN a user acts THEN the system SHALL respond.\n"
-	if err := os.WriteFile(filepath.Join(dir, ".kiro/specs/feat/requirements.md"), []byte(valid), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "specs/feat/requirements.md"), []byte(valid), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

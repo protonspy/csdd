@@ -58,7 +58,7 @@ func TestSpecJSONCorrupted(t *testing.T) {
 	_, _, _ = run(t, "spec", "init", "rotten", "--root", dir)
 	// Overwrite spec.json with malformed JSON; every spec command that loads
 	// it should bail out with a non-zero exit.
-	bad := filepath.Join(dir, ".kiro/specs/rotten/spec.json")
+	bad := filepath.Join(dir, "specs/rotten/spec.json")
 	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestSpecApproveReadyForImplementationJSON(t *testing.T) {
 		_, _, _ = run(t, "spec", "generate", "ready", "--artifact", art, "--force", "--root", dir)
 		_, _, _ = run(t, "spec", "approve", "ready", "--phase", art, "--force", "--root", dir)
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".kiro/specs/ready/spec.json"))
+	data, _ := os.ReadFile(filepath.Join(dir, "specs/ready/spec.json"))
 	var parsed SpecJSON
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestSpecGenerateAuxiliaryDoesNotClobberPhase(t *testing.T) {
 	_, _, _ = run(t, "spec", "generate", "feat", "--artifact", "requirements", "--root", dir)
 
 	readPhase := func() SpecJSON {
-		data, _ := os.ReadFile(filepath.Join(dir, ".kiro/specs/feat/spec.json"))
+		data, _ := os.ReadFile(filepath.Join(dir, "specs/feat/spec.json"))
 		var parsed SpecJSON
 		if err := json.Unmarshal(data, &parsed); err != nil {
 			t.Fatal(err)
@@ -149,7 +149,7 @@ func TestInitScaffoldsSelfContainedGuide(t *testing.T) {
 	if code, _, _ := run(t, "init", "--root", dir); code != 0 {
 		t.Fatalf("init failed: %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "docs/guides/kiro_sdd.md"))
+	data, err := os.ReadFile(filepath.Join(dir, "docs/guides/claude-code-sdd.md"))
 	if err != nil {
 		t.Fatalf("guide not scaffolded: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestInitScaffoldsSelfContainedGuide(t *testing.T) {
 		t.Errorf("guide looks truncated (%d bytes)", len(text))
 	}
 	for _, want := range []string{
-		"# Kiro Workflow Development Specification",
+		"# Claude Code Spec-Driven Development",
 		"## 22. Provenance and reference implementation",
 		"self-contained",
 	} {
@@ -171,7 +171,7 @@ func TestInitScaffoldsSelfContainedGuide(t *testing.T) {
 	// docs (those names only appear in the provenance mapping, never after "see").
 	for _, src := range []string{
 		"agentic_sdlc_adoption_guide-en.md",
-		"guia_kiro_boas_praticas_time_dev-en.md",
+		"team_best_practices-en.md",
 		"skill_creation_best_practices-en.md",
 		"spec_driven_development_comparison-en.md",
 	} {
@@ -182,7 +182,7 @@ func TestInitScaffoldsSelfContainedGuide(t *testing.T) {
 }
 
 func TestSteeringInitOnMissingWorkspace(t *testing.T) {
-	// steering init creates .kiro/steering even when .kiro doesn't exist yet.
+	// steering init creates .claude/steering even when .claude doesn't exist yet.
 	dir := t.TempDir()
 	code, _, _ := run(t, "steering", "init", "--root", dir)
 	if code != 0 {
@@ -213,7 +213,7 @@ func TestSteeringCreateAutoEmitsBothNameAndDescription(t *testing.T) {
 		"--title", "Custom Auto", "--root", dir); code != 0 {
 		t.Fatal("create failed")
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".kiro/steering/auto-named.md"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".claude/steering/auto-named.md"))
 	text := string(data)
 	for _, want := range []string{
 		"inclusion: auto",
@@ -233,7 +233,7 @@ func TestSkillCreateCustomTitle(t *testing.T) {
 		"--description", "Trigger.", "--title", "Custom Title", "--root", dir); code != 0 {
 		t.Fatal("skill create failed")
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".agents/skills/custom-t/SKILL.md"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".claude/skills/custom-t/SKILL.md"))
 	if !strings.Contains(string(data), "# Custom Title") {
 		t.Errorf("custom title not applied:\n%s", data)
 	}
@@ -243,7 +243,7 @@ func TestSpecShowEmptyArtifactsList(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "spec", "init", "empty", "--root", dir)
 	// Remove spec.json so the directory exists but loadSpecJSON fails.
-	_ = os.Remove(filepath.Join(dir, ".kiro/specs/empty/spec.json"))
+	_ = os.Remove(filepath.Join(dir, "specs/empty/spec.json"))
 	if code, _, _ := run(t, "spec", "show", "empty", "--root", dir); code == 0 {
 		t.Error("spec show without spec.json should fail")
 	}
@@ -293,7 +293,7 @@ func TestInitDefaultCwd(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init without --root should fall back to cwd, got %d", code)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro/steering/product.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".claude/steering/product.md")); err != nil {
 		t.Errorf("expected product.md under cwd-init: %v", err)
 	}
 }
@@ -408,48 +408,48 @@ func TestWriteOperationsAgainstReadOnlyRoot(t *testing.T) {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
 	dir := freshWorkspace(t)
-	// Spec init creates a sub-dir under .kiro/specs and writes spec.json.
-	// Locking .kiro/specs read-only forces the create to fail.
-	specsDir := filepath.Join(dir, ".kiro/specs")
+	// Spec init creates a sub-dir under specs and writes spec.json.
+	// Locking specs read-only forces the create to fail.
+	specsDir := filepath.Join(dir, "specs")
 	if err := os.Chmod(specsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(specsDir, 0o755) })
 	if code, _, _ := run(t, "spec", "init", "blocked", "--root", dir); code == 0 {
-		t.Error("spec init should fail when .kiro/specs is read-only")
+		t.Error("spec init should fail when specs is read-only")
 	}
 
-	// Skill create writes under .agents/skills.
-	skillsDir := filepath.Join(dir, ".agents/skills")
+	// Skill create writes under .claude/skills.
+	skillsDir := filepath.Join(dir, ".claude/skills")
 	if err := os.Chmod(skillsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
 	if code, _, _ := run(t, "skill", "create", "blocked",
 		"--description", "d", "--root", dir); code == 0 {
-		t.Error("skill create should fail when .agents/skills is read-only")
+		t.Error("skill create should fail when .claude/skills is read-only")
 	}
 
-	// Agent create writes under .agents/agents.
-	agentsDir := filepath.Join(dir, ".agents/agents")
+	// Agent create writes under .claude/agents.
+	agentsDir := filepath.Join(dir, ".claude/agents")
 	if err := os.Chmod(agentsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(agentsDir, 0o755) })
 	if code, _, _ := run(t, "agent", "create", "blocked",
 		"--description", "d", "--root", dir); code == 0 {
-		t.Error("agent create should fail when .agents/agents is read-only")
+		t.Error("agent create should fail when .claude/agents is read-only")
 	}
 
-	// Steering create writes under .kiro/steering.
-	steeringDir := filepath.Join(dir, ".kiro/steering")
+	// Steering create writes under .claude/steering.
+	steeringDir := filepath.Join(dir, ".claude/steering")
 	if err := os.Chmod(steeringDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(steeringDir, 0o755) })
 	if code, _, _ := run(t, "steering", "create", "blocked",
 		"--inclusion", "always", "--root", dir); code == 0 {
-		t.Error("steering create should fail when .kiro/steering is read-only")
+		t.Error("steering create should fail when .claude/steering is read-only")
 	}
 }
 
@@ -460,7 +460,7 @@ func TestSteeringInitWriteFailure(t *testing.T) {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
 	dir := freshWorkspace(t)
-	steeringDir := filepath.Join(dir, ".kiro/steering")
+	steeringDir := filepath.Join(dir, ".claude/steering")
 	for _, n := range []string{"product.md", "tech.md", "structure.md"} {
 		_ = os.Remove(filepath.Join(steeringDir, n))
 	}
@@ -481,7 +481,7 @@ func TestSpecGenerateAndApproveWriteFailures(t *testing.T) {
 	}
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "spec", "init", "ro", "--root", dir)
-	specDir := filepath.Join(dir, ".kiro/specs/ro")
+	specDir := filepath.Join(dir, "specs/ro")
 	if err := os.Chmod(specDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestSpecGenerateAndApproveWriteFailures(t *testing.T) {
 }
 
 // TestSkillDeleteFailure covers skillDelete's os.RemoveAll error branch.
-// Making the parent .agents/skills read-only is enough — RemoveAll cannot
+// Making the parent .claude/skills read-only is enough — RemoveAll cannot
 // unlink entries from a directory it has no write permission on.
 func TestSkillDeleteFailure(t *testing.T) {
 	if os.Geteuid() == 0 {
@@ -501,7 +501,7 @@ func TestSkillDeleteFailure(t *testing.T) {
 	}
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "skill", "create", "doom", "--description", "d", "--root", dir)
-	skills := filepath.Join(dir, ".agents/skills")
+	skills := filepath.Join(dir, ".claude/skills")
 	if err := os.Chmod(skills, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +518,7 @@ func TestAgentDeleteFailure(t *testing.T) {
 	}
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "agent", "create", "doom", "--description", "d", "--root", dir)
-	agents := filepath.Join(dir, ".agents/agents")
+	agents := filepath.Join(dir, ".claude/agents")
 	if err := os.Chmod(agents, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +535,7 @@ func TestSteeringDeleteFailure(t *testing.T) {
 	}
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "steering", "create", "doomed", "--inclusion", "always", "--root", dir)
-	steering := filepath.Join(dir, ".kiro/steering")
+	steering := filepath.Join(dir, ".claude/steering")
 	if err := os.Chmod(steering, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +552,7 @@ func TestSpecDeleteFailure(t *testing.T) {
 	}
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "spec", "init", "doom", "--root", dir)
-	specs := filepath.Join(dir, ".kiro/specs")
+	specs := filepath.Join(dir, "specs")
 	if err := os.Chmod(specs, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +562,7 @@ func TestSpecDeleteFailure(t *testing.T) {
 	}
 }
 
-// TestSkillRootFailures locks the .agents/ container read-only and removes the
+// TestSkillRootFailures locks the .claude/ container read-only and removes the
 // skills/ subdir, then asserts the mutating + lookup skill subcommands fail.
 // (`skill list` is intentionally excluded: a missing/unreadable skills dir is a
 // valid "no skills found" result, not an error — SkillRoot no longer creates it.)
@@ -571,8 +571,8 @@ func TestSkillRootFailures(t *testing.T) {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
 	dir := freshWorkspace(t)
-	_ = os.RemoveAll(filepath.Join(dir, ".agents/skills"))
-	agentsDir := filepath.Join(dir, ".agents")
+	_ = os.RemoveAll(filepath.Join(dir, ".claude/skills"))
+	agentsDir := filepath.Join(dir, ".claude")
 	if err := os.Chmod(agentsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -598,8 +598,8 @@ func TestAgentRootFailures(t *testing.T) {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
 	dir := freshWorkspace(t)
-	_ = os.RemoveAll(filepath.Join(dir, ".agents/agents"))
-	agentsDir := filepath.Join(dir, ".agents")
+	_ = os.RemoveAll(filepath.Join(dir, ".claude/agents"))
+	agentsDir := filepath.Join(dir, ".claude")
 	if err := os.Chmod(agentsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -618,11 +618,11 @@ func TestAgentRootFailures(t *testing.T) {
 }
 
 // TestSpecListSkipsRegularFiles exercises the `if !e.IsDir() { continue }`
-// branch in specList by planting a stray file inside .kiro/specs/.
+// branch in specList by planting a stray file inside specs/.
 func TestSpecListSkipsRegularFiles(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "spec", "init", "real", "--root", dir)
-	stray := filepath.Join(dir, ".kiro/specs/stray-file")
+	stray := filepath.Join(dir, "specs/stray-file")
 	if err := os.WriteFile(stray, []byte("noise"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -636,7 +636,7 @@ func TestSpecListSkipsRegularFiles(t *testing.T) {
 func TestSkillListSkipsFiles(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "skill", "create", "real", "--description", "d", "--root", dir)
-	stray := filepath.Join(dir, ".agents/skills/stray.txt")
+	stray := filepath.Join(dir, ".claude/skills/stray.txt")
 	if err := os.WriteFile(stray, []byte("noise"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -706,7 +706,7 @@ func TestSkillAddArtifactRelyingOnSubdir(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "skill", "create", "rd", "--description", "d", "--root", dir)
 	// Pre-create the destination as a directory so the WriteFile call fails.
-	dest := filepath.Join(dir, ".agents/skills/rd/references", "as-dir")
+	dest := filepath.Join(dir, ".claude/skills/rd/references", "as-dir")
 	_ = os.MkdirAll(dest, 0o755)
 	code, _, _ := run(t, "skill", "add-reference", "rd", "as-dir", "--root", dir)
 	if code == 0 {
@@ -738,7 +738,76 @@ func TestRunInitWithExplicitNonexistentRoot(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init should create missing --root dir, got %d", code)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro")); err != nil {
-		t.Error("expected .kiro inside new root")
+	if _, err := os.Stat(filepath.Join(dir, ".claude")); err != nil {
+		t.Error("expected .claude inside new root")
+	}
+}
+
+// TestInitScaffoldsClaudeCodeArtifacts asserts the shipped sub-agents, workflow
+// skills, hooks (executable), settings.json, PR template, and DoD rule all land.
+func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
+	dir := freshWorkspace(t)
+	for _, f := range []string{
+		".claude/agents/code-reviewer.md",
+		".claude/agents/test-designer.md",
+		".claude/agents/security-reviewer.md",
+		".claude/skills/tdd-cycle/SKILL.md",
+		".claude/skills/verify-change/SKILL.md",
+		".claude/skills/safe-refactor/SKILL.md",
+		".claude/skills/pr-review/SKILL.md",
+		".claude/hooks/block-destructive.sh",
+		".claude/hooks/format-after-edit.sh",
+		".claude/hooks/test-before-stop.sh",
+		".claude/settings.json",
+		".github/pull_request_template.md",
+		".claude/rules/definition-of-done.md",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("init did not scaffold %s: %v", f, err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, ".claude/hooks/block-destructive.sh"))
+	if err != nil || info.Mode()&0o111 == 0 {
+		t.Errorf("hook script must be executable: err=%v mode=%v", err, info.Mode())
+	}
+}
+
+// TestInitWithBaselineImportsSteering asserts CLAUDE.md imports the baseline
+// steering files as always-on @-references.
+func TestInitWithBaselineImportsSteering(t *testing.T) {
+	dir := freshWorkspace(t)
+	data, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	for _, imp := range []string{
+		"@.claude/steering/product.md",
+		"@.claude/steering/tech.md",
+		"@.claude/steering/testing.md",
+	} {
+		if !strings.Contains(string(data), imp) {
+			t.Errorf("CLAUDE.md missing steering import %q:\n%s", imp, data)
+		}
+	}
+}
+
+// TestSteeringCreateAddsImportIdempotently asserts a created steering file is
+// imported into CLAUDE.md exactly once, even across a --force re-create.
+func TestSteeringCreateAddsImportIdempotently(t *testing.T) {
+	dir := freshWorkspace(t)
+	if code, _, e := run(t, "steering", "create", "observability",
+		"--inclusion", "auto", "--description", "Logging/metrics.", "--root", dir); code != 0 {
+		t.Fatalf("steering create failed: %s", e)
+	}
+	imp := "@.claude/steering/observability.md"
+	data, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if !strings.Contains(string(data), imp) {
+		t.Fatalf("import not added to CLAUDE.md:\n%s", data)
+	}
+	run(t, "steering", "create", "observability",
+		"--inclusion", "auto", "--description", "again", "--force", "--root", dir)
+	data, _ = os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if n := strings.Count(string(data), imp); n != 1 {
+		t.Errorf("expected exactly 1 import line, got %d", n)
 	}
 }

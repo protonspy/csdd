@@ -141,7 +141,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) View() string {
-	header := Styles.Title.Render(" csdd — Kiro Workflow ") +
+	header := Styles.Title.Render(" csdd — Claude Code SDD ") +
 		"  " + Styles.Dim.Render("root: "+a.root)
 	footer := Styles.Hint.Render("q quit · esc back · enter confirm")
 

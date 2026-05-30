@@ -37,8 +37,8 @@ func runAgent(args []string, templates embed.FS) int {
 }
 
 // AgentCreateOptions captures every input the agent-create flow uses.
-// The Kiro standard places custom sub-agents exclusively under .agents/agents/,
-// mirroring the .agents/skills/ convention — no platform field by design.
+// Claude Code places custom sub-agents exclusively under .claude/agents/,
+// mirroring the .claude/skills/ convention — no platform field by design.
 type AgentCreateOptions struct {
 	Root        string
 	Name        string

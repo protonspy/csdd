@@ -1,0 +1,36 @@
+# Definition of Done
+
+A task or PR is **done** only when every box is checked. "It compiles" and
+"it looks right" are not done. Evidence beats assertion — paste real output.
+
+## Per task (one task from tasks.md)
+
+- [ ] The active spec was read; the change stays within its approved boundary.
+- [ ] Test-first: a test failed (RED) for the expected reason before the implementation, when the task adds behavior.
+- [ ] That test now passes (GREEN); refactoring kept it green.
+- [ ] The relevant suite, lint, and typecheck pass for the touched scope.
+- [ ] Scope was respected — no opportunistic refactors or unrelated changes.
+- [ ] `## Implementation Notes` in tasks.md updated with any cross-task learning.
+- [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.
+
+## Per PR (a reviewable slice)
+
+- [ ] Tests cover success, validation, authorization, and external-failure paths for new behavior.
+- [ ] Full verification gate is green: tests, lint, typecheck, build.
+- [ ] `code-reviewer` sub-agent ran and reported no open Blockers.
+- [ ] For security-sensitive changes, `security-reviewer` ran and reported no Critical/High.
+- [ ] The PR body carries evidence: spec links, tasks completed, the real verification output, and risks.
+- [ ] No secrets, tokens, or PII in code, fixtures, logs, or the PR description.
+
+## Evidence block (paste into the PR)
+
+```
+## Verification
+- <test command>      ✅
+- <lint command>      ✅
+- <typecheck command> ✅
+- <build command>     ✅
+```
+
+If any box cannot be checked, the work is not done — report the blocked item
+explicitly rather than claiming completion.

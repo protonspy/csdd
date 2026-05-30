@@ -46,7 +46,7 @@ func Static(efs fs.FS, path string) (string, error) {
 	return string(raw), nil
 }
 
-// RuleFiles enumerates every .kiro/settings/rules/ template, returning a
+// RuleFiles enumerates every .claude/rules/ template, returning a
 // filename → rendered-content map. All rule templates are static.
 func RuleFiles(efs fs.FS) (map[string]string, error) {
 	const dir = "templates/rules"
@@ -71,8 +71,53 @@ func RuleFiles(efs fs.FS) (map[string]string, error) {
 	return out, nil
 }
 
+// staticTree walks dir recursively and returns a map of path-relative-to-dir
+// (with any ".tmpl" suffix stripped) to file content. Used for artifact trees
+// that csdd scaffolds verbatim: shipped skills, sub-agents, and hooks.
+func staticTree(efs fs.FS, dir string) (map[string]string, error) {
+	out := map[string]string{}
+	err := fs.WalkDir(efs, dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		raw, err := fs.ReadFile(efs, p)
+		if err != nil {
+			return err
+		}
+		rel := strings.TrimPrefix(p, dir+"/")
+		rel = strings.TrimSuffix(rel, ".tmpl")
+		out[rel] = string(raw)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SkillFiles returns every shipped workflow skill under templates/skills/,
+// keyed by path relative to that dir (e.g. "tdd-cycle/SKILL.md").
+func SkillFiles(efs fs.FS) (map[string]string, error) {
+	return staticTree(efs, "templates/skills")
+}
+
+// AgentFiles returns every shipped sub-agent under templates/agents/, keyed by
+// on-disk filename (e.g. "code-reviewer.md").
+func AgentFiles(efs fs.FS) (map[string]string, error) {
+	return staticTree(efs, "templates/agents")
+}
+
+// HookFiles returns every shipped hook under templates/hooks/, keyed by path
+// relative to that dir (e.g. "format-after-edit.sh").
+func HookFiles(efs fs.FS) (map[string]string, error) {
+	return staticTree(efs, "templates/hooks")
+}
+
 // WorkflowTemplateFiles returns the versioned templates that belong under
-// .kiro/settings/templates/. The embedded tree uses implementation-oriented
+// .claude/templates/. The embedded tree uses implementation-oriented
 // names; this function emits the canonical on-disk layout from the guide.
 func WorkflowTemplateFiles(efs fs.FS) (map[string]string, error) {
 	out := map[string]string{}

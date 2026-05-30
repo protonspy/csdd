@@ -1,0 +1,51 @@
+# Project Entry Point
+
+This repository follows a Spec-Driven Development (SDD) + Test-Driven
+Development (TDD) workflow, native to **Claude Code**. Steering, specs, skills,
+and custom sub-agents are managed by the `csdd` CLI.
+
+**Read [`csdd.md`](./csdd.md) before producing any artifact.** It is the
+operational guide that tells you how to drive `csdd` without reading source.
+Everything below is a quick map; `csdd.md` is the contract.
+
+## Project memory (steering)
+
+Steering files are always-on project memory, loaded via the `@`-imports below.
+`csdd` keeps this list in sync with `.claude/steering/` — do not hand-edit
+between the markers.
+
+<!-- csdd:steering:start -->
+<!-- csdd:steering:end -->
+
+## Layout
+
+- `.claude/steering/` — project memory imported above.
+- `specs/<feature-name>/` — per-feature contracts (`spec.json` + `requirements.md` + `design.md` + `tasks.md`).
+- `.claude/rules/` — generation rules and review gates the agent runs mechanically.
+- `.claude/templates/` — templates the agent uses when generating artifacts.
+- `.claude/skills/<skill-name>/` — executable workflow skills (`SKILL.md` + `references/` + `assets/` + `scripts/`).
+- `.claude/agents/<name>.md` — custom sub-agents with least-privilege tool scope.
+- `.claude/hooks/` + `.claude/settings.json` — deterministic automation (format, test gate, command safety).
+- `.mcp.json` — Model Context Protocol servers.
+
+## Workflow at a glance
+
+1. `csdd spec init <feature>` then iterate requirements → design → tasks.
+2. Each phase requires explicit human approval recorded in `spec.json`.
+3. `ready_for_implementation` flips to `true` only after all three phases are approved.
+4. Implementation runs one task per iteration with fresh-context sub-agents (implementer → reviewer → debugger), TDD red→green per task.
+5. Steering is updated only when a new pattern emerges that the agent could not derive from the code.
+
+## Non-negotiables
+
+- EARS phrasing for every requirement.
+- `_Requirements:_`, `_Boundary:_`, and `_Depends:_` annotations on tasks.
+- Test-first: every behavior task pairs a failing test (RED) with the minimal code to pass (GREEN) before moving on.
+- Least privilege on MCP servers, hooks, and sub-agent tool scopes.
+- Skills built from real expertise — never from generic LLM output.
+
+## Reference
+
+- Operational guide for agents: [`csdd.md`](./csdd.md)
+- Canonical spec: `docs/guides/claude-code-sdd.md` — the self-contained SDD+TDD guide (scaffolded by `csdd init`)
+- CLI help: `csdd --help`

@@ -46,7 +46,7 @@ func runSkill(args []string, templates embed.FS) int {
 }
 
 // SkillCreateOptions is the headless equivalent shared with the TUI.
-// The Kiro standard places skills exclusively in .agents/skills/, so there
+// Claude Code places skills exclusively in .claude/skills/, so there
 // is no platform field — the canonical layout is intentional.
 type SkillCreateOptions struct {
 	Root        string

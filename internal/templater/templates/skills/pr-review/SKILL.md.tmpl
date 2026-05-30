@@ -1,0 +1,50 @@
+---
+name: pr-review
+description: Review the current diff and assemble an evidence-bearing pull request before raising it. Use when a task slice is complete and ready to open or update a PR.
+---
+
+# PR Review
+
+Prepare a pull request that carries evidence, not just a description. Pair this
+with the `code-reviewer` and `security-reviewer` sub-agents for adversarial review.
+
+## Default Operation Mode
+
+Plan-first: produce the review summary and the PR body for human approval before
+creating the PR.
+
+## Collect Inputs First
+
+- The diff range (`git diff <base>...HEAD`).
+- The active spec links: `specs/<feature>/{spec.json,requirements.md,design.md,tasks.md}`.
+- The verification output (run the `verify-change` skill first if not already done).
+
+## Execution Workflow
+
+### 1) Self-review the diff
+- Read the whole diff. Remove debug code, stray logs, commented-out blocks, TODOs without owners.
+- Confirm the change matches the approved spec and stays within its boundaries.
+
+### 2) Delegate adversarial review
+- Run the `code-reviewer` sub-agent on the diff. Address Blockers.
+- If the change touches auth, secrets, input, or data exposure, run `security-reviewer` too.
+
+### 3) Assemble the PR body
+- Use the project's PR template (`.github/pull_request_template.md`) if present.
+- Fill: summary, spec links, changes, tests added, verification output, risks.
+
+## Gotchas
+
+- A PR without test evidence is incomplete. Paste the actual `verify-change` results.
+- Link the spec and the specific tasks completed — traceability is required.
+- Do not open the PR if a Blocker from code-reviewer is unresolved.
+
+## Verification Before Reporting
+
+- Run: `verify-change` (full gate) and confirm green.
+- Check: code-reviewer has no open Blockers; PR body is complete.
+
+## Completion Criteria
+- [ ] Diff self-reviewed and clean.
+- [ ] code-reviewer (and security-reviewer when relevant) findings addressed.
+- [ ] PR body includes spec links + tests + real verification output + risks.

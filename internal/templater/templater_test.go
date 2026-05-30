@@ -8,31 +8,31 @@ import (
 )
 
 // TestEmbeddedGuideMatchesSource guards against drift between the human-edited
-// source guide (docs/kiro_sdd.md) and the embedded copy that `csdd init`
+// source guide (docs/claude-code-sdd.md) and the embedded copy that `csdd init`
 // scaffolds. It skips gracefully when the repo source isn't reachable (e.g.
 // when the package is built from the module cache rather than the repo tree).
 func TestEmbeddedGuideMatchesSource(t *testing.T) {
-	const sourcePath = "../../docs/kiro_sdd.md"
+	const sourcePath = "../../docs/claude-code-sdd.md"
 	source, err := os.ReadFile(sourcePath)
 	if err != nil {
 		t.Skipf("source guide not reachable (%v); skipping parity check", err)
 	}
-	embedded, err := Static(FS, "templates/guides/kiro-sdd.md.tmpl")
+	embedded, err := Static(FS, "templates/guides/claude-code-sdd.md.tmpl")
 	if err != nil {
 		t.Fatalf("embedded guide missing: %v", err)
 	}
 	if string(source) != embedded {
-		t.Error("docs/kiro_sdd.md and the embedded guide have drifted — re-copy the source into internal/templater/templates/guides/kiro-sdd.md.tmpl")
+		t.Error("docs/claude-code-sdd.md and the embedded guide have drifted — re-copy the source into internal/templater/templates/guides/claude-code-sdd.md.tmpl")
 	}
 }
 
 func TestStatic(t *testing.T) {
-	out, err := Static(FS, "templates/root/kiroignore.tmpl")
+	out, err := Static(FS, "templates/root/CLAUDE.md.tmpl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, ".env") {
-		t.Errorf("kiroignore template should mention .env")
+	if !strings.Contains(out, "csdd") {
+		t.Errorf("CLAUDE.md template should mention csdd")
 	}
 }
 
@@ -191,7 +191,7 @@ func TestRenderExecutionError(t *testing.T) {
 
 func TestRuleFilesMissingDir(t *testing.T) {
 	memFS := fstest.MapFS{
-		"templates/root/KIRO.md.tmpl": &fstest.MapFile{Data: []byte("x")},
+		"templates/root/CLAUDE.md.tmpl": &fstest.MapFile{Data: []byte("x")},
 		// No templates/rules/ directory at all.
 	}
 	if _, err := RuleFiles(memFS); err == nil {

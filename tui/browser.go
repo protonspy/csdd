@@ -10,6 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/protonspy/csdd/internal/paths"
 )
 
 // browserItem represents one navigable artifact (a file under the workspace).
@@ -36,7 +38,7 @@ func (b *browserModel) refresh() {
 	b.items = nil
 	b.err = ""
 	// steering
-	if entries, err := os.ReadDir(filepath.Join(b.root, ".kiro", "steering")); err == nil {
+	if entries, err := os.ReadDir(paths.Steering(b.root)); err == nil {
 		var names []string
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
@@ -47,12 +49,12 @@ func (b *browserModel) refresh() {
 		for _, n := range names {
 			b.items = append(b.items, browserItem{
 				kind: "steering", label: n,
-				path: filepath.Join(b.root, ".kiro", "steering", n),
+				path: filepath.Join(paths.Steering(b.root), n),
 			})
 		}
 	}
 	// specs (show spec.json for now; user can navigate further if we extend)
-	if entries, err := os.ReadDir(filepath.Join(b.root, ".kiro", "specs")); err == nil {
+	if entries, err := os.ReadDir(paths.Specs(b.root)); err == nil {
 		var names []string
 		for _, e := range entries {
 			if e.IsDir() {
@@ -61,7 +63,7 @@ func (b *browserModel) refresh() {
 		}
 		sort.Strings(names)
 		for _, n := range names {
-			specDir := filepath.Join(b.root, ".kiro", "specs", n)
+			specDir := filepath.Join(paths.Specs(b.root), n)
 			files, _ := os.ReadDir(specDir)
 			var artifacts []string
 			for _, f := range files {
@@ -78,8 +80,8 @@ func (b *browserModel) refresh() {
 			}
 		}
 	}
-	// skills (Kiro standard: .agents/skills/)
-	skillsBase := filepath.Join(b.root, ".agents", "skills")
+	// skills (.claude/skills/)
+	skillsBase := paths.Skills(b.root)
 	if entries, err := os.ReadDir(skillsBase); err == nil {
 		var names []string
 		for _, e := range entries {
@@ -95,8 +97,8 @@ func (b *browserModel) refresh() {
 			})
 		}
 	}
-	// agents (Kiro standard: .agents/agents/)
-	agentsBase := filepath.Join(b.root, ".agents", "agents")
+	// agents (.claude/agents/)
+	agentsBase := paths.Agents(b.root)
 	if entries, err := os.ReadDir(agentsBase); err == nil {
 		var names []string
 		for _, e := range entries {
@@ -112,9 +114,9 @@ func (b *browserModel) refresh() {
 			})
 		}
 	}
-	// mcp servers (.kiro/settings/mcp.json) — one item per configured server,
+	// mcp servers (.mcp.json) — one item per configured server,
 	// all previewing the shared config file.
-	mcpPath := filepath.Join(b.root, ".kiro", "settings", "mcp.json")
+	mcpPath := paths.MCP(b.root)
 	if data, err := os.ReadFile(mcpPath); err == nil {
 		var cfg struct {
 			MCPServers map[string]json.RawMessage `json:"mcpServers"`

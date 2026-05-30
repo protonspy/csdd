@@ -85,7 +85,7 @@ func TestBrowserListsAndPreviews(t *testing.T) {
 }
 
 func TestBrowserEmptyWorkspace(t *testing.T) {
-	dir := t.TempDir() // no .kiro / .agents at all
+	dir := t.TempDir() // no .claude workspace at all
 	b := newBrowser(dir)
 	if len(b.items) != 0 {
 		t.Errorf("expected no items in a bare directory, got %d", len(b.items))

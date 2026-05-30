@@ -1,4 +1,4 @@
-// csdd — single-binary CLI + TUI for managing Kiro workflow artifacts.
+// csdd — single-binary CLI + TUI for managing Claude Code workflow artifacts.
 //
 // Behavior summary:
 //   - `csdd` with no arguments launches the interactive TUI.

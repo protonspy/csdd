@@ -1,7 +1,6 @@
-// Package workspace resolves and validates the Kiro workspace root.
-// A workspace is any directory containing a .kiro/ subdirectory; the CLI
-// walks upward from the working directory to locate it, matching the
-// behavior of the Python reference implementation.
+// Package workspace resolves and validates the Claude Code workspace root.
+// A workspace is any directory containing a .claude/ subdirectory; the CLI
+// walks upward from the working directory to locate it.
 package workspace
 
 import (
@@ -10,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+
+	"github.com/protonspy/csdd/internal/paths"
 )
 
 var kebabRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -20,7 +21,7 @@ var InclusionModes = []string{"always", "fileMatch", "manual", "auto"}
 // SpecPhases enumerates the human-approved spec phases.
 var SpecPhases = []string{"requirements", "design", "tasks"}
 
-// SpecArtifacts enumerates every generable artifact under .kiro/specs/<feature>/.
+// SpecArtifacts enumerates every generable artifact under specs/<feature>/.
 var SpecArtifacts = []string{"requirements", "design", "tasks", "research", "bugfix"}
 
 // KebabCheck rejects names that are not kebab-case, returning a descriptive error.
@@ -31,7 +32,7 @@ func KebabCheck(name, kind string) error {
 	return nil
 }
 
-// Find walks upward from start looking for the nearest .kiro/ directory.
+// Find walks upward from start looking for the nearest .claude/ directory.
 // Returns the start directory unchanged when no workspace is found.
 func Find(start string) string {
 	abs, err := filepath.Abs(start)
@@ -40,7 +41,7 @@ func Find(start string) string {
 	}
 	cur := abs
 	for {
-		if info, err := os.Stat(filepath.Join(cur, ".kiro")); err == nil && info.IsDir() {
+		if info, err := os.Stat(paths.Claude(cur)); err == nil && info.IsDir() {
 			return cur
 		}
 		parent := filepath.Dir(cur)
@@ -74,48 +75,36 @@ func Resolve(arg string) (string, error) {
 // ErrAlreadyExists signals a refusal to overwrite an existing artifact without --force.
 var ErrAlreadyExists = errors.New("already exists")
 
-// SteeringDir returns the steering directory under root, requiring that .kiro/steering/ exists.
+// SteeringDir returns the steering directory under root, requiring that .claude/steering/ exists.
 func SteeringDir(root string) (string, error) {
-	d := filepath.Join(root, ".kiro", "steering")
+	d := paths.Steering(root)
 	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/steering directory at %s. Run `csdd init` first", root)
+		return "", fmt.Errorf("no .claude/steering directory at %s. Run `csdd init` first", root)
 	}
 	return d, nil
 }
 
-// SpecsDir returns the .kiro/specs root.
+// SpecsDir returns the repo-root specs/ directory.
 func SpecsDir(root string) (string, error) {
-	d := filepath.Join(root, ".kiro", "specs")
+	d := paths.Specs(root)
 	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/specs directory at %s. Run `csdd init` first", root)
+		return "", fmt.Errorf("no specs directory at %s. Run `csdd init` first", root)
 	}
 	return d, nil
 }
 
-// SettingsDir returns the .kiro/settings root, requiring that it exists. It is
-// the home of mcp.json, rules/, and templates/.
-func SettingsDir(root string) (string, error) {
-	d := filepath.Join(root, ".kiro", "settings")
-	if info, err := os.Stat(d); err != nil || !info.IsDir() {
-		return "", fmt.Errorf("no .kiro/settings directory at %s. Run `csdd init` first", root)
-	}
-	return d, nil
-}
-
-// SkillRoot returns the canonical Kiro skills directory (.agents/skills/).
+// SkillRoot returns the canonical Claude Code skills directory (.claude/skills/).
 // It is a pure path resolver with no side effects: read operations (list, show)
 // must not materialize directories just to look something up. The create flow
 // is responsible for making the directory (via WriteFile/MkdirAll on its target).
-// Kiro's standard is platform-agnostic — teams that require Claude Code or
-// Cursor-specific paths should symlink from there.
 func SkillRoot(root string) string {
-	return filepath.Join(root, ".agents", "skills")
+	return paths.Skills(root)
 }
 
-// AgentRoot returns the canonical Kiro custom-agents directory (.agents/agents/).
+// AgentRoot returns the canonical Claude Code custom-agents directory (.claude/agents/).
 // Like SkillRoot, it is a pure path resolver with no side effects.
 func AgentRoot(root string) string {
-	return filepath.Join(root, ".agents", "agents")
+	return paths.Agents(root)
 }
 
 // SafeWrite writes content to path only when path is missing. Returns true when the file was created.
