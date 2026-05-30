@@ -22,7 +22,7 @@ const (
 	RulesSeg     = "rules"         // .claude/rules: generation rules + review gates
 	SkillsSeg    = "skills"        // .claude/skills
 	AgentsSeg    = "agents"        // .claude/agents
-	CommandsSeg  = "commands"      // .claude/commands: slash commands (e.g. /commit)
+	CommandsSeg  = "commands"      // .claude/commands: slash commands (e.g. /csdd-commit)
 	SteeringSeg  = "steering"      // .claude/steering: project memory
 	TemplatesSeg = "templates"     // .claude/templates: versioned spec/steering templates
 	HooksSeg     = "hooks"         // .claude/hooks: deterministic automation scripts

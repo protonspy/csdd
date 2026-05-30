@@ -755,7 +755,7 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 		".claude/skills/verify-change/SKILL.md",
 		".claude/skills/safe-refactor/SKILL.md",
 		".claude/skills/pr-review/SKILL.md",
-		".claude/commands/commit.md",
+		".claude/commands/csdd-commit.md",
 		".claude/hooks/block-destructive.sh",
 		".claude/hooks/format-after-edit.sh",
 		".claude/hooks/test-before-stop.sh",

@@ -25,7 +25,7 @@ between the markers.
 - `.claude/templates/` — templates the agent uses when generating artifacts.
 - `.claude/skills/<skill-name>/` — executable workflow skills (`SKILL.md` + `references/` + `assets/` + `scripts/`).
 - `.claude/agents/<name>.md` — custom sub-agents with least-privilege tool scope.
-- `.claude/commands/<name>.md` — slash commands. `/commit` has Claude generate the commit message from the diff + active spec.
+- `.claude/commands/<name>.md` — slash commands. `/csdd-commit` has Claude generate the commit message from the diff + active spec.
 - `.claude/hooks/` + `.claude/settings.json` — deterministic automation (format on edit, command safety, stop reminder).
 - `.githooks/pre-push` — runs the test gate at push time. Enable once: `git config core.hooksPath .githooks`.
 - `.github/pull_request_template.md` — evidence-bearing PR body.
