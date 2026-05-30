@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>csdd — Spec-Driven Development como contrato executável</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#11161e; --panel:#161b22; --panel2:#1c2230;
+    --line:#2a313c; --line2:#384150;
+    --fg:#e6edf3; --muted:#9aa7b5; --dim:#6b7686;
+    --accent:#58a6ff; --accent2:#7ee787; --warn:#f0c674; --bad:#ff7b72; --purple:#bc8cff;
+    --mono:'SF Mono',ui-monospace,'JetBrains Mono','Cascadia Code',Menlo,Consolas,monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--fg); font-family:var(--sans);
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  /* ---------- deck ---------- */
+  .deck{position:fixed;inset:0}
+  .slide{
+    position:absolute;inset:0;
+    display:none; flex-direction:column;
+    padding:5.5vh 7vw 8vh;
+    animation:fade .45s ease;
+    overflow:auto;
+  }
+  .slide.active{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  .slide.center{justify-content:center;align-items:center;text-align:center}
+
+  /* ---------- typography ---------- */
+  .kicker{
+    font-family:var(--mono);font-size:.82rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:1.1rem;display:flex;align-items:center;gap:.6rem;
+  }
+  .kicker::before{content:"";width:30px;height:2px;background:var(--accent);display:inline-block}
+  h1{font-size:clamp(2.4rem,6vw,4.6rem);line-height:1.03;letter-spacing:-.02em;font-weight:800}
+  h2{font-size:clamp(1.7rem,3.4vw,2.7rem);line-height:1.08;letter-spacing:-.015em;font-weight:750;margin-bottom:.4rem}
+  h3{font-size:1.05rem;font-weight:700}
+  p.lead{font-size:clamp(1.05rem,1.7vw,1.4rem);color:var(--muted);max-width:60ch;line-height:1.5}
+  .accent{color:var(--accent)} .green{color:var(--accent2)} .purple{color:var(--purple)}
+  .warn{color:var(--warn)} .bad{color:var(--bad)} .muted{color:var(--muted)}
+  code,.mono{font-family:var(--mono)}
+  .subhead{color:var(--muted);font-size:1.05rem;max-width:72ch;line-height:1.55;margin-top:.2rem}
+
+  /* ---------- layout helpers ---------- */
+  .grid{display:grid;gap:1.1rem;margin-top:2rem}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(2,1fr)}
+  .row{display:flex;gap:1.1rem;flex-wrap:wrap}
+  .spacer{flex:1}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.3rem 1.4rem;
+    position:relative;overflow:hidden;
+  }
+  .card .ico{font-size:1.5rem;margin-bottom:.55rem;display:block}
+  .card h3{margin-bottom:.4rem}
+  .card p{color:var(--muted);font-size:.95rem;line-height:1.5}
+  .card .path{font-family:var(--mono);font-size:.78rem;color:var(--accent);margin-top:.7rem;display:block;
+    background:#0c1118;border:1px solid var(--line);border-radius:7px;padding:.35rem .55rem;word-break:break-all}
+  .card.tl{border-top:3px solid var(--accent)}
+
+  .pill{display:inline-block;font-family:var(--mono);font-size:.74rem;padding:.2rem .55rem;border-radius:999px;
+    border:1px solid var(--line2);color:var(--muted);background:#0c1118}
+
+  /* ---------- code blocks ---------- */
+  pre{
+    background:#0a0e14;border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.3rem;
+    font-family:var(--mono);font-size:.92rem;line-height:1.65;overflow:auto;color:#c9d4e0;
+  }
+  pre .c{color:var(--dim)}        /* comment */
+  pre .k{color:var(--purple)}     /* keyword/cmd */
+  pre .s{color:var(--accent2)}    /* string/flag value */
+  pre .f{color:var(--accent)}     /* flag */
+  pre .o{color:var(--warn)}       /* ok */
+  pre .x{color:var(--bad)}        /* error */
+  .ears{color:var(--warn);font-weight:600}
+
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:.7rem;margin-top:1.4rem}
+  ul.clean li{display:flex;gap:.8rem;align-items:flex-start;font-size:1.02rem;line-height:1.45;color:var(--fg)}
+  ul.clean li b{color:var(--fg)} ul.clean li span{color:var(--muted)}
+  ul.clean li::before{content:"▸";color:var(--accent);font-weight:700;margin-top:.05rem}
+
+  /* ---------- pipeline / gates ---------- */
+  .pipe{display:flex;align-items:stretch;gap:0;margin-top:2.4rem;flex-wrap:wrap}
+  .step{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:1rem .8rem;text-align:center;position:relative}
+  .step .ph{font-family:var(--mono);font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.1em}
+  .step .nm{font-weight:750;font-size:1.05rem;margin-top:.25rem}
+  .arrow{display:flex;align-items:center;color:var(--line2);font-size:1.4rem;padding:0 .35rem}
+  .gate{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--warn);color:#1a1206;
+    font-family:var(--mono);font-size:.62rem;font-weight:700;padding:.12rem .5rem;border-radius:999px;white-space:nowrap}
+  .step.impl{border-color:var(--accent2);background:#0f1a14}
+
+  /* ---------- arch diagram ---------- */
+  .arch{display:flex;flex-direction:column;align-items:center;gap:.6rem;margin-top:1.4rem;width:100%}
+  .arch .tier{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;width:100%}
+  .node{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:.7rem 1rem;text-align:center;min-width:130px}
+  .node .t{font-weight:700;font-size:.98rem} .node .d{font-family:var(--mono);font-size:.72rem;color:var(--dim);margin-top:.15rem}
+  .node.entry{border-color:var(--purple);background:#16101f}
+  .node.surf{border-color:var(--accent);background:#0f1620}
+  .node.core{border-color:var(--accent2);background:#0f1a14}
+  .vbar{color:var(--line2);font-size:1.1rem;line-height:1}
+  .bracket{font-family:var(--mono);font-size:.74rem;color:var(--dim);text-align:center;margin:.1rem 0}
+
+  table.t{width:100%;border-collapse:collapse;margin-top:1.6rem;font-size:.95rem}
+  table.t th{text-align:left;color:var(--accent);font-family:var(--mono);font-size:.78rem;text-transform:uppercase;
+    letter-spacing:.08em;padding:.6rem .8rem;border-bottom:1px solid var(--line2)}
+  table.t td{padding:.62rem .8rem;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
+  table.t td b{color:var(--fg)} table.t code{color:var(--accent2);font-size:.86rem}
+  table.t tr:last-child td{border-bottom:none}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:1.6rem;margin-top:1.6rem;align-items:start}
+  .panelbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:1.3rem 1.4rem}
+  .panelbox h3{margin-bottom:.8rem;display:flex;align-items:center;gap:.5rem}
+  .vs{display:flex;align-items:center;gap:.5rem;font-size:.95rem;color:var(--muted);line-height:1.5;margin-bottom:.6rem}
+
+  .stat{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;line-height:1}
+  .statline{display:flex;gap:2.6rem;margin-top:2.2rem;flex-wrap:wrap}
+  .statline .lbl{color:var(--muted);font-size:.9rem;margin-top:.3rem}
+
+  /* ---------- footer / nav ---------- */
+  .foot{position:fixed;bottom:0;left:0;right:0;height:42px;display:flex;align-items:center;
+    justify-content:space-between;padding:0 7vw;font-family:var(--mono);font-size:.74rem;color:var(--dim);
+    border-top:1px solid var(--line);background:linear-gradient(to top,var(--bg),transparent);z-index:10}
+  .progress{position:fixed;top:0;left:0;height:3px;background:var(--accent);z-index:20;transition:width .3s ease}
+  .dots{display:flex;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--line2);cursor:pointer;transition:.2s}
+  .dot.on{background:var(--accent);transform:scale(1.25)}
+  .nav-hint{color:var(--dim)}
+  kbd{font-family:var(--mono);background:var(--panel);border:1px solid var(--line2);border-bottom-width:2px;
+    border-radius:5px;padding:.05rem .4rem;font-size:.72rem;color:var(--muted)}
+
+  .tag{font-family:var(--mono);font-size:.7rem;padding:.15rem .5rem;border-radius:6px;background:#0c1118;border:1px solid var(--line)}
+  .annot{color:var(--purple);font-family:var(--mono)}
+  .badgeP{color:var(--accent2);font-weight:700}
+
+  .logo{font-family:var(--mono);font-weight:800;letter-spacing:-.03em}
+  .logo .br{color:var(--accent)}
+  .big-logo{font-size:clamp(3.4rem,9vw,7rem);font-family:var(--mono);font-weight:800;letter-spacing:-.04em;margin-bottom:.4rem}
+  .big-logo .br{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="deck" id="deck">
+
+  <!-- 1 — TITLE -->
+  <section class="slide active center">
+    <div class="kicker" style="justify-content:center">Tech Talk · Time de Desenvolvimento</div>
+    <div class="big-logo"><span class="br">c</span>sdd</div>
+    <h2 style="font-weight:650;max-width:24ch">Spec-Driven Development como <span class="accent">contrato executável</span></h2>
+    <p class="lead" style="margin:1.4rem auto 0">Um único binário que transforma o workflow SDD do <span class="accent">Claude Code</span> de "boa intenção em markdown"
+       num contrato validado mecanicamente — para humanos <em>e</em> agentes de IA.</p>
+    <div class="statline" style="justify-content:center">
+      <div><div class="stat accent">5</div><div class="lbl">recursos gerenciados</div></div>
+      <div><div class="stat green">1</div><div class="lbl">binário, zero deps de runtime</div></div>
+      <div><div class="stat purple">~8,7k</div><div class="lbl">linhas de Go</div></div>
+    </div>
+  </section>
+
+  <!-- 2 — O PROBLEMA -->
+  <section class="slide">
+    <div class="kicker">O problema</div>
+    <h2>Agentes de IA escrevem código rápido.<br>Rápido demais para sair sem contrato.</h2>
+    <div class="grid g3">
+      <div class="card tl"><span class="ico">🎯</span><h3>Escopo que escorrega</h3>
+        <p>Sem requisito explícito e testável, o agente "interpreta" — e cada execução interpreta diferente. Não há linha de base para revisar.</p></div>
+      <div class="card tl"><span class="ico">🔗</span><h3>Zero rastreabilidade</h3>
+        <p>Código sem vínculo a um requisito. Ninguém sabe <em>por que</em> uma função existe nem o que quebra se ela mudar.</p></div>
+      <div class="card tl"><span class="ico">⚖️</span><h3>Revisão humana tarde demais</h3>
+        <p>O humano só vê o resultado no PR — quando reverter custa caro. A decisão deveria ser visível <em>antes</em> do código.</p></div>
+    </div>
+    <p class="subhead" style="margin-top:2rem">A resposta é <b class="accent">SDD — Spec-Driven Development</b>: uma camada de contrato
+       <span class="muted">(requisitos → design → tarefas)</span> com aprovação humana em cada portão.
+       O <b>csdd é a ferramenta que torna esse contrato impossível de furar por acidente.</b></p>
+  </section>
+
+  <!-- 3 — O QUE É -->
+  <section class="slide">
+    <div class="kicker">O que é o csdd</div>
+    <h2>CLI + TUI num único binário Go</h2>
+    <p class="subhead"><b>O único autor sancionado</b> dos artefatos do workflow. Você não edita frontmatter,
+       <code>spec.json</code> ou anotações de tarefa na mão — você gera de template, edita o corpo e valida.</p>
+    <div class="two" style="margin-top:1.8rem">
+      <div class="panelbox">
+        <h3>🖥️ <span class="accent">CLI</span> — para agentes &amp; automação</h3>
+        <p class="muted" style="font-size:.95rem;line-height:1.55">Driven por flags, headless. Expõe <b>100% das funções</b>
+           para que Claude Code, Cursor, Codex ou CI dirijam o binário sem ler o código-fonte.</p>
+        <pre style="margin-top:1rem;font-size:.82rem"><span class="k">csdd</span> spec generate photo-albums <span class="f">--artifact</span> <span class="s">requirements</span></pre>
+      </div>
+      <div class="panelbox">
+        <h3>⌨️ <span class="green">TUI</span> — para humanos</h3>
+        <p class="muted" style="font-size:.95rem;line-height:1.55">Interface interativa (Bubble Tea). <code>csdd</code> sem argumentos
+           abre wizards e navegador de artefatos. Mesma operação, mesmas regras.</p>
+        <pre style="margin-top:1rem;font-size:.82rem"><span class="k">csdd</span>   <span class="c"># sem args → TUI interativo</span></pre>
+      </div>
+    </div>
+    <p class="subhead" style="margin-top:1.6rem">🔑 <b>Princípio central:</b> as duas superfícies chamam os <b class="accent">mesmos helpers de operação</b>.
+       Uma única fonte de verdade — o que o humano faz na TUI, o agente faz idêntico via CLI.</p>
+  </section>
+
+  <!-- 4 — OS 5 RECURSOS -->
+  <section class="slide">
+    <div class="kicker">Os 5 recursos que o csdd governa</div>
+    <h2>Tudo o que um agente precisa para trabalhar com segurança</h2>
+    <div class="grid g3" style="margin-top:1.6rem">
+      <div class="card"><span class="ico">🧭</span><h3>steering</h3>
+        <p>Memória do projeto carregada em toda interação do agente. Padrões e o <em>porquê</em> das decisões.</p>
+        <span class="path">.claude/steering/*.md</span></div>
+      <div class="card"><span class="ico">📐</span><h3>spec</h3>
+        <p>Contrato por feature: <code>spec.json</code> + requirements + design + tasks (+ research/bugfix).</p>
+        <span class="path">specs/&lt;feature&gt;/</span></div>
+      <div class="card"><span class="ico">🛠️</span><h3>skill</h3>
+        <p>Bundle de workflow executável: <code>SKILL.md</code> + references + assets + scripts.</p>
+        <span class="path">.claude/skills/&lt;name&gt;/</span></div>
+      <div class="card"><span class="ico">🤖</span><h3>agent</h3>
+        <p>Sub-agente customizado com escopo de ferramentas de <b>menor privilégio</b> (reviewer, debugger…).</p>
+        <span class="path">.claude/agents/&lt;name&gt;.md</span></div>
+      <div class="card"><span class="ico">🔌</span><h3>mcp</h3>
+        <p>Servidores Model Context Protocol que o agente pode conectar. stdio ou remoto, nunca os dois.</p>
+        <span class="path">.mcp.json</span></div>
+      <div class="card" style="border:1px dashed var(--line2);background:transparent">
+        <span class="ico">⌨️</span><h3 class="muted">verbos por recurso</h3>
+        <p>Base comum <code>create/init · list · show · delete</code>. <code>spec</code> tem <code>generate · approve · validate · status</code>; <code>mcp</code> usa <code>add · remove · enable · disable · validate</code>; <code>skill</code> tem <code>add-reference/script/asset · validate</code>.</p></div>
+    </div>
+  </section>
+
+  <!-- 5 — MODELO MENTAL -->
+  <section class="slide">
+    <div class="kicker">Modelo mental · leia isto primeiro</div>
+    <h2>Duas distinções valem mais que tudo</h2>
+    <div class="two">
+      <div class="panelbox" style="border-top:3px solid var(--warn)">
+        <h3>📜 Specification <span class="muted" style="font-weight:400">— o contrato</span></h3>
+        <p class="muted" style="line-height:1.6">Os requisitos, o File Structure Plan no design, e as anotações
+           <span class="annot">_Boundary:_</span> / <span class="annot">_Depends:_</span> nas tarefas.</p>
+        <p style="margin-top:.8rem;color:var(--warn);font-weight:600">👤 Humanos revisam e aprovam isto.</p>
+      </div>
+      <div class="panelbox" style="border-top:3px solid var(--accent2)">
+        <h3>🧩 Design <span class="muted" style="font-weight:400">— o espaço de implementação</span></h3>
+        <p class="muted" style="line-height:1.6">Componentes, internos, sequenciamento <em>dentro</em> de cada tarefa.
+           Como o contrato é cumprido.</p>
+        <p style="margin-top:.8rem;color:var(--accent2);font-weight:600">🤖 O agente é livre aqui, depois da aprovação.</p>
+      </div>
+    </div>
+    <p class="subhead" style="margin-top:1.8rem">A segunda distinção são os <b class="accent">phase gates</b>: nenhuma fase é
+       gerada antes da anterior ser aprovada por um humano — e isso é <b>aplicado mecanicamente</b>, não por convenção.</p>
+  </section>
+
+  <!-- 6 — PHASE GATES -->
+  <section class="slide">
+    <div class="kicker">Phase gates · o coração do fluxo</div>
+    <h2>Quatro fases, três portões humanos</h2>
+    <div class="pipe">
+      <div class="step"><div class="ph">fase 0</div><div class="nm">Discovery</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="gate">gate humano</span><div class="ph">gera</div><div class="nm">Requirements</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="gate">gate humano</span><div class="ph">gera</div><div class="nm">Design</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="gate">gate humano</span><div class="ph">gera</div><div class="nm">Tasks</div></div>
+      <div class="arrow">→</div>
+      <div class="step impl"><div class="ph">libera</div><div class="nm green">Implementation</div></div>
+    </div>
+    <div class="two" style="margin-top:2.4rem">
+      <div>
+        <p class="subhead">O estado vive em <code>spec.json</code>. Gerar <code>design</code> com
+        <code>requirements</code> não aprovado <b class="bad">falha</b> — não é um aviso, é exit code <b>2</b>.</p>
+        <ul class="clean" style="margin-top:1rem">
+          <li><b>ready_for_implementation</b> <span>só vira <code>true</code> após as 3 aprovações.</span></li>
+          <li><b class="warn">--force</b> <span>fura o portão — só com autorização explícita do humano (Quick Plan).</span></li>
+        </ul>
+      </div>
+      <pre style="align-self:center"><span class="k">csdd</span> spec generate albums <span class="f">--artifact</span> <span class="s">design</span>
+<span class="x">✗ phase gate: 'requirements' must be</span>
+<span class="x">  approved before generating 'design'.</span>
+
+<span class="c"># o caminho certo:</span>
+<span class="k">csdd</span> spec approve albums <span class="f">--phase</span> <span class="s">requirements</span>
+<span class="o">✓ requirements approved</span></pre>
+    </div>
+  </section>
+
+  <!-- 7 — WORKFLOW -->
+  <section class="slide">
+    <div class="kicker">O ciclo de vida de uma feature</div>
+    <h2>Da ideia ao <span class="green">pronto para implementar</span></h2>
+    <pre style="margin-top:1.4rem;font-size:.88rem"><span class="c"># 1 · bootstrap (uma vez por repo)</span>
+<span class="k">csdd</span> init <span class="f">--with-baseline</span>
+
+<span class="c"># 2 · cria o workspace da feature</span>
+<span class="k">csdd</span> spec init photo-albums
+
+<span class="c"># 3 · requirements → edita em EARS → valida → aprova</span>
+<span class="k">csdd</span> spec generate photo-albums <span class="f">--artifact</span> <span class="s">requirements</span>
+<span class="k">csdd</span> spec validate photo-albums          <span class="c"># exit 2 = corrija o que ele apontar</span>
+<span class="k">csdd</span> spec approve  photo-albums <span class="f">--phase</span> <span class="s">requirements</span>
+
+<span class="c"># 4 · design (bloqueado até o passo 3 passar)  → 5 · tasks (idem)</span>
+<span class="k">csdd</span> spec generate photo-albums <span class="f">--artifact</span> <span class="s">design</span>   <span class="c"># ... validate, approve</span>
+<span class="k">csdd</span> spec generate photo-albums <span class="f">--artifact</span> <span class="s">tasks</span>    <span class="c"># ... validate, approve</span>
+
+<span class="o">✓ spec.json: ready_for_implementation = true</span>   <span class="c"># implementação pode começar</span></pre>
+    <p class="subhead" style="margin-top:1.4rem">💡 <code>csdd spec status &lt;feature&gt;</code> entre qualquer dois passos: fase + aprovações + issues de validação numa só tela.</p>
+  </section>
+
+  <!-- 8 — EARS + TASKS -->
+  <section class="slide">
+    <div class="kicker">As convenções que o validador exige</div>
+    <h2>EARS &amp; anotações de tarefa</h2>
+    <div class="two">
+      <div>
+        <h3 style="margin-bottom:.6rem">📝 Requisitos em <span class="warn">EARS</span></h3>
+        <p class="muted" style="font-size:.92rem;line-height:1.5">Sintaxe fixa, testável, uma behavior por critério.
+           <code>SHALL</code> — nunca <code>should</code>. IDs <code>N.M</code> únicos.</p>
+        <pre style="margin-top:.8rem;font-size:.78rem"><span class="c">### Requirement 1: Album Management</span>
+1. <span class="ears">WHEN</span> a user creates an album
+   <span class="ears">THEN the system SHALL</span> persist it &lt;500ms.
+2. <span class="ears">IF</span> the name is empty
+   <span class="ears">THEN the system SHALL</span> return 400.
+3. <span class="ears">WHILE</span> deleting <span class="ears">THE SYSTEM SHALL</span>
+   block new uploads.</pre>
+      </div>
+      <div>
+        <h3 style="margin-bottom:.6rem">✅ Tarefas anotadas (não é todo-list)</h3>
+        <p class="muted" style="font-size:.92rem;line-height:1.5">Cada folha rastreia requisitos; paralelismo é declarado e verificado.</p>
+        <pre style="margin-top:.8rem;font-size:.78rem">- [ ] 2. AlbumService <span class="annot">_Boundary: AlbumService_</span>
+  - [ ] 2.1 create / rename / delete
+    <span class="annot">_Requirements: 1.1, 1.2_</span>
+- [ ] 3. PhotoService <span class="annot">_Boundary: PhotoService_</span> <span class="badgeP">(P)</span>
+  - [ ] 3.1 upload S3
+    <span class="annot">_Requirements: 2.1_</span>
+    <span class="annot">_Depends: 1.2_</span></pre>
+        <div class="row" style="margin-top:.8rem;gap:.5rem">
+          <span class="tag"><span class="annot">_Requirements:_</span> toda folha</span>
+          <span class="tag"><span class="annot">_Boundary:_</span> todo <span class="badgeP">(P)</span></span>
+          <span class="tag"><span class="annot">_Depends:_</span> entre boundaries</span>
+        </div>
+      </div>
+    </div>
+    <p class="subhead" style="margin-top:1.4rem"><span class="badgeP">(P)</span> = roda em paralelo. <b>Dois <span class="badgeP">(P)</span> não podem
+       compartilhar boundary</b> — o validador rejeita, garantindo execução paralela segura por agentes.</p>
+  </section>
+
+  <!-- 9 — IMPLEMENTAÇÃO / TDD -->
+  <section class="slide">
+    <div class="kicker">Fase de implementação · um task por vez</div>
+    <h2>Liberado o gate, o agente implementa em <span class="green">TDD</span></h2>
+    <div class="pipe">
+      <div class="step"><span class="gate">teste primeiro</span><div class="ph">1 · escreve o teste</div><div class="nm bad">RED</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ph">2 · mínimo p/ passar</div><div class="nm green">GREEN</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ph">3 · limpa sob verde</div><div class="nm accent">REFACTOR</div></div>
+      <div class="arrow">→</div>
+      <div class="step impl"><div class="ph">4 · suíte + lint</div><div class="nm green">widen the net</div></div>
+    </div>
+    <div class="two" style="margin-top:2.4rem">
+      <div>
+        <h3 style="margin-bottom:.6rem">🔴 Skill <code>tdd-cycle</code></h3>
+        <ul class="clean" style="margin-top:.6rem;gap:.5rem">
+          <li><b>Um task de folha por invocação.</b> <span>Pega o ID em <code>specs/&lt;f&gt;/tasks.md</code>; não agrupa tasks "pra economizar".</span></li>
+          <li><b>O RED falha pelo motivo certo.</b> <span>Não vale erro de compilação — cita a falha antes de seguir.</span></li>
+          <li><b>Nunca enfraquece um teste</b> <span>para a suíte passar. Comportamento novo = novo RED.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="margin-bottom:.6rem">✅ <code>verify-change</code> + Definition of Done</h3>
+        <p class="muted" style="font-size:.92rem;line-height:1.5">Antes de reportar concluído: roda os checks executáveis e produz <b>evidência real</b> — "compila" e "parece certo" não são <em>done</em>.</p>
+        <pre style="margin-top:.7rem;font-size:.8rem"><span class="c"># a evidência colada no relatório / PR</span>
+<span class="k">go test ./...</span>   <span class="o">✓</span>
+<span class="k">lint</span>            <span class="o">✓</span>
+<span class="k">typecheck</span>       <span class="o">✓</span>
+<span class="k">build</span>           <span class="o">✓</span></pre>
+      </div>
+    </div>
+    <p class="subhead" style="margin-top:1.4rem">Cada folha rastreia <span class="annot">_Requirements:_</span> → o teste prova o requisito.
+       <b class="accent">Evidência vence asserção.</b></p>
+  </section>
+
+  <!-- 10 — COMMIT + CODE REVIEW + PR -->
+  <section class="slide">
+    <div class="kicker">Do código pronto ao PR · ordem fixa, com evidência</div>
+    <h2><span class="accent">review</span> → commit → push → PR</h2>
+    <div class="pipe">
+      <div class="step"><span class="gate">sub-agents read-only</span><div class="ph">1 · adversarial</div><div class="nm">code-reviewer</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="ph">2 · só após limpo</div><div class="nm purple">/commit</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="gate">pre-push gate</span><div class="ph">3 · testes rodam aqui</div><div class="nm">git push</div></div>
+      <div class="arrow">→</div>
+      <div class="step impl"><div class="ph">4 · evidência</div><div class="nm green">Pull Request</div></div>
+    </div>
+    <div class="two" style="margin-top:2.4rem">
+      <div class="panelbox">
+        <h3>🔎 Review adversarial <span class="muted" style="font-weight:400">— skill <code>pr-review</code></span></h3>
+        <ul class="clean" style="margin-top:.6rem;gap:.45rem">
+          <li><b><code>code-reviewer</code></b> <span>roda no diff; resolve todo <b class="bad">Blocker</b> antes de seguir.</span></li>
+          <li><b><code>security-reviewer</code></b> <span>se toca auth / secrets / input — resolve Critical/High.</span></li>
+          <li><span>Reviewers <b>não escrevem</b> — você aplica o fix e re-revisa até limpo.</span></li>
+        </ul>
+      </div>
+      <div class="panelbox">
+        <h3>✍️ <code>/commit</code> + <span class="warn">pre-push gate</span></h3>
+        <pre style="margin-top:.4rem;font-size:.75rem"><span class="c"># Conventional Commits, gerado do diff + spec</span>
+<span class="green">feat(photo-albums):</span> add album rename
+
+Implements photo-albums; tasks 2.1, 2.2.
+
+<span class="c"># git push → hook roda a suíte; vermelho BLOQUEIA</span>
+<span class="k">git push</span>
+<span class="x">✗ pre-push: test gate failed — push blocked</span></pre>
+      </div>
+    </div>
+    <p class="subhead" style="margin-top:1.2rem"><b>Nunca</b> commitar com Blocker aberto; <b>nunca</b> <code>git push --no-verify</code>.
+       O PR carrega <b class="accent">evidência</b>: spec links · tasks concluídas · saída real dos checks · riscos.</p>
+  </section>
+
+  <!-- 11 — ARQUITETURA: DIAGRAMA -->
+  <section class="slide">
+    <div class="kicker">Arquitetura · visão de fluxo</div>
+    <h2>Duas superfícies, um núcleo</h2>
+    <div class="arch">
+      <div class="tier"><div class="node entry"><div class="t">main.go</div><div class="d">sem args → TUI · com args → CLI</div></div></div>
+      <div class="vbar">│</div>
+      <div class="tier">
+        <div class="node surf"><div class="t">cmd/ · CLI</div><div class="d">dispatcher + 1 arquivo por recurso</div></div>
+        <div class="node surf"><div class="t">tui/ · TUI</div><div class="d">Bubble Tea · wizards + browser</div></div>
+      </div>
+      <div class="bracket">└──── ambas chamam os MESMOS operation helpers ────┘</div>
+      <div class="vbar">│</div>
+      <div class="tier">
+        <div class="node core"><div class="t">workspace</div><div class="d">resolve .claude/ · kebab-case</div></div>
+        <div class="node core"><div class="t">paths</div><div class="d">layout em um só lugar</div></div>
+        <div class="node core"><div class="t">validator</div><div class="d">checks mecânicos</div></div>
+        <div class="node core"><div class="t">templater</div><div class="d">go:embed templates</div></div>
+        <div class="node core"><div class="t">frontmatter</div><div class="d">parser YAML mínimo</div></div>
+        <div class="node core"><div class="t">render</div><div class="d">saída de terminal</div></div>
+      </div>
+      <div class="vbar">│</div>
+      <div class="tier"><div class="node"><div class="t">artefatos no disco</div><div class="d">.claude/ · specs/ · CLAUDE.md · .mcp.json — texto puro, revisável em PR</div></div></div>
+    </div>
+  </section>
+
+  <!-- 12 — ARQUITETURA: PACOTES -->
+  <section class="slide">
+    <div class="kicker">Arquitetura · papel de cada pacote</div>
+    <h2>Onde vive cada responsabilidade</h2>
+    <table class="t">
+      <thead><tr><th>Pacote</th><th>Responsabilidade</th><th>Por que importa</th></tr></thead>
+      <tbody>
+        <tr><td><code>cmd/</code></td><td><b>Superfície CLI.</b> Dispatch <code>resource&nbsp;action</code>, parsing de flags, 1 arquivo por recurso. Inclui wiring de <code>CLAUDE.md</code> e <code>.gitignore</code>.</td><td>O contrato público — 100% das funções, headless.</td></tr>
+        <tr><td><code>tui/</code></td><td><b>Front-end interativo</b> Bubble Tea: menu, wizards, browser de artefatos.</td><td>Chama os mesmos helpers de <code>cmd</code>. Sem lógica duplicada.</td></tr>
+        <tr><td><code>internal/workspace</code></td><td>Resolve o root <code>.claude/</code> subindo na árvore; valida kebab-case; enumera fases e artefatos.</td><td>Define o que <em>é</em> um workspace e os nomes válidos.</td></tr>
+        <tr><td><code>internal/paths</code></td><td>Centraliza o layout em disco: <code>.claude/</code>, <code>CLAUDE.md</code>, <code>.mcp.json</code>, <code>specs/</code>.</td><td>O layout vive em <em>exatamente um</em> lugar.</td></tr>
+        <tr><td><code>internal/validator</code></td><td><b>Os checks mecânicos:</b> EARS, IDs únicos, traceability, anotações, segurança de paralelismo, estrutura de skill.</td><td>O "amigo" do agente. Nunca pede julgamento — só verdade/falso. Exit 2.</td></tr>
+        <tr><td><code>internal/templater</code></td><td>Renderiza templates <b>embutidos em compile-time</b> (<code>go:embed</code>).</td><td>Binário 100% autossuficiente — zero dependências de runtime.</td></tr>
+        <tr><td><code>internal/frontmatter</code></td><td>Parser de um subconjunto mínimo de YAML (escalares, bool, arrays inline).</td><td>Faz só o necessário — superfície pequena, previsível.</td></tr>
+        <tr><td><code>internal/render</code></td><td>Helpers de saída de terminal com cor (respeita <code>NO_COLOR</code>/TTY).</td><td>Mensagens consistentes <code>✓ ✗ ! •</code> no CLI.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 13 — PRINCIPIOS DE DESIGN -->
+  <section class="slide">
+    <div class="kicker">Decisões de arquitetura que valem destacar</div>
+    <h2>Quatro escolhas deliberadas</h2>
+    <div class="grid g4">
+      <div class="card tl"><h3>① CLI = TUI, sempre</h3>
+        <p>As duas superfícies convergem nos mesmos helpers. Não existe função que só a TUI faz — por isso um agente headless tem 100% do poder.</p></div>
+      <div class="card tl"><h3>② Templates embutidos</h3>
+        <p><code>go:embed all:templates</code> compila os templates no binário. Você baixa um arquivo e ele funciona offline, sem instalar nada.</p></div>
+      <div class="card tl"><h3>③ Validação mecânica, não opinativa</h3>
+        <p>O validador nunca pede julgamento: ou o critério começa com <code>WHEN</code> ou não. Determinístico → um agente confia no exit code.</p></div>
+      <div class="card tl"><h3>④ Artefatos são texto puro</h3>
+        <p>Tudo vira markdown/JSON versionável em <code>.claude/</code> e <code>specs/</code>. Revisão acontece no PR, com as ferramentas que o time já usa.</p></div>
+    </div>
+    <p class="subhead" style="margin-top:1.8rem">Resultado: <b class="accent">o CLI nunca te impede de fazer o certo</b> — ele te impede de fazer
+       o errado <em>sem tornar a decisão visível</em>. Furar um gate exige <code>--force</code> explícito, e isso aparece no histórico.</p>
+  </section>
+
+  <!-- 14 — VALIDAÇÃO -->
+  <section class="slide">
+    <div class="kicker">O que cada gate de validação pega</div>
+    <h2>O validador é a rede de segurança</h2>
+    <div class="grid g2" style="grid-template-columns:1fr 1fr">
+      <div class="card"><h3 class="accent">spec · requirements</h3>
+        <ul class="clean" style="margin-top:.7rem;gap:.4rem">
+          <li><span>Todo critério começa com WHEN/WHILE/IF/WHERE/THE&nbsp;SYSTEM</span></li>
+          <li><span>Nenhum usa <code>should</code></span></li>
+          <li><span>Headers <code>### Requirement N:</code> únicos</span></li>
+        </ul></div>
+      <div class="card"><h3 class="accent">spec · design</h3>
+        <ul class="clean" style="margin-top:.7rem;gap:.4rem">
+          <li><span>Seções Boundary Map e File Structure Plan presentes</span></li>
+          <li><span>Todo ID de requisito aparece na tabela de traceability</span></li>
+          <li><span><code>design.md</code> ≤ 1000 linhas (senão, divida o spec)</span></li>
+        </ul></div>
+      <div class="card"><h3 class="accent">spec · tasks</h3>
+        <ul class="clean" style="margin-top:.7rem;gap:.4rem">
+          <li><span>Toda folha tem <span class="annot">_Requirements:_</span> com IDs reais</span></li>
+          <li><span>Todo <span class="badgeP">(P)</span> tem <span class="annot">_Boundary:_</span> que casa com o design</span></li>
+          <li><span>Nenhum par <span class="badgeP">(P)</span> compartilha boundary</span></li>
+        </ul></div>
+      <div class="card"><h3 class="green">skill · mcp · steering</h3>
+        <ul class="clean" style="margin-top:.7rem;gap:.4rem">
+          <li><span>SKILL.md ≤ 500 linhas / ~5k tokens; refs citadas</span></li>
+          <li><span>mcp: exatamente 1 transporte (stdio <b>ou</b> url)</span></li>
+          <li><span>steering: <code>inclusion</code> válido; fileMatch tem pattern</span></li>
+        </ul></div>
+    </div>
+    <p class="subhead" style="margin-top:1.6rem"><b>Exit codes:</b> <code class="green">0</code> ok · <code class="warn">1</code> erro de uso · <code class="bad">2</code> falha de validação. Scriptável em CI.</p>
+  </section>
+
+  <!-- 15 — INTEGRAÇÃO -->
+  <section class="slide">
+    <div class="kicker">Como isto chega ao nosso dia a dia</div>
+    <h2>Nativo do <span class="accent">Claude Code</span> — sem camada de conversão</h2>
+    <div class="two">
+      <div>
+        <p class="subhead">O workspace que o <code>csdd</code> escreve <b>já é</b> o layout que o Claude Code espera.
+           <code>csdd init</code> faz o bootstrap e cuida do wiring:</p>
+        <pre style="margin-top:1rem;font-size:.8rem"><span class="c"># layout nativo, escrito direto em disco</span>
+CLAUDE.md             <span class="c"># entry point + imports de steering</span>
+.claude/steering/*.md <span class="c"># @-referenciado no CLAUDE.md</span>
+.claude/agents/*.md   <span class="c"># sub-agentes (Read, Grep…)</span>
+.claude/skills/&lt;n&gt;/   <span class="c"># bundles de skill</span>
+.claude/commands/     <span class="c"># slash commands (/commit)</span>
+.claude/hooks/        <span class="c"># automação determinística</span>
+specs/&lt;feature&gt;/      <span class="c"># contratos SDD</span>
+.mcp.json             <span class="c"># servidores MCP</span></pre>
+        <p class="muted" style="margin-top:1rem;font-size:.9rem;line-height:1.5">Criar um steering insere automaticamente
+           <code>@.claude/steering/&lt;nome&gt;</code> num bloco gerenciado do <code>CLAUDE.md</code> — idempotente, nunca clobbera edições manuais.</p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:.8rem">O que o time ganha</h3>
+        <ul class="clean" style="margin-top:0">
+          <li><b>Zero atrito com o Claude Code.</b> <span>Os artefatos são lidos nativamente — nada de exportar ou converter.</span></li>
+          <li><b>Revisão onde já trabalhamos.</b> <span>Specs e steering são texto em PR — diff, comentário, approve.</span></li>
+          <li><b>Menor privilégio por padrão.</b> <span>Sub-agentes nascem com <code>Read, Grep</code>; MCP com escopo restrito.</span></li>
+          <li><b>CI valida o contrato.</b> <span>Um <code>csdd spec validate</code> no pipeline barra spec quebrado antes do merge.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 — TAKEAWAYS -->
+  <section class="slide center">
+    <div class="kicker" style="justify-content:center">Para levar</div>
+    <h2 style="max-width:22ch">O validador é seu amigo.<br>O gate torna a decisão <span class="accent">visível</span>.</h2>
+    <div class="grid g3" style="max-width:1000px;margin-top:2.4rem">
+      <div class="card" style="text-align:left"><span class="ico">📐</span><h3>Contrato antes de código</h3>
+        <p>requirements → design → tasks, cada um aprovado por humano antes do próximo.</p></div>
+      <div class="card" style="text-align:left"><span class="ico">⚙️</span><h3>Sempre gere de template</h3>
+        <p>Nunca escreva frontmatter ou <code>spec.json</code> na mão. Gere, edite o corpo, valide.</p></div>
+      <div class="card" style="text-align:left"><span class="ico">🛡️</span><h3>Menor privilégio</h3>
+        <p>Agentes e MCP com o escopo mínimo. Quanto mais poder, menor o escopo e maior a revisão.</p></div>
+    </div>
+    <p class="lead" style="margin:2.4rem auto 0">Próximo passo sugerido: rodar <code class="green">csdd init --with-baseline</code> num feature real
+       e levar o primeiro spec até <code>ready_for_implementation</code> juntos.</p>
+    <div style="margin-top:2rem;font-family:var(--mono);color:var(--dim)">Perguntas? · <span class="logo"><span class="br">c</span>sdd</span> · obrigado 🙌</div>
+  </section>
+
+</div>
+
+<div class="foot">
+  <div class="logo"><span class="br">c</span>sdd <span style="color:var(--dim);font-weight:400"> · Spec-Driven Development</span></div>
+  <div class="dots" id="dots"></div>
+  <div class="nav-hint"><kbd>←</kbd> <kbd>→</kbd> navegar · <span id="counter">1 / 16</span></div>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const dotsWrap = document.getElementById('dots');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let i = 0;
+
+  slides.forEach((_, n) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (n === 0 ? ' on' : '');
+    d.addEventListener('click', () => go(n));
+    dotsWrap.appendChild(d);
+  });
+  const dots = Array.from(dotsWrap.children);
+
+  function go(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    counter.textContent = (i + 1) + ' / ' + slides.length;
+    progress.style.width = ((i + 1) / slides.length * 100) + '%';
+    slides[i].scrollTop = 0;
+  }
+  function next(){ go(i + 1); }
+  function prev(){ go(i - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','PageDown',' '].includes(e.key)){ e.preventDefault(); next(); }
+    else if (['ArrowLeft','PageUp'].includes(e.key)){ e.preventDefault(); prev(); }
+    else if (e.key === 'Home'){ go(0); }
+    else if (e.key === 'End'){ go(slides.length - 1); }
+    else if (e.key === 'f' || e.key === 'F'){ document.documentElement.requestFullscreen?.(); }
+  });
+  // click esquerda/direita da tela para navegar (ignora elementos roláveis)
+  document.getElementById('deck').addEventListener('click', e => {
+    if (e.target.closest('pre, table, .dot')) return;
+    if (e.clientX > window.innerWidth * 0.5) next(); else prev();
+  });
+  go(0);
+</script>
+</body>
+</html>
