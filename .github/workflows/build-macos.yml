@@ -1,0 +1,53 @@
+name: build-macos
+
+# Native macOS build & test gate.
+#
+# The release pipeline cross-compiles the darwin binaries from Linux with CGO
+# disabled, which never actually exercises a real macOS toolchain. This
+# workflow builds and tests natively on both Apple Silicon (arm64) and Intel
+# (amd64) runners so macOS-specific regressions are caught on every PR — and
+# uploads the resulting binaries as artifacts.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build & test darwin/${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-14, goarch: arm64 }  # Apple Silicon
+          - { runner: macos-13, goarch: amd64 }  # Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: build
+        run: go build ./...
+
+      - name: test (race + coverage)
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Build binary
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o "dist/csdd" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csdd-darwin-${{ matrix.goarch }}
+          path: dist/csdd
+          retention-days: 7
