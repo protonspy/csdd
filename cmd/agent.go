@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/livelo/csdd/internal/frontmatter"
-	"github.com/livelo/csdd/internal/render"
-	"github.com/livelo/csdd/internal/templater"
-	"github.com/livelo/csdd/internal/workspace"
+	"github.com/protonspy/csdd/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 func runAgent(args []string, templates embed.FS) int {

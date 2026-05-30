@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/livelo/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/paths"
 )
 
 var kebabRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)

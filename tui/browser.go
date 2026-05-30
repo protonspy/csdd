@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/livelo/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/paths"
 )
 
 // browserItem represents one navigable artifact (a file under the workspace).

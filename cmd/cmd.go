@@ -11,13 +11,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/livelo/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/render"
 )
 
 // version is the build version string. It defaults to "dev" for local builds
 // and is overridden at release time via the linker:
 //
-//	go build -ldflags "-X github.com/livelo/csdd/cmd.version=v1.2.3"
+//	go build -ldflags "-X github.com/protonspy/csdd/cmd.version=v1.2.3"
 var version = "dev"
 
 // Run dispatches `csdd <resource> <action> ...` to the appropriate handler.
@@ -54,6 +54,8 @@ func Run(args []string, templates embed.FS) int {
 		return runAgent(rest, templates)
 	case "mcp":
 		return runMCP(rest)
+	case "export":
+		return runExport(rest)
 	case "tui":
 		// main.go intercepts this so the TUI can be wired without a cmd → tui cycle.
 		render.Err("internal: 'tui' must be handled by main")
@@ -111,6 +113,7 @@ RESOURCES
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
   mcp      {add,list,show,remove,enable,disable,validate}
+  export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
 
 GLOBAL FLAGS
   --root PATH        Project root (default: nearest enclosing .claude/).
@@ -135,6 +138,8 @@ EXAMPLES
         --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .mcp.json
   csdd mcp add linear --url https://mcp.linear.app/mcp --type http
   csdd mcp validate
+  csdd export kiro                                          # .kiro/steering + .kiro/specs
+  csdd export codex --out ./build                           # AGENTS.md + .codex/config.toml
 `
 
 // parseFlags wraps fs.Parse to allow positional arguments to appear before

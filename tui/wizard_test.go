@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/livelo/csdd/cmd"
-	"github.com/livelo/csdd/internal/templater"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/templater"
 )
 
 // freshTUIWorkspace bootstraps a full Claude Code workspace (with baseline steering)

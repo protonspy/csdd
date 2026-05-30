@@ -10,9 +10,9 @@ package main
 import (
 	"os"
 
-	"github.com/livelo/csdd/cmd"
-	"github.com/livelo/csdd/internal/templater"
-	"github.com/livelo/csdd/tui"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/tui"
 )
 
 func main() {

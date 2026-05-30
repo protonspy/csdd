@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/livelo/csdd/internal/paths"
-	"github.com/livelo/csdd/internal/render"
-	"github.com/livelo/csdd/internal/templater"
-	"github.com/livelo/csdd/internal/workspace"
+	"github.com/protonspy/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 func runInit(args []string, templates embed.FS) int {

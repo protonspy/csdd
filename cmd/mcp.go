@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/livelo/csdd/internal/paths"
-	"github.com/livelo/csdd/internal/render"
-	"github.com/livelo/csdd/internal/validator"
-	"github.com/livelo/csdd/internal/workspace"
+	"github.com/protonspy/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/validator"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // MCPConfig mirrors .mcp.json at the repo root — the workspace-scope Model

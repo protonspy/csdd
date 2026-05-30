@@ -296,6 +296,23 @@ Creating a steering automatically inserts `@.claude/steering/<name>` into a mana
 
 ---
 
+## Interop — export to Kiro / Codex
+
+`csdd` is Claude Code-native, but the SDD artifacts aren't locked in. `csdd export`
+converts the workspace to other agentic toolchains — a one-way, **additive** export
+that lives alongside `.claude/` (nothing is overwritten in place):
+
+```bash
+csdd export kiro     # → .kiro/steering/*.md + .kiro/specs/<feature>/{requirements,design,tasks}.md
+csdd export codex    # → AGENTS.md (CLAUDE.md + steering inlined) + .codex/config.toml (MCP)
+csdd export kiro --out ./build --force
+```
+
+- **Kiro** — steering frontmatter (`inclusion: always|fileMatch|manual|auto`, `fileMatchPattern`) is already Kiro-compatible, so steering copies verbatim; specs copy their SDD markdown (`spec.json` is dropped — Kiro tracks phase state in-IDE).
+- **Codex** — Codex has no `@`-import, so the managed steering block in `CLAUDE.md` is replaced by the steering inlined into `AGENTS.md`; `.mcp.json` becomes `[mcp_servers.*]` tables in `.codex/config.toml`.
+
+---
+
 ## Getting started
 
 ```bash

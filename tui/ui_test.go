@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/livelo/csdd/cmd"
-	"github.com/livelo/csdd/internal/templater"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/templater"
 )
 
 func key(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }

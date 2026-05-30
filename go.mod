@@ -1,4 +1,4 @@
-module github.com/livelo/csdd
+module github.com/protonspy/csdd
 
 go 1.22
 

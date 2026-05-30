@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/livelo/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/paths"
 )
 
 // Markers delimiting the csdd-managed steering import block inside CLAUDE.md.

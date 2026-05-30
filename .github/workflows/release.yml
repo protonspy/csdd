@@ -61,7 +61,7 @@ jobs:
           [ "$GOOS" = "windows" ] && bin=csdd.exe
           mkdir -p dist
           go build -trimpath \
-            -ldflags "-s -w -X github.com/livelo/csdd/cmd.version=${VERSION}" \
+            -ldflags "-s -w -X github.com/protonspy/csdd/cmd.version=${VERSION}" \
             -o "dist/${bin}" .
           name="csdd_${VERSION}_${GOOS}_${GOARCH}"
           cd dist

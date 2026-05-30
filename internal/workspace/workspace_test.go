@@ -84,7 +84,13 @@ func TestResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve(\"\") error: %v", err)
 	}
-	if got != abs {
+	// os.Getwd (called inside Resolve for the empty-arg case) returns the
+	// physical path, which on macOS resolves the /var → /private/var symlink
+	// that filepath.Abs leaves intact. Compare physical paths so the assertion
+	// is portable; the lexical equality still covers platforms without symlinks.
+	absEval, _ := filepath.EvalSymlinks(abs)
+	gotEval, _ := filepath.EvalSymlinks(got)
+	if got != abs && gotEval != absEval {
 		t.Errorf("Resolve(\"\") = %q, want %q", got, abs)
 	}
 }

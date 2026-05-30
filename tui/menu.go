@@ -26,6 +26,7 @@ func newMenu() menuModel {
 			{"Create skill", "Scaffold a SKILL.md bundle in .claude/skills.", cmdOpen(wizSkill)},
 			{"Create agent", "Define a custom sub-agent with least-privilege tools.", cmdOpen(wizAgent)},
 			{"Add MCP server", "Register a workspace MCP server in .mcp.json.", cmdOpen(wizMCP)},
+			{"Export workspace", "Convert steering/specs/MCP to Kiro or Codex format.", cmdOpen(wizExport)},
 			{"Browse artifacts", "Navigate steering/specs/skills/agents/mcp with preview.", cmdBrowser()},
 			{"Quit", "Exit the TUI (CLI remains available for headless use).", tea.Quit},
 		},

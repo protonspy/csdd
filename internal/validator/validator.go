@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/livelo/csdd/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/frontmatter"
 )
 
 var (

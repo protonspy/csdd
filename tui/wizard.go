@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/livelo/csdd/cmd"
-	"github.com/livelo/csdd/internal/workspace"
+	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // wizardKind picks which set of steps the wizard runs.
@@ -22,6 +22,7 @@ const (
 	wizSkill
 	wizAgent
 	wizMCP
+	wizExport
 )
 
 // fieldKind branches the rendering and key handling per step.
@@ -101,6 +102,9 @@ func newWizard(kind wizardKind, templates embed.FS, root string) wizardModel {
 	case wizMCP:
 		w.title = "Add MCP server"
 		w.fields = mcpFields()
+	case wizExport:
+		w.title = "Export workspace"
+		w.fields = exportFields()
 	}
 	return w
 }
@@ -411,6 +415,26 @@ func (w wizardModel) submit() tea.Cmd {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "mcp server '" + opts.Name + "' added (" + transport + ")"}
+		case wizExport:
+			target := getStr(w.state, "target")
+			opts := cmd.ExportOptions{
+				Root:  w.root,
+				Out:   getStr(w.state, "out"),
+				Force: getStr(w.state, "force") == "yes",
+			}
+			var err error
+			switch target {
+			case "kiro":
+				err = cmd.ExportKiro(opts)
+			case "codex":
+				err = cmd.ExportCodex(opts)
+			default:
+				return resultMsg{text: "unknown export target: " + target, isErr: true}
+			}
+			if err != nil {
+				return resultMsg{text: err.Error(), isErr: true}
+			}
+			return resultMsg{text: "exported workspace to " + target + " format"}
 		}
 		return resultMsg{text: "nothing to do"}
 	}
@@ -596,6 +620,23 @@ func mcpFields() []*field {
 		},
 		{
 			name: "disabled", label: "Start disabled?", kind: fSelect,
+			choices: []string{"no", "yes"},
+		},
+	}
+}
+
+func exportFields() []*field {
+	return []*field{
+		{
+			name: "target", label: "Target format", kind: fSelect, required: true,
+			choices: []string{"kiro", "codex"},
+		},
+		{
+			name: "out", label: "Output directory (optional)", hint: "default: project root",
+			kind: fText, input: newTextInput(""),
+		},
+		{
+			name: "force", label: "Overwrite existing files?", kind: fSelect,
 			choices: []string{"no", "yes"},
 		},
 	}

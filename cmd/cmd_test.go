@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/livelo/csdd/internal/templater"
+	"github.com/protonspy/csdd/internal/templater"
 )
 
 // capture swaps stdout/stderr for pipes during f() and returns whatever was
