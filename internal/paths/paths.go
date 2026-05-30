@@ -22,6 +22,7 @@ const (
 	RulesSeg     = "rules"         // .claude/rules: generation rules + review gates
 	SkillsSeg    = "skills"        // .claude/skills
 	AgentsSeg    = "agents"        // .claude/agents
+	CommandsSeg  = "commands"      // .claude/commands: slash commands (e.g. /commit)
 	SteeringSeg  = "steering"      // .claude/steering: project memory
 	TemplatesSeg = "templates"     // .claude/templates: versioned spec/steering templates
 	HooksSeg     = "hooks"         // .claude/hooks: deterministic automation scripts
@@ -42,6 +43,9 @@ func Skills(root string) string { return filepath.Join(root, ClaudeDir, SkillsSe
 
 // Agents returns .claude/agents/.
 func Agents(root string) string { return filepath.Join(root, ClaudeDir, AgentsSeg) }
+
+// Commands returns .claude/commands/.
+func Commands(root string) string { return filepath.Join(root, ClaudeDir, CommandsSeg) }
 
 // Steering returns .claude/steering/.
 func Steering(root string) string { return filepath.Join(root, ClaudeDir, SteeringSeg) }

@@ -96,6 +96,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 		filepath.Join(templatesDir, "steering-custom"),
 		paths.Skills(root),
 		paths.Agents(root),
+		paths.Commands(root),
 		paths.Hooks(root),
 		filepath.Join(root, "docs", "guides"),
 	}
@@ -172,6 +173,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 	}{
 		{paths.Agents(root), templater.AgentFiles, false},
 		{paths.Skills(root), templater.SkillFiles, false},
+		{paths.Commands(root), templater.CommandFiles, false},
 		{paths.Hooks(root), templater.HookFiles, true},
 	}
 	for _, tw := range treeWrites {
