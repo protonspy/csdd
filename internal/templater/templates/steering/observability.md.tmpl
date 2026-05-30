@@ -1,0 +1,20 @@
+---
+inclusion: auto
+name: observability
+description: Logging, metrics, and tracing conventions. Use when adding or modifying instrumentation.
+---
+
+# Observability
+
+## Logging
+- Use structured logging; never log secrets, tokens, or personal data.
+- Include correlationId on every log line crossing a request boundary.
+- Log at INFO for lifecycle events, WARN for recoverable issues, ERROR for failures requiring action.
+
+## Metrics
+- Counter for events (`auth.login.failed`), histogram for durations, gauge for stateful values.
+- Labels MUST NOT carry high-cardinality fields (userId, requestId).
+
+## Tracing
+- Propagate trace context across async boundaries (jobs, queues, retries).
+- Span names describe operations, not implementations.

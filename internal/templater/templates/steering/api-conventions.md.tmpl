@@ -1,0 +1,14 @@
+---
+inclusion: fileMatch
+fileMatchPattern: ["app/api/**/*", "src/api/**/*", "**/*Controller.*", "**/*Route.*"]
+---
+
+# API Conventions
+
+- Use plural resource names.
+- Return standardized errors with code, message, and correlationId.
+- Do not return sensitive data.
+- Validate payloads before calling domain services.
+- Separate controller/route from business rules.
+- Include tests for success, validation, authorization, and external errors.
+- Use pagination on lists.

@@ -1,0 +1,20 @@
+---
+inclusion: always
+---
+
+# Security Guidelines
+
+## Principles
+- Never log secrets, tokens, passwords, cookies, or personal data.
+- Validate inputs at boundaries: API, queues, jobs, external integrations.
+- Use least privilege for permissions and credentials.
+- Prefer temporary and scoped credentials.
+- Do not create authentication/authorization bypasses without explicit approval.
+
+## When modifying code
+- Check the impact on authentication, authorization, and data exposure.
+- Add tests for access denial and invalid inputs.
+- Ensure that errors do not leak internal details.
+
+## Review
+- In PRs with security impact, include a "Security considerations" section.

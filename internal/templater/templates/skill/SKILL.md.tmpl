@@ -1,0 +1,41 @@
+---
+name: {{.Name}}
+description: {{.Description}}
+---
+
+# {{.Title}}
+
+## Goal
+[What problem this skill solves, in one paragraph.]
+
+## Default Operation Mode
+[plan-first vs direct-implementation; what the user expects as the first deliverable.]
+
+## Collect Inputs First
+- [Required context the agent must collect before editing files.]
+- [Each input is a question that has to be answered.]
+
+## Execution Workflow
+
+### 1) [Phase 1 name]
+[What to do, what to read, what to produce.]
+
+### 2) [Phase 2 name]
+[...]
+
+## Gotchas
+- [Non-obvious facts that defy reasonable assumptions.]
+- [Each gotcha is a correction to a mistake the agent will otherwise make.]
+
+## Verification Before Reporting
+- Run: `<command>`
+- Check: `<condition>`
+- If blocked: report the blocked step explicitly, do not silently skip.
+
+## Completion Criteria
+- [ ] [Concrete artifact 1 exists at <path>]
+- [ ] [Validation 1 passes]
+- [ ] [Documentation updated]
+
+## References
+- [Read references/<file>.md when <trigger>.]

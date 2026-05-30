@@ -1,0 +1,32 @@
+---
+name: {{.Name}}
+description: {{.Description}}
+tools: {{.Tools}}
+{{- if .Model}}
+model: {{.Model}}
+{{- end}}
+---
+
+# {{.Title}}
+
+## Role
+[One paragraph: what this sub-agent does and the boundary it respects.]
+
+## Inputs
+- [What the orchestrator passes in.]
+
+## Operating Procedure
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Output Format
+[Exact shape the orchestrator expects back. Templates outperform prose.]
+
+## Tool Scope and Least Privilege
+- Allowed tools: {{.Tools}}
+- Read-only outside this scope unless escalated by the orchestrator.
+
+## Done Criteria
+- [ ] [Concrete output produced]
+- [ ] [Self-check passed]

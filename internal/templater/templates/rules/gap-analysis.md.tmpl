@@ -1,0 +1,17 @@
+# Gap Analysis (Brownfield)
+
+Run after requirements approval, before design, for changes that touch
+existing subsystems.
+
+## Activities
+- Map each requirement to the existing module that owns the behavior.
+- Identify behaviors that contradict existing invariants.
+- Identify implicit contracts that must be preserved (Unchanged Behavior).
+- Catalog tests that already cover affected paths and the ones that do not.
+
+## Outputs
+- A gap report appended to research.md, listing:
+  - Mapped behaviors (req → module)
+  - Conflicts (req vs current behavior)
+  - Implicit contracts to preserve
+  - Test coverage gaps

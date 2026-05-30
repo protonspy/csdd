@@ -1,0 +1,29 @@
+# Requirements
+
+## Introduction
+[2-3 sentences on purpose and users.]
+
+## Requirements
+
+### Requirement 1: [Capability name]
+
+**Objective**
+As a [persona], I want [capability], so that [benefit].
+
+**Acceptance Criteria**
+1. WHEN [event] THEN the system SHALL [response] within [latency/limit].
+2. IF [invalid trigger] THEN the system SHALL return error code `[CODE]` with HTTP [status].
+3. WHILE [state] THE SYSTEM SHALL [behavior].
+4. WHERE [feature flag / context] THE SYSTEM SHALL [behavior].
+5. THE SYSTEM SHALL [ubiquitous requirement, e.g., logging without sensitive data].
+
+<!--
+EARS reminders (see .kiro/settings/rules/ears-format.md):
+- Event-Driven:    WHEN [event] THE SYSTEM SHALL [response]
+- State-Driven:    WHILE [precondition] THE SYSTEM SHALL ...
+- Unwanted:        IF [trigger] THEN the system SHALL ...
+- Optional:        WHERE [feature] THE SYSTEM SHALL ...
+- Ubiquitous:      THE SYSTEM SHALL ...
+Use `shall`, not `should`. Trigger keywords are fixed in English.
+Every criterion: testable, single-behavior, objectively phrased.
+-->

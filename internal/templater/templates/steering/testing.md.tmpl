@@ -1,0 +1,20 @@
+---
+inclusion: always
+---
+
+# Testing Standards
+
+## Test Pyramid
+- Unit tests cover pure logic and invariants.
+- Integration tests exercise real adapters (database, queue, external API stub).
+- End-to-end tests cover golden paths and the top error cases per feature.
+
+## What every change SHALL have
+- A test that fails before the change and passes after, when fixing a bug.
+- Coverage for success, validation, authorization, and external failure paths on new endpoints.
+- Non-regression tests for behavior explicitly listed as "MUST NOT change".
+
+## Conventions
+- Test names describe the behavior, not the function under test.
+- One assertion theme per test; multiple assertions only when they verify the same theme.
+- Tests do not share mutable state across files.
