@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# git pre-push hook — run the project's test gate before a push is allowed.
+# A non-zero exit blocks the push. Tests run "at the moment of pushing".
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+set -euo pipefail
+
+echo "pre-push: running test gate..." >&2
+
+if [ -f Makefile ] && grep -qE '^(verify|test):' Makefile; then
+  make verify 2>/dev/null || make test
+elif [ -f package.json ]; then
+  npm test
+elif [ -f go.mod ]; then
+  go test ./...
+elif [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.cfg ]; then
+  python -m pytest
+elif [ -f Cargo.toml ]; then
+  cargo test
+else
+  echo "pre-push: no known test command detected — adapt .githooks/pre-push for this project." >&2
+  exit 0
+fi
+
+echo "pre-push: test gate passed." >&2

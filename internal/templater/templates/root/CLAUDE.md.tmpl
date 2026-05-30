@@ -25,7 +25,9 @@ between the markers.
 - `.claude/templates/` — templates the agent uses when generating artifacts.
 - `.claude/skills/<skill-name>/` — executable workflow skills (`SKILL.md` + `references/` + `assets/` + `scripts/`).
 - `.claude/agents/<name>.md` — custom sub-agents with least-privilege tool scope.
-- `.claude/hooks/` + `.claude/settings.json` — deterministic automation (format, test gate, command safety).
+- `.claude/hooks/` + `.claude/settings.json` — deterministic automation (format on edit, command safety, stop reminder).
+- `.githooks/pre-push` — runs the test gate at push time. Enable once: `git config core.hooksPath .githooks`.
+- `.github/pull_request_template.md` — evidence-bearing PR body.
 - `.mcp.json` — Model Context Protocol servers.
 
 ## Workflow at a glance
@@ -34,7 +36,8 @@ between the markers.
 2. Each phase requires explicit human approval recorded in `spec.json`.
 3. `ready_for_implementation` flips to `true` only after all three phases are approved.
 4. Implementation runs one task per iteration with fresh-context sub-agents (implementer → reviewer → debugger), TDD red→green per task.
-5. Steering is updated only when a new pattern emerges that the agent could not derive from the code.
+5. The `pr-review` skill commits a slice only after review is clean, then pushes — the `pre-push` hook runs the test gate and blocks a red push.
+6. Steering is updated only when a new pattern emerges that the agent could not derive from the code.
 
 ## Non-negotiables
 

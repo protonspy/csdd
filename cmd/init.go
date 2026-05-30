@@ -48,6 +48,7 @@ func runInit(args []string, templates embed.FS) int {
 	render.Info("directories created: " + intStr(created.dirs))
 	render.Info("files created: " + intStr(created.files))
 	offerGitignore(root)
+	render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
 	if !withBaseline {
 		render.Info("Run `csdd steering init` to scaffold standard steering files.")
 	}
@@ -109,11 +110,13 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 	// CLAUDE.md is the single repository entry point for agents; it imports the
 	// steering files via @-references. docs/guides/claude-code-sdd.md is the
 	// self-contained canonical spec — the only guide an agent needs to consult.
+	prePushPath := filepath.Join(root, ".githooks", "pre-push")
 	files := map[string]string{
 		paths.Entry(root):              "templates/root/CLAUDE.md.tmpl",
 		filepath.Join(root, "csdd.md"): "templates/root/csdd.md.tmpl",
 		paths.MCP(root):                "templates/root/mcp.json.tmpl",
 		paths.Settings(root):           "templates/root/settings.json.tmpl",
+		prePushPath:                    "templates/root/pre-push.tmpl",
 		filepath.Join(root, ".github", "pull_request_template.md"):  "templates/root/pull-request.md.tmpl",
 		filepath.Join(root, "docs", "guides", "claude-code-sdd.md"): "templates/guides/claude-code-sdd.md.tmpl",
 	}
@@ -130,6 +133,8 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			c.files++
 		}
 	}
+	// The git pre-push hook must be executable to run as a hook.
+	_ = os.Chmod(prePushPath, 0o755)
 	// Rules
 	rules, err := templater.RuleFiles(templates)
 	if err != nil {

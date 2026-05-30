@@ -1,23 +1,24 @@
 ---
 name: pr-review
-description: Review the current diff and assemble an evidence-bearing pull request before raising it. Use when a task slice is complete and ready to open or update a PR.
+description: Review the current diff, commit it once review is clean, and push (tests run at push time). Use when a task slice is complete and ready to commit and raise/update a PR.
 ---
 
 # PR Review
 
-Prepare a pull request that carries evidence, not just a description. Pair this
-with the `code-reviewer` and `security-reviewer` sub-agents for adversarial review.
+Take a completed slice from "reviewed" to "pushed", with evidence. The
+adversarial review happens first; the commit is written only after review is
+clean; tests run at the moment of pushing via the git `pre-push` hook.
 
 ## Default Operation Mode
 
-Plan-first: produce the review summary and the PR body for human approval before
-creating the PR.
+Direct, gated. The order is fixed: **review → commit → push → PR**. Do not
+commit before review is clean; do not push before the commit exists.
 
 ## Collect Inputs First
 
-- The diff range (`git diff <base>...HEAD`).
-- The active spec links: `specs/<feature>/{spec.json,requirements.md,design.md,tasks.md}`.
-- The verification output (run the `verify-change` skill first if not already done).
+- The diff range (`git diff` for the working tree, `git diff <base>...HEAD` for a branch).
+- The active spec links: `specs/<feature>/{spec.json,requirements.md,design.md,tasks.md}` and which task IDs this slice completes.
+- Confirm the `pre-push` test gate is enabled: `git config core.hooksPath` should report `.githooks`. If not, enable it: `git config core.hooksPath .githooks`.
 
 ## Execution Workflow
 
@@ -25,26 +26,44 @@ creating the PR.
 - Read the whole diff. Remove debug code, stray logs, commented-out blocks, TODOs without owners.
 - Confirm the change matches the approved spec and stays within its boundaries.
 
-### 2) Delegate adversarial review
-- Run the `code-reviewer` sub-agent on the diff. Address Blockers.
-- If the change touches auth, secrets, input, or data exposure, run `security-reviewer` too.
+### 2) Adversarial review (read-only sub-agents)
+- Run the `code-reviewer` sub-agent on the diff. Resolve every Blocker.
+- If the change touches auth, secrets, input, or data exposure, run `security-reviewer` too; resolve Critical/High.
+- The reviewers do not write — they only report. You apply fixes, then re-review until clean.
 
-### 3) Assemble the PR body
-- Use the project's PR template (`.github/pull_request_template.md`) if present.
-- Fill: summary, spec links, changes, tests added, verification output, risks.
+### 3) Commit (only after review is clean)
+- Stage the reviewed change and write the commit. **Do not commit while any Blocker is open.**
+- Commit message format:
+  ```
+  <type>(<feature>): <imperative summary>
+
+  Implements <spec feature>; tasks <IDs>.
+  <one line on what changed and why>
+  ```
+  e.g. `feat(photo-albums): add magic-link login\n\nImplements photo-albums; tasks 2.1, 2.2.`
+- One logical slice per commit. If the diff spans unrelated concerns, split it.
+
+### 4) Push — tests run here
+- `git push`. The `pre-push` hook runs the project's test gate and **blocks the push if anything is red**.
+- If the push is blocked, read the failure, fix it, amend/add a commit, and push again. Do not bypass with `--no-verify`.
+
+### 5) Open or update the PR
+- Use the project's PR template (`.github/pull_request_template.md`).
+- Fill: summary, spec links, tasks completed, the real verification output, risks.
 
 ## Gotchas
 
-- A PR without test evidence is incomplete. Paste the actual `verify-change` results.
-- Link the spec and the specific tasks completed — traceability is required.
-- Do not open the PR if a Blocker from code-reviewer is unresolved.
+- Never commit with an open Blocker, and never `git push --no-verify` to skip the gate.
+- The reviewer sub-agents are read-only by design — you write the commit, not them.
+- A PR without test evidence is incomplete. The pre-push gate proves tests passed; paste its output (or `verify-change`'s) into the PR body.
+- Link the spec and the specific task IDs the commit completes — traceability is required.
 
 ## Verification Before Reporting
 
-- Run: `verify-change` (full gate) and confirm green.
-- Check: code-reviewer has no open Blockers; PR body is complete.
+- Check: review is clean (no open Blockers), the commit exists and references the spec/tasks, and `git push` succeeded (pre-push gate green).
 
 ## Completion Criteria
-- [ ] Diff self-reviewed and clean.
-- [ ] code-reviewer (and security-reviewer when relevant) findings addressed.
-- [ ] PR body includes spec links + tests + real verification output + risks.
+- [ ] Diff self-reviewed and clean; code-reviewer (and security-reviewer when relevant) findings resolved.
+- [ ] Commit written after review, referencing spec + task IDs.
+- [ ] `git push` succeeded with the pre-push test gate green (no `--no-verify`).
+- [ ] PR body includes spec links + tasks + real verification output + risks.
