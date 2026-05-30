@@ -1,0 +1,60 @@
+---
+name: verify-change
+description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.
+---
+
+# Verify Change
+
+Turn "I think it works" into evidence a reviewer can trust. This skill runs the
+project's own checks and reports their real output.
+
+## Default Operation Mode
+
+Direct execution. The deliverable is a verification block with the exact
+commands run and their results — never a claim without output.
+
+## Collect Inputs First
+
+- What are the project's verification commands? Discover them from
+  `.claude/steering/tech.md`, `CLAUDE.md`, `Makefile`, `package.json`,
+  `go.mod`, `pyproject.toml`, etc. Do not assume `npm test`.
+- What is the scope? (the touched package/module first, then the full suite)
+
+## Execution Workflow
+
+### 1) Focused checks
+Run the tests closest to the change first — fast feedback. Fix and re-run until green.
+
+### 2) Full gate
+Run, in order, whichever of these the project defines:
+1. tests
+2. lint
+3. typecheck / static analysis
+4. build
+
+### 3) Capture evidence
+Record each command and its pass/fail result. Keep output trimmed but real.
+
+## Gotchas
+
+- Use the project's actual commands; a wrong guessed command that "passes" is worse than none.
+- A green build with no new tests for new behavior is not verified — flag the gap.
+- Do not hide a failing step. A skipped or failing check must appear in the report.
+
+## Verification Before Reporting
+
+- Run: every defined check for the touched scope, then the full gate.
+- Check: all green, or failures clearly reported with output.
+
+## Completion Criteria
+- [ ] Each check command is listed with its real result.
+- [ ] Failures (if any) are reported, not masked.
+- [ ] Output is suitable to paste into a PR "Verification" section.
+
+```
+## Verification
+- `<test cmd>`      ✅ / ❌
+- `<lint cmd>`      ✅ / ❌
+- `<typecheck cmd>` ✅ / ❌
+- `<build cmd>`     ✅ / ❌
+```

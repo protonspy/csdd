@@ -23,9 +23,9 @@ func newMenu() menuModel {
 		items: []menuItem{
 			{"Create steering", "Add a project-memory file with chosen inclusion mode.", cmdOpen(wizSteering)},
 			{"Create spec", "Bootstrap or generate a feature spec artifact.", cmdOpen(wizSpec)},
-			{"Create skill", "Scaffold a SKILL.md bundle in .agents/skills.", cmdOpen(wizSkill)},
+			{"Create skill", "Scaffold a SKILL.md bundle in .claude/skills.", cmdOpen(wizSkill)},
 			{"Create agent", "Define a custom sub-agent with least-privilege tools.", cmdOpen(wizAgent)},
-			{"Add MCP server", "Register a workspace MCP server in .kiro/settings/mcp.json.", cmdOpen(wizMCP)},
+			{"Add MCP server", "Register a workspace MCP server in .mcp.json.", cmdOpen(wizMCP)},
 			{"Browse artifacts", "Navigate steering/specs/skills/agents/mcp with preview.", cmdBrowser()},
 			{"Quit", "Exit the TUI (CLI remains available for headless use).", tea.Quit},
 		},

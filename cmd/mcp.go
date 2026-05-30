@@ -9,13 +9,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/livelo/csdd/internal/paths"
 	"github.com/livelo/csdd/internal/render"
 	"github.com/livelo/csdd/internal/validator"
 	"github.com/livelo/csdd/internal/workspace"
 )
 
-// MCPConfig mirrors .kiro/settings/mcp.json — the workspace-scope Model Context
-// Protocol server configuration agents read on every session.
+// MCPConfig mirrors .mcp.json at the repo root — the workspace-scope Model
+// Context Protocol server configuration agents read on every session.
 type MCPConfig struct {
 	MCPServers map[string]MCPServer `json:"mcpServers"`
 }
@@ -63,13 +64,10 @@ func runMCP(args []string) int {
 	}
 }
 
-// mcpFile resolves the path to mcp.json, requiring an initialized workspace.
+// mcpFile resolves the path to the repo-root .mcp.json. The file need not exist
+// yet — loadMCP treats a missing file as an empty config so add/list can proceed.
 func mcpFile(root string) (string, error) {
-	sdir, err := workspace.SettingsDir(root)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(sdir, "mcp.json"), nil
+	return paths.MCP(root), nil
 }
 
 // loadMCP reads mcp.json. A missing file yields an empty config so list/add can

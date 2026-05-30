@@ -1,26 +1,26 @@
 # csdd — Operational Guide for AI Agents
 
-> **You are reading this because you are an AI agent (Claude Code, Cursor, Codex, Kiro IDE…) operating in a repository that uses the Kiro Workflow.** This guide tells you everything you need to drive the `csdd` CLI to create specs, steering files, skills, and custom sub-agents **without reading the CLI source code**.
+> **You are reading this because you are an AI agent operating in a Claude Code repository that uses `csdd`.** This guide tells you everything you need to drive the `csdd` CLI to create specs, steering files, skills, and custom sub-agents **without reading the CLI source code**.
 >
-> **Read this end-to-end before producing any artifact under `.kiro/`, `.agents/`, or `csdd`-managed files.** The rules here are not advisory — they are what the validators enforce.
+> **Read this end-to-end before producing any artifact under `.claude/`, `specs/`, or `csdd`-managed files.** The rules here are not advisory — they are what the validators enforce.
 
 ---
 
 ## 0. What `csdd` is
 
-`csdd` is a single-binary CLI + TUI that owns five resources:
+`csdd` is a single-binary CLI + TUI that owns five resources in a Claude Code workspace:
 
 | Resource | Path | What it is |
 |---|---|---|
-| **steering** | `.kiro/steering/*.md` | Project memory loaded on every agent interaction. |
-| **spec** | `.kiro/specs/<feature>/` | Per-feature contract: `spec.json` + `requirements.md` + `design.md` + `tasks.md` (+ optional `research.md` / `bugfix.md`). |
-| **skill** | `.agents/skills/<name>/` | Executable workflow bundle (`SKILL.md` + `references/` + `assets/` + `scripts/`). |
-| **agent** | `.agents/agents/<name>.md` | Custom sub-agent definition with least-privilege tool scope. |
-| **mcp** | `.kiro/settings/mcp.json` | Workspace-scope Model Context Protocol servers the agent may connect to. |
+| **steering** | `.claude/steering/*.md` | Project memory, imported into `CLAUDE.md` and loaded on every agent interaction. |
+| **spec** | `specs/<feature>/` | Per-feature contract: `spec.json` + `requirements.md` + `design.md` + `tasks.md` (+ optional `research.md` / `bugfix.md`). |
+| **skill** | `.claude/skills/<name>/` | Executable workflow bundle (`SKILL.md` + `references/` + `assets/` + `scripts/`). |
+| **agent** | `.claude/agents/<name>.md` | Custom sub-agent definition with least-privilege tool scope. |
+| **mcp** | `.mcp.json` | Model Context Protocol servers the agent may connect to. |
 
 `csdd` is **the only sanctioned author** of these files. Do not hand-edit frontmatter, `spec.json`, or task annotations to bypass validation. If you need a change, regenerate from template (`csdd spec generate --force`) and edit the body, then re-validate.
 
-The full spec this CLI implements lives at `docs/guides/kiro_sdd.md` (scaffolded by `csdd init`) — a single, self-contained guide and the canonical reference. **This document is the operational subset you need to use the tool.**
+The full spec this CLI implements lives at `docs/guides/claude-code-sdd.md` (scaffolded by `csdd init`) — a single, self-contained guide and the canonical reference. **This document is the operational subset you need to use the tool.**
 
 ---
 
@@ -88,7 +88,7 @@ csdd agent list
 csdd agent show   NAME
 csdd agent delete NAME --force
 
-# mcp servers (.kiro/settings/mcp.json)
+# mcp servers (.mcp.json)
 csdd mcp add NAME --command CMD [--arg A]... [--env K=V]... [--disabled] [--force]   # stdio
 csdd mcp add NAME --url URL [--type sse|http] [--env K=V]... [--disabled] [--force]  # remote
 csdd mcp list
@@ -116,7 +116,7 @@ csdd spec init photo-albums
 
 # 3. Draft requirements
 csdd spec generate photo-albums --artifact requirements
-#    → opens .kiro/specs/photo-albums/requirements.md
+#    → opens specs/photo-albums/requirements.md
 #    → edit it to capture real requirements in EARS phrasing (see §4)
 csdd spec validate photo-albums            # exit 2 means fix what it reports
 # 4. Hand off for human review and approval
@@ -255,16 +255,26 @@ As a gallery user, I want to organize photos into albums so that I can find them
 
 ## 6. Steering — project memory
 
-Steering files live in `.kiro/steering/*.md` and are loaded into agent context based on their **inclusion mode**, set in YAML frontmatter.
+Steering files live in `.claude/steering/*.md`. `csdd` imports them into
+`CLAUDE.md` as `@`-references inside the managed block between
+`<!-- csdd:steering:start -->` and `<!-- csdd:steering:end -->`, so they load as
+**always-on project memory** on every interaction. Do not hand-edit that block —
+`csdd steering create` / `csdd steering init` keep it in sync.
 
-### Inclusion modes — pick one per file
+### Inclusion modes — advisory metadata
 
-| Mode | Loaded | When to use | Frontmatter |
+Each file carries an `inclusion:` value in its YAML frontmatter. Under Claude
+Code every imported file loads always-on, so inclusion is **documentation of
+intended scope**, not a runtime loading switch (there is no native conditional
+loading of arbitrary markdown). Pick the value that best documents intent; the
+validator still checks the frontmatter is well-formed.
+
+| Mode | Documents | When to use | Frontmatter |
 |---|---|---|---|
-| `always` | every interaction | foundational (product/tech/structure), security policies | `inclusion: always` |
-| `fileMatch` | when the agent touches files matching the patterns | API conventions, framework-specific rules | `inclusion: fileMatch` + `fileMatchPattern: ["src/api/**/*", "**/*Controller.*"]` |
-| `auto` | when the description matches the current task | observability, performance, deployment | `inclusion: auto` + `name:` + `description:` |
-| `manual` | only when the user references it | rarely used niche guidance | `inclusion: manual` |
+| `always` | foundational, load everywhere | product/tech/structure, security policies | `inclusion: always` |
+| `fileMatch` | scoped to certain files | API conventions, framework-specific rules | `inclusion: fileMatch` + `fileMatchPattern: ["src/api/**/*", "**/*Controller.*"]` |
+| `auto` | task-triggered intent | observability, performance, deployment | `inclusion: auto` + `name:` + `description:` |
+| `manual` | niche, reference on demand | rarely used guidance | `inclusion: manual` |
 
 ### Commands
 
@@ -302,14 +312,14 @@ csdd steering create regulated-domain --inclusion manual
 Use `csdd skill` to create a reusable, well-scoped capability bundle the agent can load on demand.
 
 ```bash
-csdd skill create kiro-spec-tasks \
+csdd skill create spec-tasks \
     --description 'Generate tasks.md with boundary/depends annotations.'
 ```
 
 This produces:
 
 ```
-.agents/skills/kiro-spec-tasks/
+.claude/skills/spec-tasks/
 ├── SKILL.md         # required — frontmatter + body, < 500 lines / < 5k tokens
 ├── references/      # progressive disclosure; load on trigger only
 ├── assets/          # templates and static resources
@@ -338,10 +348,10 @@ This produces:
 ### Adding content
 
 ```bash
-csdd skill add-reference kiro-spec-tasks api-errors.md
-csdd skill add-script    kiro-spec-tasks validate_ids.py     # marked executable
-csdd skill add-asset     kiro-spec-tasks report-template.md
-csdd skill validate      kiro-spec-tasks
+csdd skill add-reference spec-tasks api-errors.md
+csdd skill add-script    spec-tasks validate_ids.py     # marked executable
+csdd skill add-asset     spec-tasks report-template.md
+csdd skill validate      spec-tasks
 ```
 
 If `references/<file>` exists but is not cited from `SKILL.md`, validation fails. Either cite it with a load trigger or delete the file.
@@ -350,7 +360,7 @@ If `references/<file>` exists but is not cited from `SKILL.md`, validation fails
 
 ## 8. Custom sub-agents — least privilege
 
-Custom agents live at `.agents/agents/<name>.md` and define delegated, scoped roles (reviewer, debugger, security reviewer…).
+Custom agents live at `.claude/agents/<name>.md` and define delegated, scoped roles (reviewer, debugger, security reviewer…).
 
 ```bash
 csdd agent create code-reviewer \
@@ -383,7 +393,7 @@ csdd agent create security-reviewer \
 
 ## 9. MCP servers — workspace integrations
 
-Model Context Protocol servers give the agent extra tools (filesystem access, issue trackers, search, internal APIs…). They are declared in `.kiro/settings/mcp.json` and managed exclusively with `csdd mcp` — **do not hand-edit the JSON**; the CLI keeps it well-formed and reviewable.
+Model Context Protocol servers give the agent extra tools (filesystem access, issue trackers, search, internal APIs…). They are declared in `.mcp.json` and managed exclusively with `csdd mcp` — **do not hand-edit the JSON**; the CLI keeps it well-formed and reviewable.
 
 ### Two transports
 

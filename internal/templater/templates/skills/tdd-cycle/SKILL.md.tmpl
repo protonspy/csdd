@@ -1,0 +1,58 @@
+---
+name: tdd-cycle
+description: Execute one small red→green→refactor cycle for a single task from specs/*/tasks.md. Use when implementing a behavior task that needs test-first development.
+---
+
+# TDD Cycle
+
+Use this skill for **exactly one task at a time**, driving it through
+red → green → refactor.
+
+## Default Operation Mode
+
+Direct implementation, test-first. The first artifact you produce is a failing
+test, not production code.
+
+## Collect Inputs First
+
+- Which task? (a single leaf task ID from `specs/<feature>/tasks.md`)
+- What is the expected, observable behavior? (state it in one sentence before editing)
+- Where do existing tests for this area live, and what is the test command?
+
+## Execution Workflow
+
+### 1) RED — write the failing test
+- Locate existing tests and patterns; match their structure and naming.
+- Write the smallest meaningful test for the expected behavior.
+- Run the focused test. Confirm it fails, and that it fails **for the expected reason** (not a compile error or typo). Quote the failure.
+
+### 2) GREEN — minimal implementation
+- Write the least code that makes the test pass. No extra abstraction, no unrelated changes.
+- Run the focused test. Confirm it passes.
+
+### 3) REFACTOR — clean under green
+- Improve names/structure only while the test stays green. Re-run after each change.
+- Do not add behavior here; new behavior means a new RED test.
+
+### 4) Widen the net
+- Run the broader relevant suite (not just the focused test) to catch regressions.
+- Run lint / typecheck if the project has them.
+
+## Gotchas
+
+- One task per invocation. Do not batch tasks "to save time".
+- Never delete or weaken a test to make the suite pass.
+- If no test framework exists, say so explicitly and stop — do not silently skip the RED step.
+- Do not broaden scope beyond the current task; capture follow-ups as new tasks.
+
+## Verification Before Reporting
+
+- Run: the focused test (RED then GREEN), then the relevant suite.
+- Check: the new behavior is exercised and the suite is green.
+- If blocked: report the blocked step explicitly; do not mark the task done.
+
+## Completion Criteria
+- [ ] A test existed that failed before the change (or documented why not).
+- [ ] The test passes after the minimal implementation.
+- [ ] The relevant suite + lint/typecheck pass.
+- [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

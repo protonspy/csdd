@@ -514,8 +514,8 @@ func specFields() []*field {
 func skillFields() []*field {
 	return []*field{
 		{
-			name: "name", label: "Name", hint: "kebab-case (e.g. kiro-spec-tasks)",
-			kind: fText, required: true, input: newTextInput("kiro-spec-tasks"),
+			name: "name", label: "Name", hint: "kebab-case (e.g. spec-tasks)",
+			kind: fText, required: true, input: newTextInput("spec-tasks"),
 			validate: validateKebab,
 		},
 		{

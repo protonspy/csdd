@@ -1,4 +1,4 @@
-// Package validator implements the mechanical checks the Kiro spec mandates:
+// Package validator implements the mechanical checks the Claude Code spec mandates:
 // EARS phrasing, unique requirement IDs, traceability coverage, task
 // annotation hygiene (_Requirements:_, _Boundary:_, _Depends:_), parallel
 // safety, and skill structure. The checks here mirror the Python reference

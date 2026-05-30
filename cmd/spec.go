@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/livelo/csdd/internal/paths"
 	"github.com/livelo/csdd/internal/render"
 	"github.com/livelo/csdd/internal/templater"
 	"github.com/livelo/csdd/internal/validator"
@@ -89,7 +90,7 @@ func specInit(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
-	target := filepath.Join(r, ".kiro", "specs", feature)
+	target := filepath.Join(paths.Specs(r), feature)
 	if pathExists(target) {
 		render.Err("spec already exists: " + workspace.Relative(r, target))
 		return 1
@@ -200,7 +201,7 @@ func specShow(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
-	sdir := filepath.Join(r, ".kiro", "specs", feature)
+	sdir := filepath.Join(paths.Specs(r), feature)
 	if !pathExists(sdir) {
 		render.Err("spec not found: " + feature)
 		return 1
@@ -295,7 +296,7 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 	if err != nil {
 		return err
 	}
-	sdir := filepath.Join(r, ".kiro", "specs", opts.Feature)
+	sdir := filepath.Join(paths.Specs(r), opts.Feature)
 	if !pathExists(sdir) {
 		return fmt.Errorf("spec not found: %s. Run `csdd spec init %s` first", opts.Feature, opts.Feature)
 	}
@@ -400,7 +401,7 @@ func SpecApprove(opts SpecApproveOptions) error {
 	if err != nil {
 		return err
 	}
-	sdir := filepath.Join(r, ".kiro", "specs", opts.Feature)
+	sdir := filepath.Join(paths.Specs(r), opts.Feature)
 	if !pathExists(sdir) {
 		return fmt.Errorf("spec not found: %s", opts.Feature)
 	}
@@ -481,7 +482,7 @@ func specValidate(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
-	sdir := filepath.Join(r, ".kiro", "specs", feature)
+	sdir := filepath.Join(paths.Specs(r), feature)
 	if !pathExists(sdir) {
 		render.Err("spec not found: " + feature)
 		return 1
@@ -546,7 +547,7 @@ func specDelete(args []string) int {
 		render.Err(err.Error())
 		return 1
 	}
-	sdir := filepath.Join(r, ".kiro", "specs", feature)
+	sdir := filepath.Join(paths.Specs(r), feature)
 	if !pathExists(sdir) {
 		render.Err("spec not found: " + feature)
 		return 1

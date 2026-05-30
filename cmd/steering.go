@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/livelo/csdd/internal/frontmatter"
+	"github.com/livelo/csdd/internal/paths"
 	"github.com/livelo/csdd/internal/render"
 	"github.com/livelo/csdd/internal/templater"
 	"github.com/livelo/csdd/internal/validator"
@@ -54,12 +55,13 @@ func steeringInit(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
-	target := filepath.Join(r, ".kiro", "steering")
+	target := paths.Steering(r)
 	if err := mkdirAll(target); err != nil {
 		render.Err(err.Error())
 		return 1
 	}
 	created := 0
+	var names []string
 	for name, tpl := range standardSteeringTemplates() {
 		content, err := templater.Static(templates, tpl)
 		if err != nil {
@@ -79,8 +81,14 @@ func steeringInit(args []string, templates embed.FS) int {
 		} else {
 			render.Info("skipped " + rel + " (exists)")
 		}
+		names = append(names, name)
 	}
 	render.Info("standard steering files created: " + intStr(created))
+	if added, err := ensureSteeringImports(r, names...); err != nil {
+		render.Warn("could not update CLAUDE.md imports: " + err.Error())
+	} else if added > 0 {
+		render.OK("imported " + intStr(added) + " steering file(s) into CLAUDE.md")
+	}
 	return 0
 }
 
@@ -172,11 +180,16 @@ func SteeringCreate(templates embed.FS, opts SteeringCreateOptions) error {
 	if err != nil {
 		return err
 	}
-	target := filepath.Join(r, ".kiro", "steering", opts.Name+".md")
+	target := filepath.Join(paths.Steering(r), opts.Name+".md")
 	if err := workspace.WriteFile(target, content, opts.Force); err != nil {
 		return err
 	}
 	render.OK("created " + workspace.Relative(r, target) + " (inclusion=" + opts.Inclusion + ")")
+	if added, err := ensureSteeringImports(r, opts.Name+".md"); err != nil {
+		render.Warn("could not update CLAUDE.md imports: " + err.Error())
+	} else if added > 0 {
+		render.Info("imported " + opts.Name + ".md into CLAUDE.md (always-on)")
+	}
 	return nil
 }
 

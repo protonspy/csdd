@@ -1,0 +1,49 @@
+---
+name: safe-refactor
+description: Restructure code without changing its observable behavior, under a green test suite. Use when improving structure/naming/duplication separately from feature work.
+---
+
+# Safe Refactor
+
+Refactoring changes structure, never behavior. The test suite is the contract;
+it must stay green at every step.
+
+## Default Operation Mode
+
+Direct, incremental. Small steps, each verified.
+
+## Collect Inputs First
+
+- What is the refactor's goal? (extract, rename, dedupe, restructure)
+- Is the area covered by tests? If coverage is thin, add characterization tests FIRST (capture current behavior) before touching structure.
+- What is the test command and how long does it take? (decides step size)
+
+## Execution Workflow
+
+### 1) Establish the safety net
+- Run the suite; confirm it is green before you start.
+- If the target code lacks tests, write characterization tests for current behavior first.
+
+### 2) Refactor in small steps
+- Make one mechanical change (extract function, rename, inline, move).
+- Run the relevant tests after each step. If red, revert the step — do not "fix forward".
+
+### 3) Confirm no behavior change
+- Run the full relevant suite. Behavior outputs must be identical to before.
+- The public API/contract must be unchanged unless the task explicitly authorizes it.
+
+## Gotchas
+
+- No behavior changes sneak in under "refactor". If you must change behavior, stop and open a separate task/spec.
+- Do not refactor unrelated code you happen to pass through — scope discipline.
+- A refactor that needs new tests for new behavior is not a refactor.
+
+## Verification Before Reporting
+
+- Run: the full relevant suite before and after; diffs in behavior = failure.
+- Check: public contracts unchanged; suite green.
+
+## Completion Criteria
+- [ ] Suite was green before and is green after.
+- [ ] No observable behavior or public contract changed.
+- [ ] Report lists what was restructured and confirms behavior parity.

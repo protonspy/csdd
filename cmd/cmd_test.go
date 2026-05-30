@@ -40,7 +40,7 @@ func run(t *testing.T, args ...string) (int, string, string) {
 }
 
 // freshWorkspace creates an empty directory and runs `csdd init --root` so the
-// rest of the test has a normal Kiro layout to operate on.
+// rest of the test has a normal Claude Code layout to operate on.
 func freshWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -100,36 +100,35 @@ func TestInitCreatesLayout(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init failed: %d", code)
 	}
-	if !strings.Contains(out, "Initialized Kiro workspace") {
+	if !strings.Contains(out, "Initialized Claude Code workspace") {
 		t.Errorf("missing initialization message: %s", out)
 	}
 	for _, p := range []string{
-		".kiro/steering/product.md",
-		".kiro/steering/tech.md",
-		".kiro/steering/structure.md",
-		".kiro/steering/security.md",
-		".kiro/steering/testing.md",
-		".kiro/steering/api-conventions.md",
-		".kiro/settings/mcp.json",
-		".kiro/settings/rules/ears-format.md",
-		".kiro/settings/templates/specs/requirements.md",
-		".kiro/settings/templates/specs/design.md",
-		".kiro/settings/templates/specs/tasks.md",
-		".kiro/settings/templates/specs/init.json",
-		".kiro/settings/templates/steering/product.md",
-		".kiro/settings/templates/steering-custom/custom.md",
-		".agents/skills",
-		".agents/agents",
-		".kiroignore",
-		"KIRO.md",
+		".claude/steering/product.md",
+		".claude/steering/tech.md",
+		".claude/steering/structure.md",
+		".claude/steering/security.md",
+		".claude/steering/testing.md",
+		".claude/steering/api-conventions.md",
+		".mcp.json",
+		".claude/rules/ears-format.md",
+		".claude/templates/specs/requirements.md",
+		".claude/templates/specs/design.md",
+		".claude/templates/specs/tasks.md",
+		".claude/templates/specs/init.json",
+		".claude/templates/steering/product.md",
+		".claude/templates/steering-custom/custom.md",
+		".claude/skills",
+		".claude/agents",
+		"CLAUDE.md",
 		"csdd.md",
-		"docs/guides/kiro_sdd.md",
+		"docs/guides/claude-code-sdd.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Errorf("init missing %s: %v", p, err)
 		}
 	}
-	// AGENTS.md is intentionally no longer scaffolded — KIRO.md is the sole entry point.
+	// AGENTS.md is intentionally no longer scaffolded — CLAUDE.md is the sole entry point.
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err == nil {
 		t.Error("init should not create AGENTS.md anymore")
 	}
@@ -156,7 +155,7 @@ func TestInitWithoutBaseline(t *testing.T) {
 	if !strings.Contains(out, "csdd steering init") {
 		t.Errorf("non-baseline init should hint at steering init: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro/steering/product.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, ".claude/steering/product.md")); err == nil {
 		t.Error("init without --with-baseline should not create product.md")
 	}
 }
@@ -167,14 +166,14 @@ func TestSteeringInit(t *testing.T) {
 	dir := freshWorkspace(t)
 	// Remove baseline to test the steering init command.
 	for _, f := range []string{"product.md", "tech.md", "structure.md"} {
-		_ = os.Remove(filepath.Join(dir, ".kiro/steering", f))
+		_ = os.Remove(filepath.Join(dir, ".claude/steering", f))
 	}
 	code, out, _ := run(t, "steering", "init", "--root", dir)
 	if code != 0 {
 		t.Fatalf("steering init: %d", code)
 	}
 	for _, name := range []string{"product.md", "tech.md", "structure.md", "security.md", "testing.md", "api-conventions.md"} {
-		if _, err := os.Stat(filepath.Join(dir, ".kiro/steering", name)); err != nil {
+		if _, err := os.Stat(filepath.Join(dir, ".claude/steering", name)); err != nil {
 			t.Errorf("missing %s after steering init", name)
 		}
 	}
@@ -207,7 +206,7 @@ func TestSteeringCreateAllInclusionModes(t *testing.T) {
 			if c.shouldErr != (code != 0) {
 				t.Fatalf("%s: code=%d err=%s", c.name, code, errOut)
 			}
-			content, _ := os.ReadFile(filepath.Join(dir, ".kiro/steering", c.args[2]+".md"))
+			content, _ := os.ReadFile(filepath.Join(dir, ".claude/steering", c.args[2]+".md"))
 			if !strings.Contains(string(content), c.mustEmit) {
 				t.Errorf("%s: file missing %q\n%s", c.name, c.mustEmit, content)
 			}
@@ -276,7 +275,7 @@ func TestSteeringListAndFilter(t *testing.T) {
 
 func TestSteeringListEmpty(t *testing.T) {
 	dir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(dir, ".kiro/steering"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, ".claude/steering"), 0o755)
 	_, out, _ := run(t, "steering", "list", "--root", dir)
 	if !strings.Contains(out, "no steering files found") {
 		t.Errorf("empty dir should report no files: %s", out)
@@ -320,7 +319,7 @@ func TestSteeringValidate(t *testing.T) {
 		t.Errorf("validate should pass on fresh workspace, got %d", code)
 	}
 	// Corrupt a file and re-validate.
-	bad := filepath.Join(dir, ".kiro/steering/bad.md")
+	bad := filepath.Join(dir, ".claude/steering/bad.md")
 	_ = os.WriteFile(bad, []byte("---\ninclusion: weird\n---\n"), 0o644)
 	if code, _, _ := run(t, "steering", "validate", "--root", dir); code != 2 {
 		t.Errorf("validate with bad file should exit 2, got %d", code)
@@ -334,7 +333,7 @@ func TestSteeringValidate(t *testing.T) {
 func TestSteeringMissingWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	code, _, errOut := run(t, "steering", "list", "--root", dir)
-	if code == 0 || !strings.Contains(errOut, "no .kiro/steering") {
+	if code == 0 || !strings.Contains(errOut, "no .claude/steering") {
 		t.Errorf("steering against bare dir should fail: code=%d err=%q", code, errOut)
 	}
 }
@@ -354,10 +353,10 @@ func TestSpecInitAndShow(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("spec init: %d", code)
 	}
-	if !strings.Contains(out, ".kiro/specs/photo-albums/") {
+	if !strings.Contains(out, "specs/photo-albums/") {
 		t.Errorf("expected path in output: %s", out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro/specs/photo-albums/spec.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "specs/photo-albums/spec.json")); err != nil {
 		t.Error("spec.json missing after init")
 	}
 	// Second init refuses.
@@ -435,7 +434,7 @@ func TestSpecApproveCascadeAndReady(t *testing.T) {
 			t.Fatalf("approve %s failed", art)
 		}
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".kiro/specs/demo/spec.json"))
+	data, _ := os.ReadFile(filepath.Join(dir, "specs/demo/spec.json"))
 	if !strings.Contains(string(data), `"ready_for_implementation": true`) {
 		t.Errorf("after full approval, ready_for_implementation should be true. Got: %s", data)
 	}
@@ -463,7 +462,7 @@ func TestSpecApproveValidations(t *testing.T) {
 	// Generate, then approve without --force on a spec with issues (template requirements are valid;
 	// to force validation issues we corrupt the file).
 	_, _, _ = run(t, "spec", "generate", "x", "--artifact", "requirements", "--force", "--root", dir)
-	_ = os.WriteFile(filepath.Join(dir, ".kiro/specs/x/requirements.md"),
+	_ = os.WriteFile(filepath.Join(dir, "specs/x/requirements.md"),
 		[]byte("# Requirements\n## Requirements\n### Requirement 1: bad\n1. should be SHALL\n"), 0o644)
 	if code, _, _ := run(t, "spec", "approve", "x", "--phase", "requirements", "--root", dir); code == 0 {
 		t.Error("approve with validation issues (no force) should fail")
@@ -545,7 +544,7 @@ func TestSkillCreateAndStructure(t *testing.T) {
 	if code != 0 {
 		t.Fatal("skill create failed")
 	}
-	skillDir := filepath.Join(dir, ".agents/skills/demo-skill")
+	skillDir := filepath.Join(dir, ".claude/skills/demo-skill")
 	for _, sub := range []string{"SKILL.md", "references", "assets", "scripts"} {
 		if _, err := os.Stat(filepath.Join(skillDir, sub)); err != nil {
 			t.Errorf("skill missing %s", sub)
@@ -605,7 +604,7 @@ func TestSkillListShowAddDelete(t *testing.T) {
 	if code, _, _ := run(t, "skill", "add-reference", "demo", "../escape.md", "--root", dir); code == 0 {
 		t.Error("add-reference with path traversal should fail")
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".agents/skills/demo/escape.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, ".claude/skills/demo/escape.md")); err == nil {
 		t.Error("path traversal wrote outside references/")
 	}
 	// delete
@@ -638,10 +637,22 @@ func TestSkillValidate(t *testing.T) {
 }
 
 func TestSkillListEmpty(t *testing.T) {
-	dir := freshWorkspace(t)
+	// A bare directory (not initialized) has no shipped skills, so the empty
+	// path is exercised. `csdd init` ships default workflow skills.
+	dir := t.TempDir()
 	_, out, _ := run(t, "skill", "list", "--root", dir)
 	if !strings.Contains(out, "no skills found") {
 		t.Errorf("empty skill list: %s", out)
+	}
+}
+
+func TestSkillListIncludesShippedDefaults(t *testing.T) {
+	dir := freshWorkspace(t)
+	_, out, _ := run(t, "skill", "list", "--root", dir)
+	for _, want := range []string{"tdd-cycle", "verify-change", "safe-refactor", "pr-review"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("skill list missing shipped default %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -655,7 +666,7 @@ func TestSkillUnknownAction(t *testing.T) {
 
 func TestAgentCreate(t *testing.T) {
 	dir := freshWorkspace(t)
-	code, _, _ := run(t, "agent", "create", "code-reviewer",
+	code, _, _ := run(t, "agent", "create", "custom-reviewer",
 		"--description", "Read-only adversarial reviewer.",
 		"--tools", "Read", "--tools", "Grep",
 		"--model", "sonnet",
@@ -663,8 +674,8 @@ func TestAgentCreate(t *testing.T) {
 	if code != 0 {
 		t.Fatal("agent create failed")
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, ".agents/agents/code-reviewer.md"))
-	for _, want := range []string{"name: code-reviewer", "tools: Read, Grep", "model: sonnet"} {
+	data, _ := os.ReadFile(filepath.Join(dir, ".claude/agents/custom-reviewer.md"))
+	for _, want := range []string{"name: custom-reviewer", "tools: Read, Grep", "model: sonnet"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("agent missing %q\n%s", want, data)
 		}
@@ -675,7 +686,7 @@ func TestAgentCreateDefaults(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, _, _ = run(t, "agent", "create", "default-tools",
 		"--description", "Defaults.", "--root", dir)
-	data, _ := os.ReadFile(filepath.Join(dir, ".agents/agents/default-tools.md"))
+	data, _ := os.ReadFile(filepath.Join(dir, ".claude/agents/default-tools.md"))
 	if !strings.Contains(string(data), "tools: Read, Grep") {
 		t.Errorf("default tools should be Read,Grep:\n%s", data)
 	}
@@ -707,7 +718,9 @@ func TestAgentCreateErrors(t *testing.T) {
 }
 
 func TestAgentListShowDelete(t *testing.T) {
-	dir := freshWorkspace(t)
+	// Bare dir: no shipped agents, so the empty path is exercised. `csdd init`
+	// ships default reviewer sub-agents (code-reviewer, test-designer, ...).
+	dir := t.TempDir()
 	_, out, _ := run(t, "agent", "list", "--root", dir)
 	if !strings.Contains(out, "no agents found") {
 		t.Errorf("empty agent list: %s", out)
@@ -755,7 +768,7 @@ func TestParseFlagsAllowsPositionalsBeforeFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("positional-first command rejected: %s", errOut)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".kiro/steering/api-conv.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".claude/steering/api-conv.md")); err != nil {
 		t.Error("expected file from positional-first invocation")
 	}
 }

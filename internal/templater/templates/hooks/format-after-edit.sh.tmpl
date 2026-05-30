@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# PostToolUse(Edit|Write|MultiEdit) hook: best-effort format the edited file.
+# Reads tool_input.file_path from the JSON on stdin. Always exits 0 — formatting
+# is a convenience, never a gate. Unknown extensions and missing formatters are
+# silently skipped.
+set -euo pipefail
+
+input="$(cat)"
+
+file=""
+if command -v jq >/dev/null 2>&1; then
+  file="$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty')"
+elif command -v python3 >/dev/null 2>&1; then
+  file="$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("tool_input",{}).get("file_path",""))' 2>/dev/null || true)"
+fi
+
+[ -n "$file" ] && [ -f "$file" ] || exit 0
+
+case "$file" in
+  *.go)            command -v gofmt    >/dev/null 2>&1 && gofmt -w "$file" ;;
+  *.rs)            command -v rustfmt  >/dev/null 2>&1 && rustfmt "$file" ;;
+  *.py)            command -v black    >/dev/null 2>&1 && black -q "$file" ;;
+  *.ts|*.tsx|*.js|*.jsx|*.json|*.css|*.md)
+                   command -v prettier >/dev/null 2>&1 && prettier --write "$file" ;;
+esac
+
+exit 0

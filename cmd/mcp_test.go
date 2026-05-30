@@ -8,7 +8,7 @@ import (
 )
 
 func mcpJSONPath(dir string) string {
-	return filepath.Join(dir, ".kiro", "settings", "mcp.json")
+	return filepath.Join(dir, ".mcp.json")
 }
 
 func TestMCPAddStdioAndRemote(t *testing.T) {
@@ -171,18 +171,6 @@ func TestMCPMalformedJSON(t *testing.T) {
 	}
 	if code, _, _ := run(t, "mcp", "list", "--root", dir); code == 0 {
 		t.Error("malformed mcp.json should make list fail")
-	}
-}
-
-func TestMCPRequiresInitializedWorkspace(t *testing.T) {
-	dir := t.TempDir() // no .kiro/settings
-	for _, args := range [][]string{
-		{"mcp", "list", "--root", dir},
-		{"mcp", "add", "x", "--command", "c", "--root", dir},
-	} {
-		if code, _, _ := run(t, args...); code == 0 {
-			t.Errorf("%v should fail without an initialized workspace", args)
-		}
 	}
 }
 

@@ -1,6 +1,5 @@
-// Package frontmatter parses the minimal YAML subset used by Kiro artifacts.
-// Inputs only need to support what the Python reference implementation
-// produces: scalar strings, booleans, and inline arrays like `["a", "b"]`.
+// Package frontmatter parses the minimal YAML subset used by Claude Code
+// artifacts: scalar strings, booleans, and inline arrays like `["a", "b"]`.
 // Multi-line YAML, anchors, and nested mappings are out of scope by design.
 package frontmatter
 

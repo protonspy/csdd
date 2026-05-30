@@ -39,7 +39,7 @@ func TestFindAndResolve(t *testing.T) {
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".kiro"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	got := Find(nested)
@@ -47,18 +47,18 @@ func TestFindAndResolve(t *testing.T) {
 	if got != want {
 		t.Errorf("Find(%q) = %q, want %q", nested, got, want)
 	}
-	// Find with no .kiro/ falls back to the input itself.
+	// Find with no .claude/ falls back to the input itself.
 	scratch := t.TempDir()
 	fallback := Find(scratch)
 	wantFallback, _ := filepath.Abs(scratch)
 	if fallback != wantFallback {
-		t.Errorf("Find without .kiro: got %q want %q", fallback, wantFallback)
+		t.Errorf("Find without .claude: got %q want %q", fallback, wantFallback)
 	}
 }
 
 func TestResolve(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".kiro"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Explicit --root path that exists.
@@ -128,13 +128,13 @@ func TestSafeWriteAndWriteFile(t *testing.T) {
 func TestSteeringAndSpecsDirRequireInit(t *testing.T) {
 	root := t.TempDir()
 	if _, err := SteeringDir(root); err == nil {
-		t.Error("SteeringDir without .kiro/steering should fail")
+		t.Error("SteeringDir without .claude/steering should fail")
 	}
 	if _, err := SpecsDir(root); err == nil {
-		t.Error("SpecsDir without .kiro/specs should fail")
+		t.Error("SpecsDir without specs should fail")
 	}
-	_ = os.MkdirAll(filepath.Join(root, ".kiro", "steering"), 0o755)
-	_ = os.MkdirAll(filepath.Join(root, ".kiro", "specs"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, ".claude", "steering"), 0o755)
+	_ = os.MkdirAll(filepath.Join(root, "specs"), 0o755)
 	if _, err := SteeringDir(root); err != nil {
 		t.Errorf("SteeringDir after init: %v", err)
 	}
@@ -143,31 +143,14 @@ func TestSteeringAndSpecsDirRequireInit(t *testing.T) {
 	}
 }
 
-func TestSettingsDir(t *testing.T) {
-	root := t.TempDir()
-	if _, err := SettingsDir(root); err == nil {
-		t.Error("SettingsDir should fail before init")
-	}
-	if err := os.MkdirAll(filepath.Join(root, ".kiro", "settings"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	got, err := SettingsDir(root)
-	if err != nil {
-		t.Fatalf("SettingsDir after creating it: %v", err)
-	}
-	if !strings.HasSuffix(got, filepath.Join(".kiro", "settings")) {
-		t.Errorf("SettingsDir path mismatch: %s", got)
-	}
-}
-
 func TestSkillAndAgentRoots(t *testing.T) {
 	root := t.TempDir()
 	skills := SkillRoot(root)
-	if !strings.HasSuffix(skills, filepath.Join(".agents", "skills")) {
+	if !strings.HasSuffix(skills, filepath.Join(".claude", "skills")) {
 		t.Errorf("SkillRoot path mismatch: %s", skills)
 	}
 	agents := AgentRoot(root)
-	if !strings.HasSuffix(agents, filepath.Join(".agents", "agents")) {
+	if !strings.HasSuffix(agents, filepath.Join(".claude", "agents")) {
 		t.Errorf("AgentRoot path mismatch: %s", agents)
 	}
 	// Both are pure resolvers: merely asking for the path must not create it.

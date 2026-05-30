@@ -48,10 +48,6 @@ func Run(args []string, templates embed.FS) int {
 		return runAgent(rest, templates)
 	case "mcp":
 		return runMCP(rest)
-	case "convert":
-		// Intentionally undocumented (not in helpText / csdd.md): a silent
-		// escape hatch to port a Kiro workspace onto another agent platform.
-		return runConvert(rest)
 	case "tui":
 		// main.go intercepts this so the TUI can be wired without a cmd → tui cycle.
 		render.Err("internal: 'tui' must be handled by main")
@@ -95,7 +91,7 @@ func help(w *os.File) {
 }
 
 const helpText = `
-csdd — manage Kiro workflow artifacts (steering, specs, skills, custom agents).
+csdd — manage Claude Code workflow artifacts (steering, specs, skills, custom agents).
 
 USAGE
   csdd                       Launch the interactive TUI.
@@ -103,7 +99,7 @@ USAGE
   csdd <resource> <action> [flags]
 
 RESOURCES
-  init                        Bootstrap a Kiro workspace.
+  init                        Bootstrap a Claude Code workspace.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
@@ -111,7 +107,7 @@ RESOURCES
   mcp      {add,list,show,remove,enable,disable,validate}
 
 GLOBAL FLAGS
-  --root PATH        Project root (default: nearest enclosing .kiro/).
+  --root PATH        Project root (default: nearest enclosing .claude/).
   --force            Override safety checks (delete, regenerate, approve-with-issues).
   -h, --help         Show this help.
   -v, --version      Show version.
@@ -125,13 +121,13 @@ EXAMPLES
   csdd spec init photo-albums
   csdd spec generate photo-albums --artifact requirements
   csdd spec approve photo-albums --phase requirements
-  csdd skill create kiro-spec-tasks \
-        --description 'Generate tasks.md with boundary/depends annotations.'   # .agents/skills/
+  csdd skill create spec-tasks \
+        --description 'Generate tasks.md with boundary/depends annotations.'   # .claude/skills/
   csdd agent create code-reviewer \
-        --description 'Read-only adversarial reviewer' --tools Read --tools Grep   # .agents/agents/
+        --description 'Read-only adversarial reviewer' --tools Read --tools Grep   # .claude/agents/
   csdd mcp add filesystem \
-        --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .kiro/settings/mcp.json
-  csdd mcp add linear --url https://mcp.linear.app/sse --type sse
+        --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .mcp.json
+  csdd mcp add linear --url https://mcp.linear.app/mcp --type http
   csdd mcp validate
 `
 
@@ -171,7 +167,7 @@ func (s *stringSliceFlag) Set(v string) error {
 
 // addRoot binds --root to the given destination.
 func addRoot(fs *flag.FlagSet, dst *string) {
-	fs.StringVar(dst, "root", "", "Project root (default: nearest enclosing .kiro/).")
+	fs.StringVar(dst, "root", "", "Project root (default: nearest enclosing .claude/).")
 }
 
 // addForce binds --force to the given destination.

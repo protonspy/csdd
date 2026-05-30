@@ -3,9 +3,12 @@ package cmd
 import (
 	"embed"
 	"flag"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/livelo/csdd/internal/paths"
 	"github.com/livelo/csdd/internal/render"
 	"github.com/livelo/csdd/internal/templater"
 	"github.com/livelo/csdd/internal/workspace"
@@ -41,7 +44,7 @@ func runInit(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
-	render.OK("Initialized Kiro workspace at " + root)
+	render.OK("Initialized Claude Code workspace at " + root)
 	render.Info("directories created: " + intStr(created.dirs))
 	render.Info("files created: " + intStr(created.files))
 	offerGitignore(root)
@@ -79,18 +82,20 @@ type initCounts struct {
 }
 
 // initWorkspace is exported semantically so the TUI can call the same logic.
-// It creates the standard Kiro layout idempotently and returns counts.
+// It creates the standard Claude Code layout idempotently and returns counts.
 func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCounts, error) {
 	var c initCounts
+	templatesDir := paths.Templates(root)
 	layout := []string{
-		filepath.Join(root, ".kiro", "steering"),
-		filepath.Join(root, ".kiro", "specs"),
-		filepath.Join(root, ".kiro", "settings", "rules"),
-		filepath.Join(root, ".kiro", "settings", "templates", "specs"),
-		filepath.Join(root, ".kiro", "settings", "templates", "steering"),
-		filepath.Join(root, ".kiro", "settings", "templates", "steering-custom"),
-		filepath.Join(root, ".agents", "skills"),
-		filepath.Join(root, ".agents", "agents"),
+		paths.Steering(root),
+		paths.Specs(root),
+		paths.Rules(root),
+		filepath.Join(templatesDir, "specs"),
+		filepath.Join(templatesDir, "steering"),
+		filepath.Join(templatesDir, "steering-custom"),
+		paths.Skills(root),
+		paths.Agents(root),
+		paths.Hooks(root),
 		filepath.Join(root, "docs", "guides"),
 	}
 	for _, d := range layout {
@@ -101,15 +106,16 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			c.dirs++
 		}
 	}
-	// KIRO.md is the single repository entry point for agents; AGENTS.md is no
-	// longer scaffolded (it duplicated KIRO.md). docs/guides/kiro_sdd.md is the
+	// CLAUDE.md is the single repository entry point for agents; it imports the
+	// steering files via @-references. docs/guides/claude-code-sdd.md is the
 	// self-contained canonical spec — the only guide an agent needs to consult.
 	files := map[string]string{
-		filepath.Join(root, ".kiroignore"):                   "templates/root/kiroignore.tmpl",
-		filepath.Join(root, "KIRO.md"):                       "templates/root/KIRO.md.tmpl",
-		filepath.Join(root, "csdd.md"):                       "templates/root/csdd.md.tmpl",
-		filepath.Join(root, ".kiro", "settings", "mcp.json"): "templates/root/mcp.json.tmpl",
-		filepath.Join(root, "docs", "guides", "kiro_sdd.md"): "templates/guides/kiro-sdd.md.tmpl",
+		paths.Entry(root):              "templates/root/CLAUDE.md.tmpl",
+		filepath.Join(root, "csdd.md"): "templates/root/csdd.md.tmpl",
+		paths.MCP(root):                "templates/root/mcp.json.tmpl",
+		paths.Settings(root):           "templates/root/settings.json.tmpl",
+		filepath.Join(root, ".github", "pull_request_template.md"):  "templates/root/pull-request.md.tmpl",
+		filepath.Join(root, "docs", "guides", "claude-code-sdd.md"): "templates/guides/claude-code-sdd.md.tmpl",
 	}
 	for path, tplPath := range files {
 		content, err := templater.Static(templates, tplPath)
@@ -130,7 +136,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 		return c, err
 	}
 	for name, content := range rules {
-		path := filepath.Join(root, ".kiro", "settings", "rules", name)
+		path := filepath.Join(paths.Rules(root), name)
 		created, err := workspace.SafeWrite(path, content)
 		if err != nil {
 			return c, err
@@ -144,7 +150,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 		return c, err
 	}
 	for rel, content := range versionedTemplates {
-		path := filepath.Join(root, ".kiro", "settings", "templates", filepath.FromSlash(rel))
+		path := filepath.Join(paths.Templates(root), filepath.FromSlash(rel))
 		created, err := workspace.SafeWrite(path, content)
 		if err != nil {
 			return c, err
@@ -153,13 +159,43 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			c.files++
 		}
 	}
+	// Shipped sub-agents (least-privilege reviewers), workflow skills, and hooks.
+	treeWrites := []struct {
+		base  string
+		files func(fs.FS) (map[string]string, error)
+		exec  bool // chmod 0755 (hook scripts)
+	}{
+		{paths.Agents(root), templater.AgentFiles, false},
+		{paths.Skills(root), templater.SkillFiles, false},
+		{paths.Hooks(root), templater.HookFiles, true},
+	}
+	for _, tw := range treeWrites {
+		entries, err := tw.files(templates)
+		if err != nil {
+			return c, err
+		}
+		for rel, content := range entries {
+			path := filepath.Join(tw.base, filepath.FromSlash(rel))
+			created, err := workspace.SafeWrite(path, content)
+			if err != nil {
+				return c, err
+			}
+			if created {
+				c.files++
+				if tw.exec {
+					_ = os.Chmod(path, 0o755)
+				}
+			}
+		}
+	}
 	if withBaseline {
+		var names []string
 		for name, tplPath := range standardSteeringTemplates() {
 			content, err := templater.Static(templates, tplPath)
 			if err != nil {
 				return c, err
 			}
-			path := filepath.Join(root, ".kiro", "steering", name)
+			path := filepath.Join(paths.Steering(root), name)
 			created, err := workspace.SafeWrite(path, content)
 			if err != nil {
 				return c, err
@@ -167,6 +203,11 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			if created {
 				c.files++
 			}
+			names = append(names, name)
+		}
+		// Import the baseline steering files into CLAUDE.md as always-on memory.
+		if _, err := ensureSteeringImports(root, names...); err != nil {
+			return c, err
 		}
 	}
 	return c, nil
