@@ -67,6 +67,36 @@ func TestHelpAndVersion(t *testing.T) {
 	}
 }
 
+// TestProgName covers the dynamic program name: help and usage strings echo the
+// bare binary name by default, but switch to whatever CSDD_PROG holds (the npm
+// launcher sets it to "npx @protonspy/csdd" for npx invocations).
+func TestProgName(t *testing.T) {
+	t.Run("default is bare csdd", func(t *testing.T) {
+		t.Setenv("CSDD_PROG", "")
+		_, help, _ := run(t, "--help")
+		if !strings.Contains(help, "csdd spec generate") {
+			t.Errorf("help should show bare csdd commands, got %q", help)
+		}
+		if strings.Contains(help, "npx @protonspy/csdd") {
+			t.Errorf("help should not show the npx prefix by default, got %q", help)
+		}
+		if _, _, errOut := run(t, "spec", "init"); !strings.Contains(errOut, "usage: csdd spec init") {
+			t.Errorf("usage should show bare csdd, got %q", errOut)
+		}
+	})
+
+	t.Run("CSDD_PROG is echoed verbatim", func(t *testing.T) {
+		t.Setenv("CSDD_PROG", "npx @protonspy/csdd")
+		_, help, _ := run(t, "--help")
+		if !strings.Contains(help, "npx @protonspy/csdd spec generate") {
+			t.Errorf("help should echo CSDD_PROG, got %q", help)
+		}
+		if _, _, errOut := run(t, "spec", "init"); !strings.Contains(errOut, "usage: npx @protonspy/csdd spec init") {
+			t.Errorf("usage should echo CSDD_PROG, got %q", errOut)
+		}
+	})
+}
+
 func TestUnknownResource(t *testing.T) {
 	code, _, errOut := run(t, "nonsense")
 	if code == 0 {

@@ -94,17 +94,29 @@ func normalizeLeadingGlobalFlags(args []string) ([]string, error) {
 	return args, nil
 }
 
-func help(w *os.File) {
-	fmt.Fprintln(w, strings.TrimSpace(helpText))
+// prog is the program name echoed in help text and usage/guidance messages.
+// The npm launcher sets CSDD_PROG to "npx @protonspy/csdd" when csdd is run via
+// npx, so the help reflects the exact command the user typed; a global install
+// or a plain `go`-built binary falls back to the bare name "csdd".
+func prog() string {
+	if p := os.Getenv("CSDD_PROG"); p != "" {
+		return p
+	}
+	return "csdd"
 }
 
-const helpText = `
+func help(w *os.File) {
+	fmt.Fprintln(w, strings.TrimSpace(helpText()))
+}
+
+func helpText() string {
+	return fmt.Sprintf(`
 csdd — manage Claude Code workflow artifacts (steering, specs, skills, custom agents).
 
 USAGE
-  csdd                       Launch the interactive TUI.
-  csdd tui                   Launch the TUI explicitly.
-  csdd <resource> <action> [flags]
+  %[1]s                       Launch the interactive TUI.
+  %[1]s tui                   Launch the TUI explicitly.
+  %[1]s <resource> <action> [flags]
 
 RESOURCES
   init                        Bootstrap a Claude Code workspace.
@@ -122,25 +134,26 @@ GLOBAL FLAGS
   -v, --version      Show version.
 
 EXAMPLES
-  csdd init --with-baseline
-  csdd steering create api-conventions \
+  %[1]s init --with-baseline
+  %[1]s steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
-  csdd steering create observability \
+  %[1]s steering create observability \
         --inclusion auto --description 'Logging/metrics. Use when adding instrumentation.'
-  csdd spec init photo-albums
-  csdd spec generate photo-albums --artifact requirements
-  csdd spec approve photo-albums --phase requirements
-  csdd skill create spec-tasks \
+  %[1]s spec init photo-albums
+  %[1]s spec generate photo-albums --artifact requirements
+  %[1]s spec approve photo-albums --phase requirements
+  %[1]s skill create spec-tasks \
         --description 'Generate tasks.md with boundary/depends annotations.'   # .claude/skills/
-  csdd agent create code-reviewer \
+  %[1]s agent create code-reviewer \
         --description 'Read-only adversarial reviewer' --tools Read --tools Grep   # .claude/agents/
-  csdd mcp add filesystem \
+  %[1]s mcp add filesystem \
         --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .mcp.json
-  csdd mcp add linear --url https://mcp.linear.app/mcp --type http
-  csdd mcp validate
-  csdd export kiro                                          # .kiro/steering + .kiro/specs
-  csdd export codex --out ./build                           # AGENTS.md + .codex/config.toml
-`
+  %[1]s mcp add linear --url https://mcp.linear.app/mcp --type http
+  %[1]s mcp validate
+  %[1]s export kiro                                          # .kiro/steering + .kiro/specs
+  %[1]s export codex --out ./build                           # AGENTS.md + .codex/config.toml
+`, prog())
+}
 
 // parseFlags wraps fs.Parse to allow positional arguments to appear before
 // flags (e.g., `csdd steering create api-conventions --inclusion always`).
@@ -189,7 +202,7 @@ func addForce(fs *flag.FlagSet, dst *bool) {
 // parseAction extracts the action subcommand and returns the remaining args.
 func parseAction(resource string, args []string) (string, []string, error) {
 	if len(args) == 0 {
-		return "", nil, fmt.Errorf("missing action for `csdd %s`", resource)
+		return "", nil, fmt.Errorf("missing action for `%s %s`", prog(), resource)
 	}
 	return args[0], args[1:], nil
 }

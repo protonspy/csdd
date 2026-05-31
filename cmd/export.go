@@ -45,7 +45,7 @@ func runExport(args []string) int {
 	target, rest, err := parseAction("export", args)
 	if err != nil {
 		render.Err(err.Error())
-		render.Info("usage: csdd export {kiro|codex} [--out DIR] [--force]")
+		render.Info("usage: " + prog() + " export {kiro|codex} [--out DIR] [--force]")
 		return 1
 	}
 	fs := flag.NewFlagSet("export "+target, flag.ContinueOnError)
