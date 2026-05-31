@@ -1,22 +1,44 @@
 name: release
 
-# Two release flavors, both gated on the CI workflow passing first:
+# Manual, versioned release — the only way a new version ships.
 #
-#   • push to main      → refreshes a rolling "latest" pre-release with fresh
-#                          cross-platform binaries (a new release every push).
-#   • push a tag v*     → publishes a stable, versioned GitHub Release.
+# Trigger from the Actions tab ("Run workflow") or:
+#   gh workflow run release.yml --field version=v0.1.3
+#   (or: make release VERSION=v0.1.3)
+#
+# It runs the full pipeline for the given version: CI gate → cross-platform
+# binaries → publish every npm package (the CLI launcher + 5 platform binaries
+# + the MCP server, all at the same version) → tag the commit + GitHub Release.
+# Nothing is released on push; releasing is always a deliberate manual action.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (vX.Y.Z)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  # Reuse the full CI gate (gofmt, vet, build, race tests) — no binaries are
-  # built or released unless this passes.
+  validate:
+    name: validate version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check format
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*) echo "releasing $VERSION" ;;
+            *) echo "::error::version must look like vX.Y.Z (got '$VERSION')"; exit 1 ;;
+          esac
+
+  # Reuse the full CI gate (gofmt, vet, build, race tests + mcp-server tests) —
+  # no binaries are built or published unless this passes.
   ci:
+    needs: validate
     uses: ./.github/workflows/ci.yml
 
   build:
@@ -40,21 +62,12 @@ jobs:
           go-version: '1.22'
           cache: true
 
-      - name: Resolve version
-        id: ver
-        run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=latest-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build & package
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '0'
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           bin=csdd
@@ -78,14 +91,12 @@ jobs:
           path: dist/*
           retention-days: 7
 
-  # Publish to npm on tagged releases only (npm versions are immutable, so the
-  # rolling "latest" main builds are not published here). Authenticates with the
-  # NPM_TOKEN secret (an Automation token, which bypasses 2FA); id-token: write
-  # is kept so --provenance can attach a signed build attestation.
+  # Publish every npm package at the requested version. Authenticates with the
+  # NPM_TOKEN secret (must be an Automation token, which bypasses 2FA);
+  # id-token: write lets --provenance attach a signed build attestation.
   npm-publish:
     name: publish npm packages
     needs: build
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -115,7 +126,9 @@ jobs:
           npm --prefix mcp-server run build
 
       - name: Assemble npm packages
-        run: node npm/scripts/build-packages.mjs "${{ github.ref_name }}" artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node npm/scripts/build-packages.mjs "$VERSION" artifacts
 
       - name: Publish (platform packages + mcp-server first, then the root)
         env:
@@ -131,9 +144,11 @@ jobs:
           done
           npm publish npm/dist/csdd --access public --provenance
 
+  # Tag the released commit and create the GitHub Release — only after npm
+  # publishing succeeds, so a failed publish never leaves a dangling tag/release.
   release:
-    name: publish release
-    needs: build
+    name: tag + GitHub release
+    needs: npm-publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -144,36 +159,11 @@ jobs:
       - name: Checksums
         run: cd dist && sha256sum * | tee checksums.txt
 
-      # --- Stable, versioned release (on tag push) ---
-      - name: Publish stable release
-        if: github.ref_type == 'tag'
+      - name: Create tag + release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          make_latest: 'true'
-          files: dist/*
-
-      # --- Rolling "latest" pre-release (on main push) ---
-      # Remove the previous rolling release + tag so the new one points at the
-      # current commit, then recreate it.
-      - name: Reset previous "latest"
-        if: github.ref_type != 'tag'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release delete latest --cleanup-tag --yes \
-            --repo "$GITHUB_REPOSITORY" || true
-
-      - name: Publish "latest" pre-release
-        if: github.ref_type != 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: latest
-          prerelease: true
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
           target_commitish: ${{ github.sha }}
-          body: |
-            Rolling build from `main` — updated on every push.
-            Commit: ${{ github.sha }}
+          make_latest: 'true'
           files: dist/*
