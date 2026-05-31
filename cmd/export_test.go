@@ -124,6 +124,8 @@ func TestExportCodex(t *testing.T) {
 
 func TestExportCodexNoMCP(t *testing.T) {
 	dir := freshWorkspace(t)
+	// init registers the csdd server by default; remove it to exercise the no-server path.
+	_, _, _ = run(t, "mcp", "remove", csddMCPServerName, "--force", "--root", dir)
 	code, out, errOut := run(t, "export", "codex", "--root", dir)
 	if code != 0 {
 		t.Fatalf("export codex failed: %s", errOut)

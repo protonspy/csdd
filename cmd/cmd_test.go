@@ -190,6 +190,54 @@ func TestInitWithoutBaseline(t *testing.T) {
 	}
 }
 
+func TestInitRegistersMCPServer(t *testing.T) {
+	dir := t.TempDir()
+	code, out, _ := run(t, "init", "--root", dir)
+	if code != 0 {
+		t.Fatalf("init failed: %d", code)
+	}
+	if !strings.Contains(out, "registered the csdd MCP server") {
+		t.Errorf("init should report registering the csdd MCP server: %s", out)
+	}
+	cfg, err := loadMCP(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("load .mcp.json: %v", err)
+	}
+	srv, ok := cfg.MCPServers[csddMCPServerName]
+	if !ok {
+		t.Fatalf("csdd MCP server not registered: %+v", cfg.MCPServers)
+	}
+	if srv.Command != "npx" || strings.Join(srv.Args, " ") != "-y @protonspy/csdd-mcp" {
+		t.Errorf("unexpected server entry: command=%q args=%v", srv.Command, srv.Args)
+	}
+	if srv.URL != "" || srv.Disabled || len(srv.AutoApprove) > 0 {
+		t.Errorf("expected a plain enabled stdio server, got %+v", srv)
+	}
+	// Idempotent: a second init must not re-register (and so not re-announce it).
+	_, out2, _ := run(t, "init", "--root", dir)
+	if strings.Contains(out2, "registered the csdd MCP server") {
+		t.Errorf("second init should not re-register the MCP server: %s", out2)
+	}
+}
+
+func TestInitNoMCP(t *testing.T) {
+	dir := t.TempDir()
+	code, out, _ := run(t, "init", "--root", dir, "--no-mcp")
+	if code != 0 {
+		t.Fatalf("init failed: %d", code)
+	}
+	if strings.Contains(out, "registered the csdd MCP server") {
+		t.Errorf("--no-mcp should not register the server: %s", out)
+	}
+	cfg, err := loadMCP(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("load .mcp.json: %v", err)
+	}
+	if _, ok := cfg.MCPServers[csddMCPServerName]; ok {
+		t.Errorf("--no-mcp should leave .mcp.json without the csdd server: %+v", cfg.MCPServers)
+	}
+}
+
 // ---------- steering ----------
 
 func TestSteeringInit(t *testing.T) {

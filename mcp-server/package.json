@@ -1,0 +1,48 @@
+{
+  "name": "@protonspy/csdd-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing the csdd CLI over stdio (one tool per subcommand).",
+  "type": "module",
+  "bin": {
+    "csdd-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -w -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test \"test/**/*.test.ts\"",
+    "test:run": "node --test \"test/**/*.test.ts\"",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "csdd",
+    "claude-code",
+    "sdd"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "optionalDependencies": {
+    "@protonspy/csdd-linux-x64": "^0.1.0",
+    "@protonspy/csdd-linux-arm64": "^0.1.0",
+    "@protonspy/csdd-darwin-x64": "^0.1.0",
+    "@protonspy/csdd-darwin-arm64": "^0.1.0",
+    "@protonspy/csdd-win32-x64": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}
