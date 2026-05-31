@@ -40,3 +40,27 @@ jobs:
 
       - name: test (race + coverage)
         run: go test -race -coverprofile=coverage.out ./...
+
+  mcp-server:
+    name: mcp-server (build & test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24: the unit tests are TypeScript run through node:test with native
+      # type stripping (Node >= 22.18). The published package ships compiled JS
+      # (dist/) and still supports Node >= 18 — see package.json "engines".
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: test (build + node:test)
+        run: npm test
