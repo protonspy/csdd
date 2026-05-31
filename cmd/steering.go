@@ -120,7 +120,7 @@ func steeringCreate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd steering create NAME --inclusion {always|fileMatch|manual|auto} [...]")
+		render.Err("usage: " + prog() + " steering create NAME --inclusion {always|fileMatch|manual|auto} [...]")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -265,7 +265,7 @@ func steeringShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd steering show NAME")
+		render.Err("usage: " + prog() + " steering show NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -299,7 +299,7 @@ func steeringDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd steering delete NAME")
+		render.Err("usage: " + prog() + " steering delete NAME")
 		return 1
 	}
 	name := positionals[0]
