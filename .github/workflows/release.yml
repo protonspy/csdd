@@ -107,10 +107,17 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # The MCP server ships in lockstep with the CLI; build-packages.mjs stamps
+      # its version + optionalDependencies and stages it as npm/dist/csdd-mcp.
+      - name: Build MCP server
+        run: |
+          npm --prefix mcp-server ci
+          npm --prefix mcp-server run build
+
       - name: Assemble npm packages
         run: node npm/scripts/build-packages.mjs "${{ github.ref_name }}" artifacts
 
-      - name: Publish (platform packages first, then the root)
+      - name: Publish (platform packages + mcp-server first, then the root)
         env:
           # Automation token (bypasses 2FA). setup-node wrote an .npmrc that
           # reads this. --provenance still attaches a signed attestation via the
@@ -118,6 +125,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
+          # csdd-*/ covers the 5 platform binaries and csdd-mcp; csdd/ is the root launcher.
           for d in npm/dist/csdd-*/; do
             npm publish "$d" --access public --provenance
           done

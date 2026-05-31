@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   cpSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -114,3 +115,33 @@ rootPkg.version = version;
 rootPkg.optionalDependencies = optionalDependencies;
 writeFileSync(join(rootOut, "package.json"), JSON.stringify(rootPkg, null, 2) + "\n");
 console.log(`built ${rootPkg.name}@${version}`);
+
+// --- mcp-server package ----------------------------------------------------
+// Ship @protonspy/csdd-mcp in lockstep with the CLI: stamp it to the same
+// release version and pin the per-platform csdd binaries it resolves to that
+// exact version, then stage its pre-built dist/ for publish. Build it first:
+//   npm --prefix mcp-server ci && npm --prefix mcp-server run build
+const mcpSrc = join(repoRoot, "mcp-server");
+const mcpDist = join(mcpSrc, "dist");
+if (!existsSync(mcpDist)) {
+  console.error(
+    "error: mcp-server/dist not found — build it first:\n" +
+      "  npm --prefix mcp-server ci && npm --prefix mcp-server run build\n" +
+      "  (or `make mcp-dist`)"
+  );
+  process.exit(1);
+}
+const mcpOut = join(outDir, "csdd-mcp");
+mkdirSync(mcpOut, { recursive: true });
+cpSync(mcpDist, join(mcpOut, "dist"), { recursive: true });
+cpSync(join(mcpSrc, "README.md"), join(mcpOut, "README.md"));
+
+const mcpPkg = JSON.parse(readFileSync(join(mcpSrc, "package.json"), "utf8"));
+mcpPkg.version = version;
+for (const k of Object.keys(mcpPkg.optionalDependencies ?? {})) {
+  mcpPkg.optionalDependencies[k] = version; // exact, in lockstep with the binary
+}
+delete mcpPkg.devDependencies; // not needed by consumers of the published package
+delete mcpPkg.scripts; // prepublishOnly would re-run tsc against a src/ we don't ship
+writeFileSync(join(mcpOut, "package.json"), JSON.stringify(mcpPkg, null, 2) + "\n");
+console.log(`built ${mcpPkg.name}@${version}`);
