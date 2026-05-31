@@ -1,0 +1,116 @@
+#!/usr/bin/env node
+// Assemble the npm publish tree from the release artifacts.
+//
+// Usage: node npm/scripts/build-packages.mjs <tag> [artifactsDir]
+//
+//   <tag>          the release tag, e.g. "v1.2.3" (the leading "v" is stripped
+//                  for the npm version; the raw tag is used to locate the
+//                  artifact tarballs produced by the release workflow).
+//   [artifactsDir] directory holding csdd_<tag>_<goos>_<goarch>.{tar.gz,zip}
+//                  (default: "artifacts").
+//
+// Output: npm/dist/
+//   csdd/                       root package (launcher + optionalDependencies)
+//   csdd-<platform>-<arch>/     one per target, carrying the native binary
+//
+// The Go binaries are reused as-is from the release artifacts (they already
+// carry the version baked in via -ldflags), so the npm binary is byte-identical
+// to the GitHub release binary.
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCOPE = "@protonspy";
+
+// Go target -> npm platform/arch + os/cpu constraints.
+const TARGETS = [
+  { goos: "linux", goarch: "amd64", node: "linux-x64", os: "linux", cpu: "x64" },
+  { goos: "linux", goarch: "arm64", node: "linux-arm64", os: "linux", cpu: "arm64" },
+  { goos: "darwin", goarch: "amd64", node: "darwin-x64", os: "darwin", cpu: "x64" },
+  { goos: "darwin", goarch: "arm64", node: "darwin-arm64", os: "darwin", cpu: "arm64" },
+  { goos: "windows", goarch: "amd64", node: "win32-x64", os: "win32", cpu: "x64" },
+];
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const npmDir = resolve(scriptDir, "..");
+const repoRoot = resolve(npmDir, "..");
+
+const tag = process.argv[2];
+if (!tag) {
+  console.error("error: missing <tag> argument (e.g. v1.2.3)");
+  process.exit(1);
+}
+const version = tag.replace(/^v/, "");
+const artifactsDir = resolve(process.argv[3] ?? join(repoRoot, "artifacts"));
+const outDir = join(npmDir, "dist");
+
+rmSync(outDir, { recursive: true, force: true });
+mkdirSync(outDir, { recursive: true });
+
+const repository = {
+  type: "git",
+  url: "git+https://github.com/protonspy/csdd.git",
+};
+
+// --- per-platform packages -------------------------------------------------
+const optionalDependencies = {};
+for (const t of TARGETS) {
+  const pkgName = `${SCOPE}/csdd-${t.node}`;
+  const binName = t.goos === "windows" ? "csdd.exe" : "csdd";
+  const pkgDir = join(outDir, `csdd-${t.node}`);
+  const binDir = join(pkgDir, "bin");
+  mkdirSync(binDir, { recursive: true });
+
+  const base = `csdd_${tag}_${t.goos}_${t.goarch}`;
+  if (t.goos === "windows") {
+    execFileSync("unzip", ["-o", join(artifactsDir, `${base}.zip`), "-d", binDir], {
+      stdio: "inherit",
+    });
+  } else {
+    execFileSync("tar", ["-xzf", join(artifactsDir, `${base}.tar.gz`), "-C", binDir], {
+      stdio: "inherit",
+    });
+    chmodSync(join(binDir, binName), 0o755);
+  }
+
+  writeFileSync(
+    join(pkgDir, "package.json"),
+    JSON.stringify(
+      {
+        name: pkgName,
+        version,
+        description: `csdd native binary for ${t.node}`,
+        repository,
+        license: "Apache-2.0",
+        os: [t.os],
+        cpu: [t.cpu],
+        files: [`bin/${binName}`],
+      },
+      null,
+      2
+    ) + "\n"
+  );
+  optionalDependencies[pkgName] = version;
+  console.log(`built ${pkgName}@${version}`);
+}
+
+// --- root package ----------------------------------------------------------
+const rootSrc = join(npmDir, "csdd");
+const rootOut = join(outDir, "csdd");
+mkdirSync(join(rootOut, "bin"), { recursive: true });
+cpSync(join(rootSrc, "bin", "csdd.js"), join(rootOut, "bin", "csdd.js"));
+cpSync(join(rootSrc, "README.md"), join(rootOut, "README.md"));
+
+const rootPkg = JSON.parse(readFileSync(join(rootSrc, "package.json"), "utf8"));
+rootPkg.version = version;
+rootPkg.optionalDependencies = optionalDependencies;
+writeFileSync(join(rootOut, "package.json"), JSON.stringify(rootPkg, null, 2) + "\n");
+console.log(`built ${rootPkg.name}@${version}`);

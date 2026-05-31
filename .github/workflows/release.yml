@@ -78,6 +78,45 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  # Publish to npm on tagged releases only (npm versions are immutable, so the
+  # rolling "latest" main builds are not published here). Uses Trusted
+  # Publishing (OIDC): no token in the repo, provenance generated automatically.
+  npm-publish:
+    name: publish npm packages
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing requires npm >= 11.5.1 (newer than what ships with Node).
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Assemble npm packages
+        run: node npm/scripts/build-packages.mjs "${{ github.ref_name }}" artifacts
+
+      - name: Publish (platform packages first, then the root)
+        run: |
+          set -euo pipefail
+          for d in npm/dist/csdd-*/; do
+            npm publish "$d" --access public
+          done
+          npm publish npm/dist/csdd --access public
+
   release:
     name: publish release
     needs: build
