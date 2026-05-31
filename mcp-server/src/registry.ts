@@ -1,13 +1,14 @@
-// The full set of MCP tools this server exposes — one per csdd subcommand,
-// plus a diagnostic version tool. Kept separate from index.ts so it can be
-// imported (e.g. by tests) without booting the stdio transport.
+// The MCP tools this server exposes — the csdd *development-flow* resources
+// (steering, spec, skill, agent), plus a diagnostic version tool. Workspace
+// setup and config management (init, mcp, export) are intentionally NOT exposed:
+// those are one-time CLI operations a human runs, not part of the iterative
+// loop the agent drives. Kept separate from index.ts so it can be imported
+// (e.g. by tests) without booting the stdio transport.
 import { type ToolDef } from "./tooldef.js";
-import { initTools } from "./tools/init.js";
 import { steeringTools } from "./tools/steering.js";
 import { specTools } from "./tools/spec.js";
 import { skillTools } from "./tools/skill.js";
 import { agentTools } from "./tools/agent.js";
-import { mcpTools } from "./tools/mcp.js";
 
 export const miscTools: ToolDef[] = [
   {
@@ -21,10 +22,8 @@ export const miscTools: ToolDef[] = [
 
 export const allTools: ToolDef[] = [
   ...miscTools,
-  ...initTools,
   ...steeringTools,
   ...specTools,
   ...skillTools,
   ...agentTools,
-  ...mcpTools,
 ];

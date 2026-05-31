@@ -19,11 +19,6 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
   // misc
   ["csdd_version", {}, ["version"]],
 
-  // init
-  ["csdd_init", {}, ["init"]],
-  ["csdd_init", { withBaseline: false }, ["init"]],
-  ["csdd_init", { withBaseline: true, root: "/p" }, ["init", "--with-baseline", "--root", "/p"]],
-
   // steering
   ["csdd_steering_init", {}, ["steering", "init"]],
   ["csdd_steering_init", { root: "/p" }, ["steering", "init", "--root", "/p"]],
@@ -79,21 +74,6 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
   ["csdd_agent_list", {}, ["agent", "list"]],
   ["csdd_agent_show", { name: "rev" }, ["agent", "show", "rev"]],
   ["csdd_agent_delete", { name: "rev", force: true }, ["agent", "delete", "rev", "--force"]],
-
-  // mcp
-  ["csdd_mcp_add", { name: "fs", command: "npx", arg: ["-y", "@mcp/fs", "."] }, ["mcp", "add", "fs", "--command", "npx", "--arg", "-y", "--arg", "@mcp/fs", "--arg", "."]],
-  ["csdd_mcp_add", { name: "linear", url: "https://x", type: "http" }, ["mcp", "add", "linear", "--url", "https://x", "--type", "http"]],
-  [
-    "csdd_mcp_add",
-    { name: "db", command: "run", env: ["A=1", "B=2"], disabled: true, autoApprove: ["q"], force: true, root: "/p" },
-    ["mcp", "add", "db", "--command", "run", "--env", "A=1", "--env", "B=2", "--disabled", "--auto-approve", "q", "--force", "--root", "/p"],
-  ],
-  ["csdd_mcp_list", {}, ["mcp", "list"]],
-  ["csdd_mcp_show", { name: "fs" }, ["mcp", "show", "fs"]],
-  ["csdd_mcp_remove", { name: "fs", force: true }, ["mcp", "remove", "fs", "--force"]],
-  ["csdd_mcp_enable", { name: "fs" }, ["mcp", "enable", "fs"]],
-  ["csdd_mcp_disable", { name: "fs", root: "/p" }, ["mcp", "disable", "fs", "--root", "/p"]],
-  ["csdd_mcp_validate", {}, ["mcp", "validate"]],
 ];
 
 for (const [name, params, expected] of CASES) {
@@ -117,7 +97,7 @@ test("tool names are unique", () => {
 
 test("every tool has the required, well-formed fields", () => {
   for (const t of allTools) {
-    assert.match(t.name, /^csdd(_[a-z]+)+$|^csdd_version$|^csdd_init$/, `name shape: ${t.name}`);
+    assert.match(t.name, /^csdd(_[a-z]+)+$/, `name shape: ${t.name}`);
     assert.ok(t.title && t.title.length > 0, `${t.name} has a title`);
     assert.ok(t.description && t.description.length > 0, `${t.name} has a description`);
     assert.equal(typeof t.inputSchema, "object", `${t.name} inputSchema is an object`);
@@ -132,7 +112,7 @@ test("miscTools are included in allTools", () => {
 });
 
 test("the first argv token is always a known csdd resource/command", () => {
-  const roots = new Set(["version", "init", "steering", "spec", "skill", "agent", "mcp"]);
+  const roots = new Set(["version", "steering", "spec", "skill", "agent"]);
   for (const t of allTools) {
     // Call with empty params; we only inspect the leading command token, which
     // never depends on user input.

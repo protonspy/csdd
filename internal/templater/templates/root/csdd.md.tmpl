@@ -47,6 +47,16 @@ The CLI enforces this mechanically. `npx @protonspy/csdd spec generate <feature>
 
 ## 2. Cheat sheet — every command
 
+> **MCP tools (preferred when available).** If the `csdd` MCP server is connected
+> (it is registered automatically by `csdd init`), call the development-flow
+> commands as **tools** — `csdd_steering_*`, `csdd_spec_*`, `csdd_skill_*`,
+> `csdd_agent_*` — instead of shelling out. Typed parameters keep the arguments
+> valid and the server builds the argv, so the call is more precise than a
+> hand-written command. **Same phase gates, same validation, same exit codes.**
+> The commands below are the equivalent CLI surface and the source of truth for
+> each command's semantics. **Setup and management — `init`, `mcp`, `export` —
+> are CLI-only and are *not* exposed as tools.**
+
 Run `npx @protonspy/csdd --help` for the top-level surface. The subcommands you will actually use:
 
 ```bash
@@ -394,6 +404,8 @@ npx @protonspy/csdd agent create security-reviewer \
 ## 9. MCP servers — workspace integrations
 
 Model Context Protocol servers give the agent extra tools (filesystem access, issue trackers, search, internal APIs…). They are declared in `.mcp.json` and managed exclusively with `npx @protonspy/csdd mcp` — **do not hand-edit the JSON**; the CLI keeps it well-formed and reviewable.
+
+> `csdd init` registers one server out of the box: **`csdd`** (stdio, `npx -y @protonspy/csdd-mcp`), which exposes the development-flow commands as the `csdd_*` tools described in §2. Pass `csdd init --no-mcp` to skip it. Manage it like any other server with `npx @protonspy/csdd mcp` (this command surface is **not** itself a tool).
 
 ### Two transports
 
