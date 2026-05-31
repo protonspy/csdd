@@ -46,6 +46,21 @@ csdd          # no args → interactive TUI
 
 ---
 
+## Install
+
+**npm** (cross-platform — installs the right prebuilt binary for your OS/arch):
+
+```bash
+npm install -g @protonspy/csdd     # then: csdd
+npx @protonspy/csdd --help         # or run without installing
+```
+
+**Prebuilt binaries:** grab the archive for your platform from the
+[releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on
+your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
+
+---
+
 ## The 5 resources csdd governs
 
 | Resource | What it is | Location |
