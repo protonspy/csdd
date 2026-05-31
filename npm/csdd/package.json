@@ -1,0 +1,41 @@
+{
+  "name": "@protonspy/csdd",
+  "version": "0.0.0",
+  "description": "Claude Spec-Driven Development — a single Go binary that turns the SDD workflow into a mechanically validated contract for humans and AI agents.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "spec-driven-development",
+    "sdd",
+    "cli",
+    "ai",
+    "agents"
+  ],
+  "homepage": "https://github.com/protonspy/csdd#readme",
+  "bugs": {
+    "url": "https://github.com/protonspy/csdd/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/protonspy/csdd.git"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "csdd": "bin/csdd.js"
+  },
+  "files": [
+    "bin/csdd.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "optionalDependencies": {
+    "@protonspy/csdd-linux-x64": "0.0.0",
+    "@protonspy/csdd-linux-arm64": "0.0.0",
+    "@protonspy/csdd-darwin-x64": "0.0.0",
+    "@protonspy/csdd-darwin-arm64": "0.0.0",
+    "@protonspy/csdd-win32-x64": "0.0.0"
+  }
+}
