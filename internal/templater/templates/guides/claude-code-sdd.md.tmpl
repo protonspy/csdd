@@ -166,7 +166,7 @@ Skills, agent prompts, and steering content SHALL be grounded in real expertise 
 
 ## 4. Repository structure
 
-Every project adopting this workflow SHALL have the following layout, scaffolded by `csdd init`.
+Every project adopting this workflow SHALL have the following layout, scaffolded by `npx @protonspy/csdd init`.
 
 ```text
 repo/
@@ -269,7 +269,7 @@ In Claude Code, steering is loaded as **always-on project memory via `@`-imports
 
 Every imported file loads **always**, on every session — there is no native conditional `fileMatch`/`auto` loading of arbitrary markdown in Claude Code.
 
-> **IMPORTANT semantic note on inclusion modes.** `csdd steering create --inclusion {always|fileMatch|auto|manual}` still exists, and the `inclusion:` / `fileMatchPattern:` / `name:` / `description:` frontmatter is still produced and still validated. Under Claude Code, however, this frontmatter is **advisory metadata documenting the file's intended scope** — it is *not* a runtime loading mechanism. Everything imported into `CLAUDE.md` loads always, regardless of `inclusion:` value. Use the frontmatter to communicate intent to humans and to keep portability with other tools; do not expect `fileMatch` to change what Claude Code actually loads. If you want a steering file to load only on demand, do not import it into `CLAUDE.md` and instead reference it explicitly with `@.claude/steering/<file>.md` in a prompt when you need it.
+> **IMPORTANT semantic note on inclusion modes.** `npx @protonspy/csdd steering create --inclusion {always|fileMatch|auto|manual}` still exists, and the `inclusion:` / `fileMatchPattern:` / `name:` / `description:` frontmatter is still produced and still validated. Under Claude Code, however, this frontmatter is **advisory metadata documenting the file's intended scope** — it is *not* a runtime loading mechanism. Everything imported into `CLAUDE.md` loads always, regardless of `inclusion:` value. Use the frontmatter to communicate intent to humans and to keep portability with other tools; do not expect `fileMatch` to change what Claude Code actually loads. If you want a steering file to load only on demand, do not import it into `CLAUDE.md` and instead reference it explicitly with `@.claude/steering/<file>.md` in a prompt when you need it.
 
 ### 5.2 Foundational files
 
@@ -2126,7 +2126,7 @@ Do not change production implementation without asking for confirmation.
 
 ### Phase 1 — Foundations (week 1)
 
-- [ ] Run `csdd init` to scaffold `CLAUDE.md`, `.claude/`, `specs/`, rules, templates, skills, and this guide.
+- [ ] Run `npx @protonspy/csdd init` to scaffold `CLAUDE.md`, `.claude/`, `specs/`, rules, templates, skills, and this guide.
 - [ ] Configure `.gitignore` and permission deny rules for protected paths.
 - [ ] Generate foundational steering: `product.md`, `tech.md`, `structure.md`; confirm they are imported into `CLAUDE.md`.
 - [ ] Configure required MCP servers at the correct scope (project vs user).
