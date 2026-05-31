@@ -2,11 +2,33 @@
 
 This repository follows a Spec-Driven Development (SDD) + Test-Driven
 Development (TDD) workflow, native to **Claude Code**. Steering, specs, skills,
-and custom sub-agents are managed by the `csdd` CLI.
+and custom sub-agents are managed by the `csdd` CLI — or, preferably, its MCP
+tools (see *Driving csdd* below).
 
 **Read [`csdd.md`](./csdd.md) before producing any artifact.** It is the
 operational guide that tells you how to drive `csdd` without reading source.
 Everything below is a quick map; `csdd.md` is the contract.
+
+## Driving csdd — prefer the MCP tools for the dev flow
+
+`csdd init` registers a **`csdd` MCP server** in `.mcp.json`. When it is
+connected, drive the development flow with its **`csdd_*` tools** instead of
+shelling out:
+
+| Resource | Tools | CLI fallback |
+|---|---|---|
+| steering | `csdd_steering_*` | `npx @protonspy/csdd steering …` |
+| spec | `csdd_spec_*` | `npx @protonspy/csdd spec …` |
+| skill | `csdd_skill_*` | `npx @protonspy/csdd skill …` |
+| agent | `csdd_agent_*` | `npx @protonspy/csdd agent …` |
+
+Why prefer the tools: typed parameters (the `artifact`, `phase`, and `inclusion`
+enums, required fields) stop you from passing invalid values, and the server
+builds the exact argv — more precise than a hand-written command. The **phase
+gates, validators, and exit codes are identical** either way.
+
+Use the **CLI** when the MCP server isn't connected, and always for **setup and
+management** — `init`, `mcp`, and `export` are intentionally *not* tools.
 
 ## Project memory (steering)
 
