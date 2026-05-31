@@ -89,14 +89,19 @@ npm-build: require-version ## Assemble npm/dist/ (CLI + mcp-server) from artifac
 
 .PHONY: npm-dry-run
 npm-dry-run: ## Dry-run publish every assembled package
-	@set -euo pipefail; for d in npm/dist/csdd-*/ npm/dist/csdd/; do \
+	@set -euo pipefail; \
+	if [ ! -f npm/dist/csdd/package.json ]; then echo "npm/dist not assembled — run: make npm-build VERSION=vX.Y.Z first" >&2; exit 1; fi; \
+	for d in npm/dist/csdd-*/ npm/dist/csdd/; do \
+	  [ -f "$$d/package.json" ] || continue; \
 	  echo "== $$d"; npm publish "$$d" --access public --dry-run; done
 
 .PHONY: npm-publish
 npm-publish: ## Publish the assembled packages (CLI + mcp-server), skips already-published; OTP=123456 if 2FA
 	@set -euo pipefail; \
+	if [ ! -f npm/dist/csdd/package.json ]; then echo "npm/dist not assembled — run: make dist VERSION=vX.Y.Z && make mcp-dist && make npm-build VERSION=vX.Y.Z" >&2; exit 1; fi; \
 	otp=; if [ -n "$(OTP)" ]; then otp="--otp=$(OTP)"; fi; \
 	for d in npm/dist/csdd-*/ npm/dist/csdd/; do \
+	  [ -f "$$d/package.json" ] || continue; \
 	  name=$$(cd "$$d" && node -p "require('./package.json').name"); \
 	  ver=$$(cd "$$d" && node -p "require('./package.json').version"); \
 	  if npm view "$$name@$$ver" version >/dev/null 2>&1; then \
