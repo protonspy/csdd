@@ -320,6 +320,32 @@ Creating a steering automatically inserts `@.claude/steering/<name>` into a mana
 
 ---
 
+## 🔌 MCP server — drive csdd as native tools
+
+Prefer your agent to call **tools** over shelling out to a terminal?
+[`@protonspy/csdd-mcp`](mcp-server/) is an MCP server (stdio) that exposes the csdd
+**development flow** as tools — `csdd_spec_generate`, `csdd_steering_create`,
+`csdd_spec_approve`, … **27 in total.** It wraps the same CLI, so the contract is
+intact: phase gates still block, the validator still runs, and **exit 2 surfaces
+as a distinct "validation failed" result** the agent can branch on. Typed
+parameters (enums for `artifact`/`phase`/`inclusion`) mean the agent picks valid
+inputs and the server builds the argv — more precise than hand-written commands.
+
+`csdd init` registers the server in `.mcp.json` for you (pass `--no-mcp` to skip):
+
+```bash
+# already wired by `csdd init`; to add it to an existing workspace:
+claude mcp add csdd -- npx -y @protonspy/csdd-mcp
+```
+
+- **Dev-flow only**, grouped by resource (steering · spec · skill · agent), plus `csdd_version`. **Setup and config management stay on the CLI** — `init`, `mcp`, and `export` are one-time human operations, not agent-loop tools.
+- **Same binary, same rules.** The server just builds the argv and runs `csdd` headlessly (`NO_COLOR`, no TTY) — no logic of its own, so the CLI stays the single source of truth.
+- **Zero-config binary** via `npx` (the matching prebuilt `csdd` is an `optionalDependency`); override with `CSDD_BIN`.
+
+Full tool reference and configuration: [`mcp-server/README.md`](mcp-server/README.md).
+
+---
+
 ## Interop — export to Kiro / Codex
 
 `csdd` is Claude Code-native, but the SDD artifacts aren't locked in. `csdd export`

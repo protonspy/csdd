@@ -102,6 +102,8 @@ func TestMCPListAndShow(t *testing.T) {
 
 func TestMCPListEmpty(t *testing.T) {
 	dir := freshWorkspace(t)
+	// init registers the csdd server by default; remove it to exercise the empty state.
+	_, _, _ = run(t, "mcp", "remove", csddMCPServerName, "--force", "--root", dir)
 	code, out, _ := run(t, "mcp", "list", "--root", dir)
 	if code != 0 || !strings.Contains(out, "no mcp servers") {
 		t.Errorf("empty list should report none:\n%s", out)

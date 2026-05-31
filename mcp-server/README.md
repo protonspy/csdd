@@ -68,15 +68,16 @@ The server resolves `csdd` once, on first use, in this order (first hit wins):
 | # | Source | When it applies |
 |---|--------|-----------------|
 | 1 | **`$CSDD_BIN`** | Explicit absolute path. Always wins — use this if in doubt. |
-| 2 | **Platform package** `@protonspy/csdd-<os>-<arch>` | When the matching prebuilt-binary package is installed alongside (e.g. co-installed with `@protonspy/csdd`). |
+| 2 | **Platform package** `@protonspy/csdd-<os>-<arch>` | Declared as an `optionalDependency` of this package, so `npx`/`npm i` fetches the prebuilt binary for your OS/arch automatically — the zero-config path. |
 | 3 | **Sibling repo binary** (`../csdd`, `../../csdd`) | When running from a checkout of the csdd repo. |
 | 4 | **`csdd` on `$PATH`** | Last resort, resolved by the OS at spawn time. |
 
 If none resolve, calls fail with **exit `127`** and a message telling you to set
 `CSDD_BIN`, install `@protonspy/csdd`, or put `csdd` on your `PATH`.
 
-> **Recommended setup for end users:** `npm install -g @protonspy/csdd` (puts
-> `csdd` on `PATH`, satisfying #4), or set `CSDD_BIN` to an absolute path.
+> **Zero-config:** running via `npx -y @protonspy/csdd-mcp` pulls the matching
+> binary through #2 automatically — nothing to install. Set `CSDD_BIN` only to
+> pin a specific build (e.g. a local dev binary).
 
 ### Environment
 
@@ -102,7 +103,8 @@ Every tool returns a text result. The mapping from the `csdd` exit code is:
 
 ## Tool reference
 
-**35 tools**, grouped by the resource they manage. Conventions:
+**27 tools** covering the csdd **development flow**, grouped by resource.
+Conventions:
 
 - Every tool accepts an optional **`root`** — the workspace root (the directory
   containing `.claude/`). Omit it to walk up from the server's working directory.
@@ -110,12 +112,17 @@ Every tool returns a text result. The mapping from the `csdd` exit code is:
   deletes are refused and phase gates hold.
 - `?` marks an optional parameter; everything else is required.
 
-### Workspace
+> **Scope:** this server exposes only the iterative development-flow resources
+> (steering · spec · skill · agent). **Workspace setup and config management are
+> deliberately not tools** — `csdd init`, `csdd mcp …`, and `csdd export …` are
+> one-time operations a human runs from the CLI, not part of the loop an agent
+> drives. (In fact, `csdd init` is what registers *this* server.)
+
+### Diagnostic
 
 | Tool | Parameters | What it does |
 |------|------------|--------------|
 | `csdd_version` | — | Print the underlying `csdd` binary version (diagnostic / connectivity check). |
-| `csdd_init` | `withBaseline?`, `root?` | Bootstrap a Claude Code workspace: `.claude/` layout, `CLAUDE.md`, `csdd.md`, `.mcp.json`, rules, shipped agents/skills/commands/hooks, guides. Idempotent. `withBaseline` also scaffolds the standard steering files and imports them into `CLAUDE.md`. |
 
 ### 🧭 steering — project memory (`.claude/steering/*.md`)
 
@@ -172,28 +179,18 @@ matches the context).
 | `csdd_agent_show` | `name`, `root?` | Print an agent file. |
 | `csdd_agent_delete` | `name`, `force?`, `root?` | Delete `.claude/agents/<name>.md` (`force` required). |
 
-### 🔌 mcp — MCP servers in `.mcp.json`
-
-| Tool | Parameters | What it does |
-|------|------------|--------------|
-| `csdd_mcp_add` | `name`, `command?`, `arg?[]`, `url?`, `type?`, `env?[]`, `disabled?`, `autoApprove?[]`, `force?`, `root?` | Add a server. Provide **either** `command` (+`arg`) for stdio **or** `url` (+`type`) for remote — never both. `type` ∈ `sse · http` (default `http`). `env`/`autoApprove` are `KEY=VALUE` / tool-name lists. `force` replaces an existing entry. |
-| `csdd_mcp_list` | `root?` | List servers with type, state, and endpoint. |
-| `csdd_mcp_show` | `name`, `root?` | Print a server's config as pretty JSON. |
-| `csdd_mcp_remove` | `name`, `force?`, `root?` | Remove a server (`force` required). |
-| `csdd_mcp_enable` | `name`, `root?` | Enable a server (`disabled = false`). |
-| `csdd_mcp_disable` | `name`, `root?` | Disable a server (`disabled = true`). |
-| `csdd_mcp_validate` | `root?` | Validate `.mcp.json` for schema errors. Exit 2 on issues. |
-
-> Avoid `autoApprove` — it breaks least-privilege by auto-approving tool calls.
+> **Not here:** managing the `.mcp.json` servers themselves (`csdd mcp add/list/
+> remove/enable/disable/validate`) stays on the CLI — same for `csdd init` and
+> `csdd export`. Keeping setup off the tool surface is intentional (see Scope).
 
 ---
 
 ## A typical agent flow
 
-Tool calls that take one feature from idea to ready-to-implement:
+Setup is a one-time CLI step (`npx @protonspy/csdd init --with-baseline`, which
+also registers this server). From there the agent drives the feature with tools:
 
 ```jsonc
-csdd_init           { "withBaseline": true }
 csdd_spec_init      { "feature": "photo-albums" }
 
 csdd_spec_generate  { "feature": "photo-albums", "artifact": "requirements" }

@@ -18,8 +18,10 @@ func runInit(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	var root string
 	var withBaseline bool
+	var noMCP bool
 	fs.StringVar(&root, "root", "", "Target directory (default: cwd).")
 	fs.BoolVar(&withBaseline, "with-baseline", false, "Also scaffold product.md, tech.md, structure.md.")
+	fs.BoolVar(&noMCP, "no-mcp", false, "Do not register the csdd MCP server in .mcp.json.")
 	if err := fs.Parse(args); err != nil {
 		return failOnFlagParse(err)
 	}
@@ -47,6 +49,13 @@ func runInit(args []string, templates embed.FS) int {
 	render.OK("Initialized Claude Code workspace at " + root)
 	render.Info("directories created: " + intStr(created.dirs))
 	render.Info("files created: " + intStr(created.files))
+	if !noMCP {
+		if added, err := ensureCsddMCPServer(root); err != nil {
+			render.Warn("could not register csdd MCP server: " + err.Error())
+		} else if added {
+			render.Info("registered the csdd MCP server (drive the dev flow as tools) in " + workspace.Relative(root, paths.MCP(root)))
+		}
+	}
 	offerGitignore(root)
 	render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
 	if !withBaseline {
@@ -76,6 +85,34 @@ func offerGitignore(root string) {
 	default:
 		render.OK("Added to .gitignore: " + strings.Join(added, ", "))
 	}
+}
+
+// csddMCPServerName is the key under which `csdd init` registers the csdd MCP
+// server in .mcp.json.
+const csddMCPServerName = "csdd"
+
+// ensureCsddMCPServer registers the csdd MCP server (a stdio server launched via
+// npx) in .mcp.json, unless an entry of that name already exists. The npm
+// package resolves the matching prebuilt csdd binary through its
+// optionalDependencies, so the entry is portable across machines — no absolute
+// paths. Idempotent; returns whether a new entry was written.
+func ensureCsddMCPServer(root string) (bool, error) {
+	path := paths.MCP(root)
+	cfg, err := loadMCP(path)
+	if err != nil {
+		return false, err
+	}
+	if _, exists := cfg.MCPServers[csddMCPServerName]; exists {
+		return false, nil
+	}
+	cfg.MCPServers[csddMCPServerName] = MCPServer{
+		Command: "npx",
+		Args:    []string{"-y", "@protonspy/csdd-mcp"},
+	}
+	if err := saveMCP(path, cfg); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type initCounts struct {
