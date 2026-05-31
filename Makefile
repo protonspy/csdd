@@ -9,9 +9,10 @@
 #
 # Manual npm publish (bootstrap / fallback, when CI can't do it):
 #   make dist      VERSION=v0.2.0    # cross-compile all 5 targets into dist/
-#   make npm-build VERSION=v0.2.0    # assemble npm/dist/ from those artifacts
-#   make npm-dry-run                 # validate all 6 packages without publishing
-#   make npm-publish [OTP=123456]    # publish the 6 packages (skips already-published)
+#   make mcp-dist                    # build the MCP server (tsc)
+#   make npm-build VERSION=v0.2.0    # assemble npm/dist/ (7 packages) from those
+#   make npm-dry-run                 # validate all 7 packages without publishing
+#   make npm-publish [OTP=123456]    # publish the 7 packages (skips already-published)
 #
 # Auth for a manual publish: either an Automation token
 #   npm config set //registry.npmjs.org/:_authToken <token>
@@ -55,8 +56,16 @@ vet: ## go vet ./...
 .PHONY: check
 check: fmt vet test ## Run the full CI gate (gofmt + vet + race tests)
 
+# require-version fails fast when the release VERSION is left at the 'dev'
+# default. Without it, dist/npm-build produce 'dev'-named tarballs (and an
+# invalid npm semver), which only surfaces later as a cryptic `tar: Cannot open`
+# when npm-build can't find a matching artifact.
+.PHONY: require-version
+require-version:
+	@case '$(VERSION)' in v*.*.*) : ;; *) echo "set a release VERSION like v0.1.1 (got '$(VERSION)'); e.g. make $(MAKECMDGOALS) VERSION=v0.1.1" >&2; exit 1 ;; esac
+
 .PHONY: dist
-dist: ## Cross-compile every npm target into $(DIST)/ (set VERSION=vX.Y.Z)
+dist: require-version ## Cross-compile every npm target into $(DIST)/ (set VERSION=vX.Y.Z)
 	@rm -rf '$(DIST)' && mkdir -p '$(DIST)'
 	@set -euo pipefail; for p in $(PLATFORMS); do \
 	  goos=$${p%/*}; goarch=$${p#*/}; bin=csdd; [ "$$goos" = windows ] && bin=csdd.exe; \
@@ -69,8 +78,13 @@ dist: ## Cross-compile every npm target into $(DIST)/ (set VERSION=vX.Y.Z)
 	done; \
 	echo "artifacts in $(DIST)/"
 
+.PHONY: mcp-dist
+mcp-dist: ## Build the MCP server (tsc) so npm-build can stage @protonspy/csdd-mcp
+	npm --prefix mcp-server ci
+	npm --prefix mcp-server run build
+
 .PHONY: npm-build
-npm-build: ## Assemble npm/dist/ from artifacts (set VERSION=vX.Y.Z; ARTIFACTS=dir)
+npm-build: require-version ## Assemble npm/dist/ (CLI + mcp-server) from artifacts (VERSION=vX.Y.Z; ARTIFACTS=dir; needs `make dist` + `make mcp-dist`)
 	node npm/scripts/build-packages.mjs '$(VERSION)' '$(ARTIFACTS)'
 
 .PHONY: npm-dry-run
@@ -79,7 +93,7 @@ npm-dry-run: ## Dry-run publish every assembled package
 	  echo "== $$d"; npm publish "$$d" --access public --dry-run; done
 
 .PHONY: npm-publish
-npm-publish: ## Publish the 6 packages, platforms first (skips already-published; OTP=123456 if 2FA)
+npm-publish: ## Publish the assembled packages (CLI + mcp-server), skips already-published; OTP=123456 if 2FA
 	@set -euo pipefail; \
 	otp=; if [ -n "$(OTP)" ]; then otp="--otp=$(OTP)"; fi; \
 	for d in npm/dist/csdd-*/ npm/dist/csdd/; do \
@@ -91,8 +105,7 @@ npm-publish: ## Publish the 6 packages, platforms first (skips already-published
 	done
 
 .PHONY: release
-release: ## Tag VERSION and push -> CI builds + publishes (set VERSION=vX.Y.Z)
-	@case '$(VERSION)' in v*.*.*) : ;; *) echo "VERSION must look like v1.2.3 (got '$(VERSION)')"; exit 1 ;; esac
+release: require-version ## Tag VERSION and push -> CI builds + publishes (set VERSION=vX.Y.Z)
 	git tag -a '$(VERSION)' -m 'csdd $(VERSION)'
 	git push origin '$(VERSION)'
 

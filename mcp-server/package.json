@@ -2,6 +2,15 @@
   "name": "@protonspy/csdd-mcp",
   "version": "0.1.0",
   "description": "MCP server exposing the csdd CLI over stdio (one tool per subcommand).",
+  "homepage": "https://github.com/protonspy/csdd/tree/main/mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/protonspy/csdd/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/protonspy/csdd.git",
+    "directory": "mcp-server"
+  },
   "type": "module",
   "bin": {
     "csdd-mcp": "dist/index.js"
