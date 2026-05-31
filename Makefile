@@ -4,8 +4,8 @@
 #   make build                       # local binary -> ./csdd
 #   make check                       # gofmt + vet + race tests (the CI gate)
 #
-# Release (recommended — CI builds + publishes to npm on the pushed tag):
-#   make release VERSION=v0.2.0
+# Release (manual — dispatches the release workflow; CI builds + publishes npm):
+#   make release VERSION=v0.2.0      # = gh workflow run release.yml --field version=v0.2.0
 #
 # Manual npm publish (bootstrap / fallback, when CI can't do it):
 #   make dist      VERSION=v0.2.0    # cross-compile all 5 targets into dist/
@@ -110,9 +110,9 @@ npm-publish: ## Publish the assembled packages (CLI + mcp-server), skips already
 	done
 
 .PHONY: release
-release: require-version ## Tag VERSION and push -> CI builds + publishes (set VERSION=vX.Y.Z)
-	git tag -a '$(VERSION)' -m 'csdd $(VERSION)'
-	git push origin '$(VERSION)'
+release: require-version ## Dispatch the manual release workflow (CI builds binaries + publishes npm) for VERSION
+	gh workflow run release.yml --field version='$(VERSION)'
+	@echo "dispatched release $(VERSION) — track it with: gh run list --workflow=release.yml"
 
 .PHONY: clean
 clean: ## Remove build artifacts (dist/, npm/dist/, ./csdd, coverage)
