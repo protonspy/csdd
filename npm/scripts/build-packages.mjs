@@ -53,6 +53,23 @@ const version = tag.replace(/^v/, "");
 const artifactsDir = resolve(process.argv[3] ?? join(repoRoot, "artifacts"));
 const outDir = join(npmDir, "dist");
 
+// Preflight: every platform artifact must exist before we touch npm/dist, so a
+// version mismatch (e.g. `npm-build VERSION=v0.1.2` against v0.1.1 tarballs)
+// fails with a clear message instead of a cryptic tar/unzip error — and never
+// wipes a good npm/dist or leaves a half-built one that breaks `npm-publish`.
+const missingArtifacts = TARGETS.map((t) => {
+  const ext = t.goos === "windows" ? "zip" : "tar.gz";
+  return join(artifactsDir, `csdd_${tag}_${t.goos}_${t.goarch}.${ext}`);
+}).filter((f) => !existsSync(f));
+if (missingArtifacts.length > 0) {
+  console.error(
+    `error: missing release artifacts for ${tag} in ${artifactsDir}:\n` +
+      missingArtifacts.map((f) => "  " + f).join("\n") +
+      `\nbuild them first:  make dist VERSION=${tag}`
+  );
+  process.exit(1);
+}
+
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
