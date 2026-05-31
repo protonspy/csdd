@@ -31,5 +31,7 @@ go.work.sum
 # .idea/
 # .vscode/
 
-csdd
-csdd.md
+# Compiled csdd binary + generated guide at the repo root only.
+# Anchored with a leading slash so they do NOT match the npm/csdd/ package dir.
+/csdd
+/csdd.md
