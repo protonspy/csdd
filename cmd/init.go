@@ -50,7 +50,7 @@ func runInit(args []string, templates embed.FS) int {
 	offerGitignore(root)
 	render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
 	if !withBaseline {
-		render.Info("Run `csdd steering init` to scaffold standard steering files.")
+		render.Info("Run `" + prog() + " steering init` to scaffold standard steering files.")
 	}
 	return 0
 }

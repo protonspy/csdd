@@ -73,7 +73,7 @@ func specInit(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd spec init FEATURE")
+		render.Err("usage: " + prog() + " spec init FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -113,7 +113,7 @@ func specInit(args []string, templates embed.FS) int {
 		return 1
 	}
 	render.OK("created " + workspace.Relative(r, target) + "/")
-	render.Info("next: `csdd spec generate <feature> --artifact requirements`")
+	render.Info(fmt.Sprintf("next: `%s spec generate <feature> --artifact requirements`", prog()))
 	return 0
 }
 
@@ -192,7 +192,7 @@ func specShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd spec show FEATURE")
+		render.Err("usage: " + prog() + " spec show FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -276,7 +276,7 @@ func specGenerate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 || opts.Artifact == "" {
-		render.Err("usage: csdd spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix}")
+		render.Err("usage: " + prog() + " spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix}")
 		return 1
 	}
 	opts.Feature = positionals[0]
@@ -298,7 +298,7 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 	}
 	sdir := filepath.Join(paths.Specs(r), opts.Feature)
 	if !pathExists(sdir) {
-		return fmt.Errorf("spec not found: %s. Run `csdd spec init %s` first", opts.Feature, opts.Feature)
+		return fmt.Errorf("spec not found: %s. Run `%s spec init %s` first", opts.Feature, prog(), opts.Feature)
 	}
 	data, err := loadSpecJSON(sdir)
 	if err != nil {
@@ -381,7 +381,7 @@ func specApprove(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 || opts.Phase == "" {
-		render.Err("usage: csdd spec approve FEATURE --phase {requirements|design|tasks}")
+		render.Err("usage: " + prog() + " spec approve FEATURE --phase {requirements|design|tasks}")
 		return 1
 	}
 	opts.Feature = positionals[0]
@@ -473,7 +473,7 @@ func specValidate(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd spec validate FEATURE")
+		render.Err("usage: " + prog() + " spec validate FEATURE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -519,7 +519,7 @@ func validationScope(specDir string, data SpecJSON) (validator.Phase, []validato
 	}
 	return validator.PhaseAll, []validator.Issue{{
 		File: "spec.json",
-		Msg:  "no generated artifacts to validate; run `csdd spec generate <feature> --artifact requirements` first",
+		Msg:  fmt.Sprintf("no generated artifacts to validate; run `%s spec generate <feature> --artifact requirements` first", prog()),
 	}}
 }
 
@@ -534,7 +534,7 @@ func specDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd spec delete FEATURE --force")
+		render.Err("usage: " + prog() + " spec delete FEATURE --force")
 		return 1
 	}
 	feature := positionals[0]

@@ -66,7 +66,7 @@ func skillCreate(args []string, templates embed.FS) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd skill create NAME --description '...'")
+		render.Err("usage: " + prog() + " skill create NAME --description '...'")
 		return 1
 	}
 	opts.Name = positionals[0]
@@ -179,7 +179,7 @@ func skillShow(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd skill show NAME")
+		render.Err("usage: " + prog() + " skill show NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -217,7 +217,7 @@ func skillAddArtifact(args []string, subdir string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 2 {
-		render.Err("usage: csdd skill add-" + subdir + " SKILL FILE")
+		render.Err("usage: " + prog() + " skill add-" + subdir + " SKILL FILE")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -304,7 +304,7 @@ func skillValidate(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd skill validate NAME")
+		render.Err("usage: " + prog() + " skill validate NAME")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -340,7 +340,7 @@ func skillDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: csdd skill delete NAME --force")
+		render.Err("usage: " + prog() + " skill delete NAME --force")
 		return 1
 	}
 	if !force {

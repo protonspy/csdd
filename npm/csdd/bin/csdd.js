@@ -38,7 +38,22 @@ try {
   process.exit(1);
 }
 
-const child = spawn(binPath, process.argv.slice(2), { stdio: "inherit" });
+// When invoked via `npx @protonspy/csdd` (which is `npm exec` under the hood),
+// echo that exact spelling in the binary's --help / usage output. A global
+// install runs this same launcher as the bare `csdd` command — there npm is not
+// in the picture (npm_command is unset), so the binary keeps its default name.
+// An explicit CSDD_PROG always wins.
+const env = { ...process.env };
+if (!env.CSDD_PROG) {
+  const argv1 = process.argv[1] || "";
+  const viaNpx =
+    process.env.npm_command === "exec" ||
+    argv1.includes("/_npx/") ||
+    argv1.includes("\\_npx\\");
+  if (viaNpx) env.CSDD_PROG = "npx @protonspy/csdd";
+}
+
+const child = spawn(binPath, process.argv.slice(2), { stdio: "inherit", env });
 
 // Forward terminating signals so the TUI shuts down cleanly.
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {

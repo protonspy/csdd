@@ -18,9 +18,9 @@
 | **agent** | `.claude/agents/<name>.md` | Custom sub-agent definition with least-privilege tool scope. |
 | **mcp** | `.mcp.json` | Model Context Protocol servers the agent may connect to. |
 
-`csdd` is **the only sanctioned author** of these files. Do not hand-edit frontmatter, `spec.json`, or task annotations to bypass validation. If you need a change, regenerate from template (`csdd spec generate --force`) and edit the body, then re-validate.
+`csdd` is **the only sanctioned author** of these files. Do not hand-edit frontmatter, `spec.json`, or task annotations to bypass validation. If you need a change, regenerate from template (`npx @protonspy/csdd spec generate --force`) and edit the body, then re-validate.
 
-The full spec this CLI implements lives at `docs/guides/claude-code-sdd.md` (scaffolded by `csdd init`) — a single, self-contained guide and the canonical reference. **This document is the operational subset you need to use the tool.**
+The full spec this CLI implements lives at `docs/guides/claude-code-sdd.md` (scaffolded by `npx @protonspy/csdd init`) — a single, self-contained guide and the canonical reference. **This document is the operational subset you need to use the tool.**
 
 ---
 
@@ -41,62 +41,62 @@ Discovery → Requirements → Design → Tasks → Implementation
             human gate   human gate  human gate
 ```
 
-The CLI enforces this mechanically. `csdd spec generate <feature> --artifact design` will fail if `requirements` is not approved. Use `--force` **only** when the user explicitly authorizes a Quick Plan / fast-track flow.
+The CLI enforces this mechanically. `npx @protonspy/csdd spec generate <feature> --artifact design` will fail if `requirements` is not approved. Use `--force` **only** when the user explicitly authorizes a Quick Plan / fast-track flow.
 
 ---
 
 ## 2. Cheat sheet — every command
 
-Run `csdd --help` for the top-level surface. The subcommands you will actually use:
+Run `npx @protonspy/csdd --help` for the top-level surface. The subcommands you will actually use:
 
 ```bash
 # bootstrap (one time per repo)
-csdd init [--root PATH] [--with-baseline]
+npx @protonspy/csdd init [--root PATH] [--with-baseline]
 
 # steering (project memory)
-csdd steering init [--root PATH]
-csdd steering create NAME --inclusion {always|fileMatch|manual|auto} \
+npx @protonspy/csdd steering init [--root PATH]
+npx @protonspy/csdd steering create NAME --inclusion {always|fileMatch|manual|auto} \
                            [--pattern GLOB]... [--description TEXT] [--title TEXT] [--force]
-csdd steering list   [--inclusion MODE]
-csdd steering show   NAME
-csdd steering delete NAME [--force]
-csdd steering validate [NAME]
+npx @protonspy/csdd steering list   [--inclusion MODE]
+npx @protonspy/csdd steering show   NAME
+npx @protonspy/csdd steering delete NAME [--force]
+npx @protonspy/csdd steering validate [NAME]
 
 # specs
-csdd spec init     FEATURE [--language en]
-csdd spec list
-csdd spec show     FEATURE
-csdd spec status   FEATURE                              # show + validate
-csdd spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix} [--force]
-csdd spec approve  FEATURE --phase    {requirements|design|tasks} [--force]
-csdd spec validate FEATURE
-csdd spec delete   FEATURE --force
+npx @protonspy/csdd spec init     FEATURE [--language en]
+npx @protonspy/csdd spec list
+npx @protonspy/csdd spec show     FEATURE
+npx @protonspy/csdd spec status   FEATURE                              # show + validate
+npx @protonspy/csdd spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix} [--force]
+npx @protonspy/csdd spec approve  FEATURE --phase    {requirements|design|tasks} [--force]
+npx @protonspy/csdd spec validate FEATURE
+npx @protonspy/csdd spec delete   FEATURE --force
 
 # skills
-csdd skill create NAME --description TEXT [--title TEXT]
-csdd skill list
-csdd skill show   NAME
-csdd skill add-reference SKILL FILE
-csdd skill add-script    SKILL FILE
-csdd skill add-asset     SKILL FILE
-csdd skill validate NAME
-csdd skill delete   NAME --force
+npx @protonspy/csdd skill create NAME --description TEXT [--title TEXT]
+npx @protonspy/csdd skill list
+npx @protonspy/csdd skill show   NAME
+npx @protonspy/csdd skill add-reference SKILL FILE
+npx @protonspy/csdd skill add-script    SKILL FILE
+npx @protonspy/csdd skill add-asset     SKILL FILE
+npx @protonspy/csdd skill validate NAME
+npx @protonspy/csdd skill delete   NAME --force
 
 # custom sub-agents
-csdd agent create NAME --description TEXT [--tools TOOL]... [--model M] [--title T] [--force]
-csdd agent list
-csdd agent show   NAME
-csdd agent delete NAME --force
+npx @protonspy/csdd agent create NAME --description TEXT [--tools TOOL]... [--model M] [--title T] [--force]
+npx @protonspy/csdd agent list
+npx @protonspy/csdd agent show   NAME
+npx @protonspy/csdd agent delete NAME --force
 
 # mcp servers (.mcp.json)
-csdd mcp add NAME --command CMD [--arg A]... [--env K=V]... [--disabled] [--force]   # stdio
-csdd mcp add NAME --url URL [--type sse|http] [--env K=V]... [--disabled] [--force]  # remote
-csdd mcp list
-csdd mcp show    NAME
-csdd mcp enable  NAME
-csdd mcp disable NAME
-csdd mcp remove  NAME --force
-csdd mcp validate
+npx @protonspy/csdd mcp add NAME --command CMD [--arg A]... [--env K=V]... [--disabled] [--force]   # stdio
+npx @protonspy/csdd mcp add NAME --url URL [--type sse|http] [--env K=V]... [--disabled] [--force]  # remote
+npx @protonspy/csdd mcp list
+npx @protonspy/csdd mcp show    NAME
+npx @protonspy/csdd mcp enable  NAME
+npx @protonspy/csdd mcp disable NAME
+npx @protonspy/csdd mcp remove  NAME --force
+npx @protonspy/csdd mcp validate
 ```
 
 **Global flags (every command):** `--root PATH` overrides the auto-detected workspace; `--force` overrides safety checks; `-h` / `--help` prints usage; `-v` / `--version` prints version. Exit codes: `0` OK, `1` user error, `2` validation failure.
@@ -109,39 +109,39 @@ csdd mcp validate
 
 ```bash
 # 1. Bootstrap (only on a fresh repo)
-csdd init --with-baseline
+npx @protonspy/csdd init --with-baseline
 
 # 2. Create the feature workspace
-csdd spec init photo-albums
+npx @protonspy/csdd spec init photo-albums
 
 # 3. Draft requirements
-csdd spec generate photo-albums --artifact requirements
+npx @protonspy/csdd spec generate photo-albums --artifact requirements
 #    → opens specs/photo-albums/requirements.md
 #    → edit it to capture real requirements in EARS phrasing (see §4)
-csdd spec validate photo-albums            # exit 2 means fix what it reports
+npx @protonspy/csdd spec validate photo-albums            # exit 2 means fix what it reports
 # 4. Hand off for human review and approval
-csdd spec approve photo-albums --phase requirements
+npx @protonspy/csdd spec approve photo-albums --phase requirements
 
 # 5. Draft design (gate-blocked until step 4 succeeds)
-csdd spec generate photo-albums --artifact design
+npx @protonspy/csdd spec generate photo-albums --artifact design
 #    → edit design.md (architecture, boundary map, File Structure Plan, traceability)
-csdd spec validate photo-albums
-csdd spec approve photo-albums --phase design
+npx @protonspy/csdd spec validate photo-albums
+npx @protonspy/csdd spec approve photo-albums --phase design
 
 # 6. Draft tasks
-csdd spec generate photo-albums --artifact tasks
+npx @protonspy/csdd spec generate photo-albums --artifact tasks
 #    → edit tasks.md with _Requirements:_ / _Boundary:_ / _Depends:_ / (P) (see §5)
-csdd spec validate photo-albums
-csdd spec approve photo-albums --phase tasks
+npx @protonspy/csdd spec validate photo-albums
+npx @protonspy/csdd spec approve photo-albums --phase tasks
 # spec.json now has ready_for_implementation: true — implementation can start
 ```
 
-**Use `csdd spec status <feature>` between any two steps** to see phase + approvals + current validation issues in one shot.
+**Use `npx @protonspy/csdd spec status <feature>` between any two steps** to see phase + approvals + current validation issues in one shot.
 
 ### Variants
 
-- **Bugfix Spec** — replace `requirements.md` with `bugfix.md`: `csdd spec generate FEATURE --artifact bugfix`. The phase gate is skipped (bugfix is off-chain). The validator requires the sections `Current Behavior:`, `Expected Behavior:`, `Unchanged Behavior:`, and `Root Cause`. Document the root cause **before** writing any code.
-- **Research** — for brownfield or novel domains add `csdd spec generate FEATURE --artifact research` before design. Every finding in `research.md` must connect to a concrete commitment in `design.md`.
+- **Bugfix Spec** — replace `requirements.md` with `bugfix.md`: `npx @protonspy/csdd spec generate FEATURE --artifact bugfix`. The phase gate is skipped (bugfix is off-chain). The validator requires the sections `Current Behavior:`, `Expected Behavior:`, `Unchanged Behavior:`, and `Root Cause`. Document the root cause **before** writing any code.
+- **Research** — for brownfield or novel domains add `npx @protonspy/csdd spec generate FEATURE --artifact research` before design. Every finding in `research.md` must connect to a concrete commitment in `design.md`.
 - **No spec needed** — for small reversible changes (typos, doc tweaks, one-line bugfixes) skip the spec layer entirely. SDD is a contract layer, not a tax.
 
 ---
@@ -259,7 +259,7 @@ Steering files live in `.claude/steering/*.md`. `csdd` imports them into
 `CLAUDE.md` as `@`-references inside the managed block between
 `<!-- csdd:steering:start -->` and `<!-- csdd:steering:end -->`, so they load as
 **always-on project memory** on every interaction. Do not hand-edit that block —
-`csdd steering create` / `csdd steering init` keep it in sync.
+`npx @protonspy/csdd steering create` / `npx @protonspy/csdd steering init` keep it in sync.
 
 ### Inclusion modes — advisory metadata
 
@@ -280,18 +280,18 @@ validator still checks the frontmatter is well-formed.
 
 ```bash
 # always
-csdd steering create security --inclusion always
+npx @protonspy/csdd steering create security --inclusion always
 
 # fileMatch (--pattern is repeatable)
-csdd steering create api-conventions --inclusion fileMatch \
+npx @protonspy/csdd steering create api-conventions --inclusion fileMatch \
     --pattern 'src/api/**/*' --pattern '**/*Controller.*'
 
 # auto (--description is required and is the trigger phrase)
-csdd steering create observability --inclusion auto \
+npx @protonspy/csdd steering create observability --inclusion auto \
     --description 'Logging, metrics, tracing. Use when adding or modifying instrumentation.'
 
 # manual
-csdd steering create regulated-domain --inclusion manual
+npx @protonspy/csdd steering create regulated-domain --inclusion manual
 ```
 
 ### What belongs / does not belong
@@ -309,10 +309,10 @@ csdd steering create regulated-domain --inclusion manual
 
 ## 7. Skills — executable workflow bundles
 
-Use `csdd skill` to create a reusable, well-scoped capability bundle the agent can load on demand.
+Use `npx @protonspy/csdd skill` to create a reusable, well-scoped capability bundle the agent can load on demand.
 
 ```bash
-csdd skill create spec-tasks \
+npx @protonspy/csdd skill create spec-tasks \
     --description 'Generate tasks.md with boundary/depends annotations.'
 ```
 
@@ -348,10 +348,10 @@ This produces:
 ### Adding content
 
 ```bash
-csdd skill add-reference spec-tasks api-errors.md
-csdd skill add-script    spec-tasks validate_ids.py     # marked executable
-csdd skill add-asset     spec-tasks report-template.md
-csdd skill validate      spec-tasks
+npx @protonspy/csdd skill add-reference spec-tasks api-errors.md
+npx @protonspy/csdd skill add-script    spec-tasks validate_ids.py     # marked executable
+npx @protonspy/csdd skill add-asset     spec-tasks report-template.md
+npx @protonspy/csdd skill validate      spec-tasks
 ```
 
 If `references/<file>` exists but is not cited from `SKILL.md`, validation fails. Either cite it with a load trigger or delete the file.
@@ -363,11 +363,11 @@ If `references/<file>` exists but is not cited from `SKILL.md`, validation fails
 Custom agents live at `.claude/agents/<name>.md` and define delegated, scoped roles (reviewer, debugger, security reviewer…).
 
 ```bash
-csdd agent create code-reviewer \
+npx @protonspy/csdd agent create code-reviewer \
     --description 'Read-only adversarial reviewer' \
     --tools Read --tools Grep
 
-csdd agent create security-reviewer \
+npx @protonspy/csdd agent create security-reviewer \
     --description 'No-write security review of the current diff' \
     --tools Read --tools Grep --tools Bash \
     --model sonnet
@@ -393,7 +393,7 @@ csdd agent create security-reviewer \
 
 ## 9. MCP servers — workspace integrations
 
-Model Context Protocol servers give the agent extra tools (filesystem access, issue trackers, search, internal APIs…). They are declared in `.mcp.json` and managed exclusively with `csdd mcp` — **do not hand-edit the JSON**; the CLI keeps it well-formed and reviewable.
+Model Context Protocol servers give the agent extra tools (filesystem access, issue trackers, search, internal APIs…). They are declared in `.mcp.json` and managed exclusively with `npx @protonspy/csdd mcp` — **do not hand-edit the JSON**; the CLI keeps it well-formed and reviewable.
 
 ### Two transports
 
@@ -408,18 +408,18 @@ A server is **either** stdio **or** remote — never both. The validator rejects
 
 ```bash
 # stdio server (npx-launched filesystem server scoped to the repo)
-csdd mcp add filesystem \
+npx @protonspy/csdd mcp add filesystem \
     --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .
 
 # remote server over SSE, carrying a token via env
-csdd mcp add linear --url https://mcp.linear.app/sse --type sse --env LINEAR_API_KEY=$LINEAR_API_KEY
+npx @protonspy/csdd mcp add linear --url https://mcp.linear.app/sse --type sse --env LINEAR_API_KEY=$LINEAR_API_KEY
 
-csdd mcp list                 # name · transport · state · endpoint
-csdd mcp show    filesystem   # the entry as stored
-csdd mcp disable linear       # keep the entry but stop loading it
-csdd mcp enable  linear
-csdd mcp remove  linear --force
-csdd mcp validate             # exit 2 on any structural problem
+npx @protonspy/csdd mcp list                 # name · transport · state · endpoint
+npx @protonspy/csdd mcp show    filesystem   # the entry as stored
+npx @protonspy/csdd mcp disable linear       # keep the entry but stop loading it
+npx @protonspy/csdd mcp enable  linear
+npx @protonspy/csdd mcp remove  linear --force
+npx @protonspy/csdd mcp validate             # exit 2 on any structural problem
 ```
 
 `--env K=V` is repeatable. `--disabled` adds the server without activating it. `--force` replaces an existing entry of the same name.
@@ -427,7 +427,7 @@ csdd mcp validate             # exit 2 on any structural problem
 ### Least privilege
 
 - Prefer the **narrowest scope**: pass paths/args that limit a stdio server to what the task needs (e.g. a single directory, not `/`).
-- Avoid `--auto-approve`. Auto-approving tools bypasses human review of each call; `csdd mcp add` warns when it is set and `csdd mcp show` surfaces it.
+- Avoid `--auto-approve`. Auto-approving tools bypasses human review of each call; `npx @protonspy/csdd mcp add` warns when it is set and `npx @protonspy/csdd mcp show` surfaces it.
 - Never inline secrets into `--arg`. Use `--env` and reference environment variables; do not commit real tokens into `mcp.json`.
 - Disable rather than delete when you only need to pause a server, so its reviewed config is preserved.
 
@@ -439,26 +439,26 @@ MCP server names are kebab-case (`filesystem`, `brave-search`, `linear`), like e
 
 Every `csdd * validate` runs **mechanical** checks (the validator never asks for judgment). Exit code `2` means there are issues; the agent must fix them before re-running.
 
-### `csdd steering validate [NAME]`
+### `npx @protonspy/csdd steering validate [NAME]`
 
 - `inclusion` frontmatter is one of `always|fileMatch|manual|auto`.
 - `fileMatch` files have a non-empty `fileMatchPattern`.
 - `auto` files have both `name` and `description`.
 
-### `csdd spec validate <feature>` — Requirements phase
+### `npx @protonspy/csdd spec validate <feature>` — Requirements phase
 
 - Every numbered criterion starts with `WHEN`/`WHILE`/`IF`/`WHERE`/`THE SYSTEM`.
 - No criterion uses `should`.
 - Requirement headers `### Requirement N:` are unique.
 
-### `csdd spec validate <feature>` — Design phase
+### `npx @protonspy/csdd spec validate <feature>` — Design phase
 
 - `## Architecture Pattern & Boundary Map` section present.
 - `## File Structure Plan` section present.
 - Every requirement ID from `requirements.md` appears in the `## Requirements Traceability` table.
 - `design.md` is **≤ 1000 lines** (over that, split the spec into multiple).
 
-### `csdd spec validate <feature>` — Tasks phase
+### `npx @protonspy/csdd spec validate <feature>` — Tasks phase
 
 - Every leaf task has `_Requirements:_` with numeric IDs only.
 - Every requirement ID referenced from a task exists in `requirements.md`.
@@ -471,7 +471,7 @@ Every `csdd * validate` runs **mechanical** checks (the validator never asks for
 
 - `bugfix.md` contains `Current Behavior:`, `Expected Behavior:`, `Unchanged Behavior:`, and `Root Cause` sections.
 
-### `csdd skill validate <name>`
+### `npx @protonspy/csdd skill validate <name>`
 
 - Frontmatter `name` matches the directory.
 - Frontmatter `description` is non-empty.
@@ -479,7 +479,7 @@ Every `csdd * validate` runs **mechanical** checks (the validator never asks for
 - All required headings present (§7).
 - Every file in `references/` is mentioned by name in `SKILL.md`.
 
-### `csdd mcp validate`
+### `npx @protonspy/csdd mcp validate`
 
 - `mcp.json` is well-formed JSON.
 - Every server sets exactly one transport: `command` (stdio) **or** `url` (remote), never both or neither.
@@ -499,10 +499,10 @@ Every `csdd * validate` runs **mechanical** checks (the validator never asks for
 | `task N _Boundary: X_ does not match any component in design.md` | Either fix the boundary name to match a `### X` under `## Components and Interfaces`, or add that component to `design.md`. |
 | `parallel tasks A and B share boundary 'X'` | Remove the `(P)` from one of them, or move it into a different boundary. |
 | `task N _Depends:_ references unknown task 'Y.Z'` | Fix the ID to point at an existing task, or remove the dependency. |
-| `phase gate: 'X' must be approved before generating 'Y'` | Run `csdd spec approve <feature> --phase X` first. Use `--force` only if the user explicitly authorizes Quick Plan. |
+| `phase gate: 'X' must be approved before generating 'Y'` | Run `npx @protonspy/csdd spec approve <feature> --phase X` first. Use `--force` only if the user explicitly authorizes Quick Plan. |
 | `SKILL.md ~N tokens (>5000)` | Move detailed content into `references/` files and add load triggers in `SKILL.md`. |
 | `references/X.md: not mentioned in SKILL.md` | Cite the file with a load trigger ("Read references/X.md when …") or delete it. |
-| `auto inclusion requires --description` | Re-run `csdd steering create` with `--description "<trigger phrase>"`. |
+| `auto inclusion requires --description` | Re-run `npx @protonspy/csdd steering create` with `--description "<trigger phrase>"`. |
 | `fileMatch requires non-empty fileMatchPattern` | Re-run with one or more `--pattern '<glob>'`. |
 | `server 'X' has neither command nor url` | Re-add with `--command` (stdio) or `--url` + `--type` (remote). |
 | `server 'X' sets both command and url` | Pick one transport; re-add the server with only `--command` or only `--url`. |
@@ -520,7 +520,7 @@ Every `csdd * validate` runs **mechanical** checks (the validator never asks for
 - **Mixing exploration with production-impacting changes** in the same session — promote to a spec first.
 - **Putting secrets, tokens, or customer data** in steering or specs (the agent reads these on every turn).
 - **Skipping the "why"** when adding a rule to steering — without rationale future reviewers can't judge edge cases.
-- **Hand-editing `spec.json`** to mark a phase approved. Use `csdd spec approve`.
+- **Hand-editing `spec.json`** to mark a phase approved. Use `npx @protonspy/csdd spec approve`.
 - **Building skills from generic LLM output** — skills are grounded in real expertise (a hands-on session, runbooks, code-review history).
 - **Authorizing broad tool scope** to a custom agent ("--tools Read --tools Write --tools Bash" without need).
 - **Adding MCP servers with broad scope or `--auto-approve`** — scope each server to the task and keep tool approvals human-reviewed.
@@ -545,12 +545,12 @@ The CLI never blocks you from doing the right thing — it blocks you from doing
 
 ## 14. One-page summary
 
-1. **Always start from a template** — `csdd spec generate`, `csdd steering create`, `csdd skill create`, `csdd agent create`. Never hand-author from scratch.
-2. **Always validate** — `csdd spec validate`, `csdd skill validate`, `csdd steering validate`. Fix every `✗` before continuing.
+1. **Always start from a template** — `npx @protonspy/csdd spec generate`, `npx @protonspy/csdd steering create`, `npx @protonspy/csdd skill create`, `npx @protonspy/csdd agent create`. Never hand-author from scratch.
+2. **Always validate** — `npx @protonspy/csdd spec validate`, `npx @protonspy/csdd skill validate`, `npx @protonspy/csdd steering validate`. Fix every `✗` before continuing.
 3. **Always respect phase gates** — requirements → design → tasks → implementation. No skipping without explicit human authorization.
 4. **Always use EARS** for acceptance criteria. `SHALL`, not `should`. One behavior per criterion.
 5. **Always annotate tasks** — `_Requirements:_` on leaves, `_Boundary:_` on parallel work, `_Depends:_` across boundaries only.
 6. **Always apply least privilege** — agents get `Read, Grep` by default; add tools only when justified.
 7. **Always keep `SKILL.md` under 500 lines / 5k tokens** — push detail into `references/` with explicit triggers.
 
-If you forget everything else, remember: **the validator is your friend**. Run `csdd spec status <feature>` between every step.
+If you forget everything else, remember: **the validator is your friend**. Run `npx @protonspy/csdd spec status <feature>` between every step.
