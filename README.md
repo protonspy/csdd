@@ -48,16 +48,25 @@ csdd          # no args → interactive TUI
 
 ## Install
 
-**npm** (cross-platform — installs the right prebuilt binary for your OS/arch):
+**npx** (cross-platform — fetches the right prebuilt binary for your OS/arch, no install):
+
+```bash
+npx @protonspy/csdd --help         # run instantly, no install
+npx @protonspy/csdd                # interactive TUI
+```
+
+Prefer the short `csdd` command on your `PATH`? Install it globally:
 
 ```bash
 npm install -g @protonspy/csdd     # then: csdd
-npx @protonspy/csdd --help         # or run without installing
 ```
 
 **Prebuilt binaries:** grab the archive for your platform from the
 [releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on
 your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
+
+> The examples below call `csdd` directly. Running via npx? Prefix them with
+> `npx @protonspy/csdd`, or alias it: `alias csdd='npx @protonspy/csdd'`.
 
 ---
 
