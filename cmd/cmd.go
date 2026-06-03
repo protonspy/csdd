@@ -44,6 +44,8 @@ func Run(args []string, templates embed.FS) int {
 		return 0
 	case "init":
 		return runInit(rest, templates)
+	case "update":
+		return runUpdate(rest, templates)
 	case "steering":
 		return runSteering(rest, templates)
 	case "spec":
@@ -120,6 +122,7 @@ USAGE
 
 RESOURCES
   init                        Bootstrap a Claude Code workspace.
+  update                      Refresh csdd-managed artifacts to this version (keeps your edits as .old).
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
@@ -135,6 +138,8 @@ GLOBAL FLAGS
 
 EXAMPLES
   %[1]s init --with-baseline
+  %[1]s update --dry-run                                     # preview what a new csdd version would change
+  %[1]s update                                               # apply; your edits are kept as <file>-N.old
   %[1]s steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
   %[1]s steering create observability \

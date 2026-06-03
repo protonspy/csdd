@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/render"
@@ -253,6 +254,11 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 		if _, err := ensureSteeringImports(root, names...); err != nil {
 			return c, err
 		}
+	}
+	// Record the manifest of csdd-managed artifacts so a later `csdd update` can
+	// tell pristine shipped files from ones the user has since edited.
+	if err := recordManifest(root, templates, time.Now()); err != nil {
+		return c, err
 	}
 	return c, nil
 }

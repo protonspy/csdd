@@ -70,6 +70,30 @@ your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
 
 ---
 
+## Upgrading safely — `csdd update`
+
+A new csdd version ships new and improved managed artifacts (rules, templates, the shipped skills/agents/commands/hooks, the guide). `csdd update` brings your workspace up to that version **without ever losing your setup**:
+
+```bash
+csdd update --dry-run     # preview exactly what would change
+csdd update               # apply it
+```
+
+It tracks what it wrote in `.claude/.csdd-manifest.json` (a content-hash baseline) and, for each csdd-managed file, decides:
+
+| On disk vs. shipped | What update does |
+|---|---|
+| missing | **adds** it (new in this version) |
+| identical | leaves it (already current) |
+| pristine but outdated | **refreshes** it in place — you never touched it |
+| **edited by you** | writes the new version **and** keeps your copy as `<file>-1.old` (then `-2.old`, …) |
+
+So nothing is silently overwritten: any file you customized is preserved as a numbered `.old` backup beside it for you (or an agent) to diff and fold in. `--force` overwrites in place without the backup.
+
+> 🔒 **Never touched by update:** your `specs/`, your filled `.claude/steering/*.md`, custom (non-shipped) skills/agents, `.mcp.json`, `.claude/settings.json`, and `CLAUDE.md`. Update reconciles only the pure-csdd artifacts.
+
+---
+
 ## The 5 resources csdd governs
 
 | Resource | What it is | Location |

@@ -18,15 +18,16 @@ const (
 
 // Relative segment names. Most live under .claude/; specs/ lives at the root.
 const (
-	SpecsSeg     = "specs"         // repo-root: per-feature SDD contracts
-	RulesSeg     = "rules"         // .claude/rules: generation rules + review gates
-	SkillsSeg    = "skills"        // .claude/skills
-	AgentsSeg    = "agents"        // .claude/agents
-	CommandsSeg  = "commands"      // .claude/commands: slash commands (e.g. /csdd-commit)
-	SteeringSeg  = "steering"      // .claude/steering: project memory
-	TemplatesSeg = "templates"     // .claude/templates: versioned spec/steering templates
-	HooksSeg     = "hooks"         // .claude/hooks: deterministic automation scripts
-	SettingsSeg  = "settings.json" // .claude/settings.json: hooks + permissions
+	SpecsSeg     = "specs"               // repo-root: per-feature SDD contracts
+	RulesSeg     = "rules"               // .claude/rules: generation rules + review gates
+	SkillsSeg    = "skills"              // .claude/skills
+	AgentsSeg    = "agents"              // .claude/agents
+	CommandsSeg  = "commands"            // .claude/commands: slash commands (e.g. /csdd-commit)
+	SteeringSeg  = "steering"            // .claude/steering: project memory
+	TemplatesSeg = "templates"           // .claude/templates: versioned spec/steering templates
+	HooksSeg     = "hooks"               // .claude/hooks: deterministic automation scripts
+	SettingsSeg  = "settings.json"       // .claude/settings.json: hooks + permissions
+	ManifestSeg  = ".csdd-manifest.json" // .claude/.csdd-manifest.json: csdd-managed artifact hashes (drives `csdd update`)
 )
 
 // Claude returns the .claude/ directory under root.
@@ -58,6 +59,10 @@ func Hooks(root string) string { return filepath.Join(root, ClaudeDir, HooksSeg)
 
 // Settings returns .claude/settings.json.
 func Settings(root string) string { return filepath.Join(root, ClaudeDir, SettingsSeg) }
+
+// Manifest returns .claude/.csdd-manifest.json, the record of csdd-managed
+// artifacts and their content hashes that `csdd update` reconciles against.
+func Manifest(root string) string { return filepath.Join(root, ClaudeDir, ManifestSeg) }
 
 // MCP returns the repo-root .mcp.json.
 func MCP(root string) string { return filepath.Join(root, MCPFile) }

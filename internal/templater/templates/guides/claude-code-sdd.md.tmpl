@@ -247,6 +247,8 @@ Every repository that uses this workflow SHALL have, at a minimum:
 - `.gitignore` covering secrets and credentials
 - `.mcp.json` declaring only the project-specific MCP servers that are reviewed and approved
 
+Keeping a workspace current: `csdd update` refreshes the csdd-managed artifacts (rules, versioned templates, shipped skills/agents/commands/hooks, this guide, `csdd.md`) to the installed binary's version. It reconciles against `.claude/.csdd-manifest.json` — a generated content-hash baseline that SHALL NOT be hand-edited — so pristine files are refreshed in place while any file you edited is preserved as a numbered `<file>-N.old` backup before the new version lands. It never touches `specs/`, your filled steering, custom skills/agents, `.mcp.json`, `settings.json`, or `CLAUDE.md`. Run `csdd update --dry-run` to preview.
+
 ---
 
 ## 5. The steering layer (project memory)
