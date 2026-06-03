@@ -1,10 +1,15 @@
 name: ci
 
-# Test + validate gate. Runs on every PR, and is reusable (workflow_call) so
-# the release pipeline can require it as a gate before building any binaries.
-# Pushes to main are covered by the release workflow, which calls this one —
-# so there is no separate push trigger here (avoids duplicate runs).
+# Test + validate gate. Runs on:
+#   - every pull request — validate changes before they can merge.
+#   - push to main — validate the merge result on the default branch, since the
+#     release workflow is now manual (workflow_dispatch) and no longer runs on
+#     push, so a merge would otherwise go unverified.
+#   - workflow_call — reusable, so the manual release pipeline requires this gate
+#     before building or publishing any binaries.
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_call:
 
