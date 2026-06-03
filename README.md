@@ -241,6 +241,45 @@ git push
 
 ---
 
+## Workflows — upstream & downstream (BMAD-style)
+
+Everything above is the *downstream* contract: requirements → design → tasks → code. But where do the requirements come from, and who decides *what* to build? `csdd init` ships two orchestrator workflows — modeled on the [BMAD Method](https://github.com/bmadcode/BMAD-METHOD)'s phase-gated lifecycle — that bracket the SDD core. Each is an **agent** (the lead) fronting a set of phase **skills**, and the seam between them is a normal, validated csdd spec.
+
+```
+wf:product/discovery  ──(handoff: steering + spec requirements)──▶  wf:development
+        UPSTREAM                                                        DOWNSTREAM
+   what & why, decision-ready                                  how, built & verified
+```
+
+### 🧭 `wf-product-discovery` — *what & why* (upstream)
+
+Agent that drives a raw idea to a decision-ready PRD, one optional phase at a time, then lands it into csdd:
+
+| Skill | Produces |
+|-------|----------|
+| `discovery-product-brief` | `docs/product/product-brief.md` — vision, user, value, scope |
+| `discovery-research` | `docs/product/research/*.md` — evidence-graded market / domain / technical findings |
+| `discovery-prfaq` | `docs/product/prfaq.md` — Working-Backwards press release + hardest FAQ |
+| `discovery-prd` | `docs/product/prd.md` — features with numbered, testable `FR-N` (+ validation checklist) |
+| `discovery-ux-spec` | `docs/product/ux/DESIGN.md` + `EXPERIENCE.md` — structure + behavior, traced to journeys |
+| `discovery-handoff` | **bridge:** updates steering, runs `csdd spec init`, translates each `FR-N` into EARS requirements that pass `csdd spec validate` |
+
+### 🏗️ `wf-development` — *how, built & verified* (downstream)
+
+Agent that takes an approved spec and drives it to shipped code — **reusing** the existing `tdd-cycle`, `verify-change`, `code-reviewer`/`security-reviewer`, `pr-review`, and the `csdd spec` gates rather than duplicating them. The `dev-*` skills add only the planning layer BMAD covers that csdd did not:
+
+| Skill | Produces | Feeds csdd gate |
+|-------|----------|-----------------|
+| `dev-architecture` | `architecture.md` + ADRs | fills & approves `design.md` |
+| `dev-epics-stories` | `epics.md` + stories | fills & approves `tasks.md` |
+| `dev-readiness-check` | PASS / CONCERNS / FAIL verdict | required before the first `tdd-cycle` |
+| `dev-sprint` | `sprint-status.yaml` | live task tracking |
+| `dev-retrospective` | `retrospective.md` | folds durable lessons into steering |
+
+> 🔑 The workflows never bypass the contract. Discovery output becomes a real EARS spec; architecture and stories become a real `design.md`/`tasks.md`. The phase gates stay mechanical — the workflows just decide *which* gate to open next.
+
+---
+
 ## Architecture — two surfaces, one core
 
 ```

@@ -1711,6 +1711,36 @@ The quick flow (`sdd-spec-quick`) still produces the same artifacts (requirement
 - Critical bugs.
 - Flows that require cross-team alignment.
 
+### 11.9 Upstream & downstream workflows (`wf:product/discovery` → `wf:development`)
+
+`csdd init` ships two BMAD-style orchestrator workflows that bracket the single-spec flow above. Each is a sub-agent (the lead) that dispatches a set of phase skills; the seam between them is a normal, validated csdd spec, so no gate is bypassed.
+
+Upstream — `wf-product-discovery` (decide *what & why*):
+
+```text
+1. discovery-product-brief   # docs/product/product-brief.md   (optional, anchors the rest)
+2. discovery-research        # docs/product/research/*.md       (optional, evidence-graded)
+3. discovery-prfaq           # docs/product/prfaq.md            (optional, stress-test value)
+4. discovery-prd             # docs/product/prd.md              (always — features with FR-N)
+5. discovery-ux-spec         # docs/product/ux/DESIGN.md + EXPERIENCE.md (if UI)
+6. discovery-handoff         # BRIDGE: steering update + csdd spec init +
+                             #         FR-N → EARS requirements [csdd spec validate/approve]
+```
+
+Downstream — `wf-development` (decide *how*, build & verify) — reuses `tdd-cycle`, `verify-change`, `code-reviewer`/`security-reviewer`, `pr-review`, and the `csdd spec` gates; the `dev-*` skills add only the planning layer:
+
+```text
+1. dev-architecture     # architecture.md + ADRs → fills & approves design.md
+2. dev-epics-stories    # epics.md + stories     → fills & approves tasks.md
+3. dev-readiness-check  # PASS/CONCERNS/FAIL — required before the first tdd-cycle
+4. dev-sprint           # sprint-status.yaml — live task tracking
+5. tdd-cycle (existing) # one task at a time, red→green→refactor
+6. code-reviewer / pr-review (existing) # resolve blockers before the next task
+7. dev-retrospective    # retrospective.md → fold durable lessons into steering
+```
+
+Use this pairing for net-new products where the requirements do not yet exist; use the standard single-spec flow (11.2) when you already know what to build and only need the contract.
+
 ---
 
 ## 12. Security, privacy, and governance

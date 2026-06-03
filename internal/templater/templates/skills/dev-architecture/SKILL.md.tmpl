@@ -1,0 +1,83 @@
+---
+name: dev-architecture
+description: Decide system architecture from approved requirements, record the decisions as ADRs, and fold them into csdd's design.md so the design gate passes. First phase of wf:development.
+---
+
+# Development — Architecture
+
+Architecture turns approved requirements into deliberate, recorded technical
+decisions. The durable output is a set of ADRs plus a csdd `design.md` that
+passes the design gate — boundaries, stack, file plan, and traceability all in
+place before any story is cut.
+
+## Goal
+
+Produce `specs/<feature>/architecture.md` (context + ADRs) and a filled,
+validated, approved csdd `design.md` that every downstream story can build
+against without re-deciding fundamentals.
+
+## Default Operation Mode
+
+Plan-first. You present the key decisions and their alternatives for
+confirmation before writing them up. The deliverable is recorded decisions, not
+code — `tdd-cycle` writes code later.
+
+## Collect Inputs First
+
+- Is the requirements phase approved? Run `csdd spec status <feature>` — if not,
+  stop; this workflow starts from an approved spec.
+- What exists already? Read `.claude/steering/tech.md` and `structure.md` and the
+  relevant codebase. Reuse beats green-field.
+- What are the load-bearing constraints (scale, latency, compliance, team skills)?
+
+## Execution Workflow
+
+### 1) Map the decisions
+List the 3–7 decisions that actually shape the system (data model, sync vs.
+async, store, boundaries, build-vs-buy). Ignore reversible details.
+
+### 2) Record ADRs
+For each decision, fill `assets/adr-template.md`: context, options weighed,
+decision, consequences. Append them to `specs/<feature>/architecture.md` (use
+`assets/architecture-template.md` for the surrounding context).
+
+### 3) Fold into csdd design.md
+- `csdd spec generate <feature> --artifact design`.
+- Fill the **Architecture Pattern & Boundary Map**, **Technology Stack**, **File
+  Structure Plan**, **System Flows**, and **Requirements Traceability** from the
+  architecture. Every requirement ID must appear in the traceability table.
+
+### 4) Gate it
+- `csdd spec validate <feature>` (checks Boundary Map present, File Structure
+  Plan present, all requirement IDs traced, ≤1000 lines). Fix every issue.
+- `csdd spec approve <feature> --phase design`.
+
+## Gotchas
+
+- Decisions without recorded alternatives are assertions. Every ADR shows what
+  you rejected and why.
+- The Boundary Map component names are a contract: `dev-epics-stories` will use
+  them verbatim as task `_Boundary:_` values. Name them deliberately.
+- Do not over-architect for requirements that do not exist. Build for the PRD's
+  MVP scope, not an imagined future.
+- Prefer reuse. A new component needs a reason the existing ones cannot serve.
+
+## Verification Before Reporting
+
+- Run: `csdd spec validate <feature>`.
+- Check: it exits 0; every requirement ID is in the traceability table; design
+  phase is approved (`csdd spec status`).
+- If blocked: if a requirement cannot be satisfied by any feasible design, that
+  is a discovery problem — escalate, do not quietly drop it.
+
+## Completion Criteria
+- [ ] `specs/<feature>/architecture.md` records each key decision as an ADR.
+- [ ] `design.md` has Boundary Map, Tech Stack, File Structure Plan, and full
+      Requirements Traceability.
+- [ ] `csdd spec validate <feature>` exits 0 and the design phase is approved.
+- [ ] Boundary component names are final — stories will reference them verbatim.
+
+## References
+
+- Use `assets/architecture-template.md` for the architecture context document.
+- Use `assets/adr-template.md` for each recorded decision.

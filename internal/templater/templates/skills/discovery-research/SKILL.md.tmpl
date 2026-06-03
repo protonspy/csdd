@@ -1,0 +1,75 @@
+---
+name: discovery-research
+description: Run market, domain, or technical research and capture evidence-graded findings. Use during wf:product/discovery when there are real unknowns to resolve before committing to a PRD.
+---
+
+# Discovery — Research
+
+Research exists to retire risk, not to fill pages. Each track answers questions
+the brief left open and grades its findings by how much you can trust them.
+
+## Goal
+
+Produce focused, evidence-graded research that turns the riskiest assumptions in
+the brief into either confirmed facts or clearly-labeled open risks.
+
+## Default Operation Mode
+
+Plan-first. You start by listing the specific questions worth researching and
+the decision each answer will inform. You do not research broadly "to be
+thorough" — every finding must map back to a decision.
+
+## Collect Inputs First
+
+- Which track(s)? **Market** (competitors, demand, pricing), **Domain**
+  (terminology, rules, workflows), or **Technical** (feasibility, build-vs-buy).
+- What decision does each question inform? (no decision → not worth researching)
+- What sources are allowed? Web search, internal docs, the codebase, MCP tools?
+
+## Execution Workflow
+
+### 1) Frame questions
+Write the 3–7 questions that actually matter, each tagged with the decision it
+unblocks. Drop "nice to know" questions.
+
+### 2) Gather evidence
+For each question, collect sources. Prefer primary sources. For technical
+feasibility, prefer a spike or a doc lookup (use Context7 / web) over opinion.
+
+### 3) Grade every finding
+Tag each finding: **A** (verified, primary source) / **B** (credible secondary)
+/ **C** (inference or single anecdote) / **[ASSUMPTION]** (no evidence yet).
+Capture the source link beside A/B findings.
+
+### 4) Write the report(s)
+Fill `assets/research-template.md` per track into
+`docs/product/research/<track>.md`. End each with explicit implications: what
+this changes about scope, and which risks remain.
+
+## Gotchas
+
+- Confidence grade is mandatory on every finding — an ungraded claim reads as
+  fact when it may be a guess.
+- Do not launder a C-grade anecdote into an A-grade fact. When unsure, grade down.
+- Research informs the PRD; it does not replace it. Stop when the riskiest
+  questions are answered, not when you run out of links.
+- Cite sources. A finding with no source is at best a `[ASSUMPTION]`.
+
+## Verification Before Reporting
+
+- Run: re-read each report; confirm every finding carries a grade and (for A/B)
+  a source.
+- Check: every framed question is answered or explicitly marked unresolved with
+  its residual risk.
+- If blocked: if a key question cannot be answered with available sources, say
+  so and record it as an open risk — do not fabricate a conclusion.
+
+## Completion Criteria
+- [ ] `docs/product/research/<track>.md` exists for each track run.
+- [ ] Every finding has a confidence grade; A/B findings cite a source.
+- [ ] Each report ends with implications for scope and a residual-risk list.
+- [ ] Unanswerable questions are surfaced, not hidden.
+
+## References
+
+- Use `assets/research-template.md` for each track's report structure.

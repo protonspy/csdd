@@ -1,0 +1,23 @@
+# Sprint status for {feature}. Mirrors specs/{feature}/tasks.md.
+# status: todo | in_progress | in_review | done | blocked
+# A task is `done` only with a green suite AND no open review blockers.
+feature: "{feature}"
+spec: "specs/{feature}"
+sprint_goal: "[the slice of value this sprint delivers]"
+
+tasks:
+  - id: "1.1"
+    title: "[task title from tasks.md]"
+    boundary: "[component]"
+    status: todo
+    blocker: ""        # one-line reason + owning phase when status: blocked
+  - id: "2.1"
+    title: "RED — failing test for [behavior]"
+    boundary: "[component]"
+    status: todo
+    blocker: ""
+  - id: "2.2"
+    title: "GREEN — minimal implementation for 2.1"
+    boundary: "[component]"
+    status: todo
+    blocker: ""

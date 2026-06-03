@@ -1,0 +1,76 @@
+---
+name: dev-retrospective
+description: Run an epic/feature retrospective — what worked, what hurt, what to change — and feed durable lessons back into steering. Closes a slice of wf:development.
+---
+
+# Development — Retrospective
+
+When an epic or feature closes, capture what was actually learned while it is
+fresh, and convert the durable lessons into steering so the next feature does not
+repeat the same mistakes. A retro that changes nothing is theater.
+
+## Goal
+
+Produce `specs/<feature>/retrospective.md` and, from it, concrete updates to
+steering (and the workflow itself) so the team's defaults improve.
+
+## Default Operation Mode
+
+Direct, evidence-based. You ground the retro in what actually happened —
+`sprint-status.yaml`, the git history, review findings — not vibes.
+
+## Collect Inputs First
+
+- Which epic/feature is closing? Confirm its tasks are `done` in
+  `sprint-status.yaml`.
+- What is the evidence? Blockers logged, tasks that slipped, review themes,
+  surprises during `tdd-cycle`.
+
+## Execution Workflow
+
+### 1) Gather the facts
+Pull the timeline from `sprint-status.yaml` and git log: what slipped, where
+blockers clustered, which reviews kept finding the same class of issue.
+
+### 2) Run the retro
+Fill `assets/retrospective-template.md`: what worked (keep), what hurt (stop),
+what to try (start). Tie each item to evidence, not impressions.
+
+### 3) Convert lessons to action
+For each durable lesson, decide its home:
+- A recurring technical mistake → update `.claude/steering/tech.md` or
+  `structure.md` (run `csdd steering validate` after).
+- A process gap → note it against the relevant `wf:development` phase.
+- A one-off → record it and move on; do not over-generalize.
+
+### 4) Write and close
+Write `specs/<feature>/retrospective.md` with the actions and their owners.
+
+## Gotchas
+
+- A lesson with no resulting change is not a lesson. Every "what hurt" needs a
+  "what we will do differently".
+- Update steering only for patterns, not one-offs — steering is durable memory,
+  and noise dilutes it.
+- Keep it blameless and specific. "Tests were flaky" → which tests, why, what
+  changes.
+- Do not let the retro reopen the work. Capture follow-ups as new spec/tasks, not
+  edits to the closed feature.
+
+## Verification Before Reporting
+
+- Run: `csdd steering validate` if you touched steering.
+- Check: every "what hurt" has a concrete action with an owner; steering edits
+  capture patterns, not noise.
+- If blocked: if the evidence is too thin to draw lessons, say so rather than
+  inventing insights.
+
+## Completion Criteria
+- [ ] `specs/<feature>/retrospective.md` exists with keep / stop / start items.
+- [ ] Each pain point maps to a concrete action and owner.
+- [ ] Durable technical lessons are folded into steering (validated).
+- [ ] Follow-up work is captured as new specs/tasks, not edits to closed work.
+
+## References
+
+- Use `assets/retrospective-template.md` for the retro structure.

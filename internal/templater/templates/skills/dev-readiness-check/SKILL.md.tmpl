@@ -1,0 +1,78 @@
+---
+name: dev-readiness-check
+description: Gate-check whether a feature is truly ready to implement — requirements, design, and tasks coherent, approved, and traceable. Returns PASS/CONCERNS/FAIL before the first tdd-cycle in wf:development.
+---
+
+# Development — Readiness Check
+
+The last gate before code. It confirms the whole spec chain hangs together —
+requirements → design → tasks — and is approved, so implementation does not stall
+on a gap discovered mid-story.
+
+## Goal
+
+Produce a readiness verdict (PASS / CONCERNS / FAIL) with evidence, so the
+development lead either starts `tdd-cycle` with confidence or fixes a specific,
+named gap first.
+
+## Default Operation Mode
+
+Direct assessment, read-only. You evaluate and report; you do not fix what you
+find — you hand specific gaps back to the phase that owns them.
+
+## Collect Inputs First
+
+- Which feature? Confirm `specs/<feature>/` has requirements, design, and tasks.
+- Run `csdd spec status <feature>` and `csdd spec validate <feature>` to get the
+  mechanical state before adding judgment.
+
+## Execution Workflow
+
+### 1) Mechanical gate
+Run `csdd spec validate <feature>`. Any non-zero exit is an automatic FAIL until
+fixed — record the exact issues.
+
+### 2) Coherence checks
+Walk `assets/readiness-report-template.md`:
+- Every requirement ID appears in the design traceability table.
+- Every design boundary has at least one task; every task cites requirements.
+- No task depends on a boundary that does not exist.
+- Acceptance criteria are testable (a `tdd-cycle` RED test could be written).
+
+### 3) Context checks
+- Steering (`tech.md`, `structure.md`) reflects the chosen architecture.
+- External dependencies / MCP servers the tasks assume are actually configured.
+- The test command and verification path are known (see `verify-change`).
+
+### 4) Verdict
+Grade each section and produce an overall verdict with the blocking items listed
+first. Write `specs/<feature>/readiness.md`.
+
+## Gotchas
+
+- A green `csdd spec validate` is necessary but not sufficient — it checks
+  structure, not whether the plan is actually buildable. Do the judgment checks.
+- CONCERNS is not PASS. If you would not want to be paged for it later, it is at
+  least a CONCERN.
+- Name the owning phase for every gap (discovery / architecture / stories) so the
+  fix is unambiguous.
+- Read-only: do not edit specs to make them pass. Report and route.
+
+## Verification Before Reporting
+
+- Run: `csdd spec validate <feature>` and `csdd spec status <feature>`.
+- Check: every checklist item is graded with evidence; the overall verdict
+  matches the worst blocking item.
+- If blocked: if you cannot determine readiness (missing test command, unknown
+  dependency), that uncertainty is itself a CONCERN — state it.
+
+## Completion Criteria
+- [ ] `specs/<feature>/readiness.md` exists with a graded checklist.
+- [ ] Mechanical validation result is recorded (and FAIL if non-zero).
+- [ ] Each gap names the phase that must fix it.
+- [ ] An overall PASS / CONCERNS / FAIL verdict is stated; PASS is required to
+      start `tdd-cycle`.
+
+## References
+
+- Use `assets/readiness-report-template.md` for the checklist and verdict.

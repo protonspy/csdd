@@ -1,0 +1,79 @@
+---
+name: discovery-ux-spec
+description: Define the UX as a DESIGN.md (visual/structural) + EXPERIENCE.md (behavioral) pair tied to PRD journeys. Use in wf:product/discovery when the product has meaningful UI or interaction.
+---
+
+# Discovery — UX Specification
+
+UX discovery splits into two complementary documents: DESIGN.md (what it looks
+like and how it is structured) and EXPERIENCE.md (how it behaves moment to
+moment). Both hang off the PRD's user journeys so design never drifts from
+intent.
+
+## Goal
+
+Produce a DESIGN.md + EXPERIENCE.md pair that a developer can build from and a
+designer can critique, with every screen and state traceable to a PRD journey
+(`UJ-N`) and feature (`FR-N`).
+
+## Default Operation Mode
+
+Plan-first. Start from the PRD journeys, not from screens. The first deliverable
+is a screen/state inventory mapped to journeys, confirmed before any detailed
+spec.
+
+## Collect Inputs First
+
+- Which PRD journeys (`UJ-N`) need a UI? Load `docs/product/prd.md`.
+- What platform(s) and form factors? (web, mobile, CLI, desktop)
+- Any existing design system, brand constraints, or accessibility bar to meet?
+
+## Execution Workflow
+
+### 1) Inventory from journeys
+For each `UJ-N`, list the screens/states the user passes through. This inventory
+is the spine of both documents.
+
+### 2) DESIGN.md — structure & visuals
+Fill `assets/design-template.md`: information architecture, key screens, layout
+intent, component inventory, visual tone, and the accessibility bar. Reference
+`FR-N` per screen.
+
+### 3) EXPERIENCE.md — behavior & states
+Fill `assets/experience-template.md`: per interaction, the states (empty,
+loading, error, success), transitions, edge cases, microcopy intent, and
+keyboard/assistive behavior.
+
+### 4) Trace and write
+Write `docs/product/ux/DESIGN.md` and `docs/product/ux/EXPERIENCE.md`. Confirm
+every journey is covered and every screen cites the `FR-N`/`UJ-N` it serves.
+
+## Gotchas
+
+- Specify intent and behavior, not pixels. "Primary action, bottom-right,
+  always reachable" beats a hard-coded hex value the dev cannot justify.
+- Every screen must trace to a journey. A screen with no `UJ-N` is scope creep —
+  flag it.
+- Do not skip the unhappy states. Empty / loading / error are where products
+  actually fail; specify them.
+- This is discovery-level UX, not a final design file. It guides build; it does
+  not replace a designer's tool.
+
+## Verification Before Reporting
+
+- Run: cross-check the screen inventory against every PRD journey.
+- Check: each screen cites `FR-N`/`UJ-N`; each interaction lists its non-happy
+  states; the accessibility bar is stated.
+- If blocked: if a journey has no clear UI intent, raise it with the discovery
+  lead rather than inventing screens.
+
+## Completion Criteria
+- [ ] `docs/product/ux/DESIGN.md` and `docs/product/ux/EXPERIENCE.md` exist.
+- [ ] Every PRD journey that needs UI is covered.
+- [ ] Each screen/interaction traces to `FR-N`/`UJ-N`.
+- [ ] Empty / loading / error states and the accessibility bar are specified.
+
+## References
+
+- Use `assets/design-template.md` for the structural/visual document.
+- Use `assets/experience-template.md` for the behavioral document.

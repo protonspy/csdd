@@ -163,6 +163,50 @@ func TestWorkflowTemplateFiles(t *testing.T) {
 	}
 }
 
+// TestShippedWorkflowArtifactsPresent guards the two BMAD-style workflows that
+// `csdd init` scaffolds: the upstream wf:product/discovery and downstream
+// wf:development pair. Both are shipped as plain (static) skill/agent trees, so
+// a missing file here means `csdd init` would silently stop shipping a phase.
+func TestShippedWorkflowArtifactsPresent(t *testing.T) {
+	skills, err := SkillFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requiredSkills := []string{
+		// upstream — wf:product/discovery
+		"discovery-product-brief/SKILL.md",
+		"discovery-research/SKILL.md",
+		"discovery-prfaq/SKILL.md",
+		"discovery-prd/SKILL.md",
+		"discovery-prd/assets/prd-template.md",
+		"discovery-ux-spec/SKILL.md",
+		"discovery-handoff/SKILL.md",
+		// downstream — wf:development
+		"dev-architecture/SKILL.md",
+		"dev-architecture/assets/adr-template.md",
+		"dev-epics-stories/SKILL.md",
+		"dev-readiness-check/SKILL.md",
+		"dev-sprint/SKILL.md",
+		"dev-sprint/assets/sprint-status-template.yaml",
+		"dev-retrospective/SKILL.md",
+	}
+	for _, name := range requiredSkills {
+		if _, ok := skills[name]; !ok {
+			t.Errorf("shipped workflow skills missing %q", name)
+		}
+	}
+
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"wf-product-discovery.md", "wf-development.md"} {
+		if _, ok := agents[name]; !ok {
+			t.Errorf("shipped workflow agents missing %q", name)
+		}
+	}
+}
+
 // TestRenderMalformedTemplate covers the template.Parse error branch.
 // An unclosed `{{ }}` action is the simplest way to make text/template error.
 func TestRenderMalformedTemplate(t *testing.T) {

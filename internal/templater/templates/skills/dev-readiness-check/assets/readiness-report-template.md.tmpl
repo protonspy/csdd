@@ -1,0 +1,28 @@
+# Implementation Readiness: {Feature}
+
+> Grade each item PASS / CONCERN / FAIL with evidence. Overall verdict = worst
+> blocking item. PASS required before the first tdd-cycle.
+
+## Mechanical
+- [ ] `csdd spec validate <feature>` exits 0 — _result:_
+- [ ] requirements, design, tasks phases all approved (`csdd spec status`)
+
+## Coherence
+- [ ] Every requirement ID appears in design traceability
+- [ ] Every design boundary has ≥1 task
+- [ ] Every task cites requirements; `_Depends:_` IDs exist
+- [ ] Acceptance criteria are testable (a RED test is writable)
+
+## Context
+- [ ] Steering (tech.md, structure.md) matches the architecture
+- [ ] External deps / MCP servers the tasks assume are configured
+- [ ] Test + verification command is known
+
+## Findings (blocking first)
+| Item | Grade | Evidence | Owning phase to fix |
+|------|-------|----------|---------------------|
+| | FAIL/CONCERN | | discovery / architecture / stories |
+
+## Verdict
+**Overall:** PASS / CONCERNS / FAIL
+**Rationale:** [one or two sentences]

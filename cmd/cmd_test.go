@@ -734,6 +734,32 @@ func TestSkillListIncludesShippedDefaults(t *testing.T) {
 	}
 }
 
+// TestShippedWorkflowSkillsValidate proves the two BMAD-style workflows shipped
+// by `csdd init` (wf:product/discovery upstream, wf:development downstream) pass
+// csdd's own skill validator — required headings, line/token budget, reference
+// triggers. This is the mechanical contract the workflows promise users.
+func TestShippedWorkflowSkillsValidate(t *testing.T) {
+	dir := freshWorkspace(t)
+	workflowSkills := []string{
+		"discovery-product-brief", "discovery-research", "discovery-prfaq",
+		"discovery-prd", "discovery-ux-spec", "discovery-handoff",
+		"dev-architecture", "dev-epics-stories", "dev-readiness-check",
+		"dev-sprint", "dev-retrospective",
+	}
+	for _, name := range workflowSkills {
+		code, out, errOut := run(t, "skill", "validate", name, "--root", dir)
+		if code != 0 {
+			t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", name, code, out, errOut)
+		}
+	}
+	// Both orchestrator agents must scaffold as shown-able artifacts.
+	for _, name := range []string{"wf-product-discovery", "wf-development"} {
+		if code, showOut, _ := run(t, "agent", "show", name, "--root", dir); code != 0 || !strings.Contains(showOut, "name: "+name) {
+			t.Errorf("shipped agent %q not scaffolded by init: code=%d out=%q", name, code, showOut)
+		}
+	}
+}
+
 func TestSkillUnknownAction(t *testing.T) {
 	if code, _, errOut := run(t, "skill", "nonsense"); code == 0 || !strings.Contains(errOut, "unknown skill action") {
 		t.Errorf("unknown skill action should fail: code=%d err=%q", code, errOut)
