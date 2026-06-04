@@ -1,6 +1,6 @@
 // The MCP tools this server exposes — the csdd *development-flow* resources
 // (steering, spec, skill, agent), plus a diagnostic version tool. Workspace
-// setup and config management (init, mcp, export) are intentionally NOT exposed:
+// setup, maintenance, and config management (init, update, mcp, export) are intentionally NOT exposed:
 // those are one-time CLI operations a human runs, not part of the iterative
 // loop the agent drives. Kept separate from index.ts so it can be imported
 // (e.g. by tests) without booting the stdio transport.

@@ -114,7 +114,7 @@ Conventions:
 
 > **Scope:** this server exposes only the iterative development-flow resources
 > (steering · spec · skill · agent). **Workspace setup and config management are
-> deliberately not tools** — `csdd init`, `csdd mcp …`, and `csdd export …` are
+> deliberately not tools** — `csdd init`, `csdd update`, `csdd mcp …`, and `csdd export …` are
 > one-time operations a human runs from the CLI, not part of the loop an agent
 > drives. (In fact, `csdd init` is what registers *this* server.)
 
@@ -161,7 +161,7 @@ matches the context).
 
 | Tool | Parameters | What it does |
 |------|------------|--------------|
-| `csdd_skill_create` | `name`, `description`, `title?`, `root?` | Create `.claude/skills/<name>/` with `SKILL.md` (+ `references/`, `assets/`, `scripts/`). `description` is the one-line activation trigger. |
+| `csdd_skill_create` | `name`, `description`, `title?`, `root?` | Create `.claude/skills/<name>/` with `SKILL.md` (+ `references/`, `assets/`, `scripts/`). `description` is the one-line activation trigger. The tool scaffolds the file — author the body by editing `SKILL.md` directly. |
 | `csdd_skill_list` | `root?` | List skills with their descriptions. |
 | `csdd_skill_show` | `name`, `root?` | List a skill's files and print `SKILL.md`. |
 | `csdd_skill_add_reference` | `skill`, `file`, `root?` | Add a reference file under `references/`. Path traversal is rejected. |
@@ -174,13 +174,13 @@ matches the context).
 
 | Tool | Parameters | What it does |
 |------|------------|--------------|
-| `csdd_agent_create` | `name`, `description`, `tools?[]`, `model?`, `title?`, `force?`, `root?` | Create a least-privilege sub-agent (default tools: `Read`, `Grep`). `description` tells the orchestrator when to pick it. `model` ∈ `sonnet · opus · haiku`. |
+| `csdd_agent_create` | `name`, `description`, `tools?[]`, `model?`, `title?`, `force?`, `root?` | Create a least-privilege sub-agent (default tools: `Read`, `Grep`). `description` tells the orchestrator when to pick it. Scaffolds the file; fill in the body by editing the generated `.md`. `model` ∈ `sonnet · opus · haiku`. |
 | `csdd_agent_list` | `root?` | List agents with their tools and descriptions. |
 | `csdd_agent_show` | `name`, `root?` | Print an agent file. |
 | `csdd_agent_delete` | `name`, `force?`, `root?` | Delete `.claude/agents/<name>.md` (`force` required). |
 
 > **Not here:** managing the `.mcp.json` servers themselves (`csdd mcp add/list/
-> remove/enable/disable/validate`) stays on the CLI — same for `csdd init` and
+> remove/enable/disable/validate`) stays on the CLI — same for `csdd init`, `csdd update`, and
 > `csdd export`. Keeping setup off the tool surface is intentional (see Scope).
 
 ---
