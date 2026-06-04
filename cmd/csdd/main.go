@@ -10,9 +10,9 @@ package main
 import (
 	"os"
 
-	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/cli"
 	"github.com/protonspy/csdd/internal/templater"
-	"github.com/protonspy/csdd/tui"
+	"github.com/protonspy/csdd/internal/tui"
 )
 
 func main() {
@@ -25,5 +25,5 @@ func main() {
 		}
 		return
 	}
-	os.Exit(cmd.Run(args, templater.FS))
+	os.Exit(cli.Run(args, templater.FS))
 }

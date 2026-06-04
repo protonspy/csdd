@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/cli"
 	"github.com/protonspy/csdd/internal/templater"
 )
 
@@ -45,7 +45,7 @@ func TestMenuNavigationAndSelection(t *testing.T) {
 func TestBrowserListsAndPreviews(t *testing.T) {
 	dir := freshTUIWorkspace(t)
 	// init --with-baseline already wrote steering files; add one explicitly too.
-	if code := cmd.Run([]string{"steering", "create", "sec", "--inclusion", "always", "--root", dir}, templater.FS); code != 0 {
+	if code := cli.Run([]string{"steering", "create", "sec", "--inclusion", "always", "--root", dir}, templater.FS); code != 0 {
 		t.Fatalf("steering create: exit %d", code)
 	}
 	b := newBrowser(dir)
@@ -53,7 +53,7 @@ func TestBrowserListsAndPreviews(t *testing.T) {
 		t.Fatal("expected at least one artifact")
 	}
 	// Register an MCP server so the browser surfaces an "mcp" item too.
-	if code := cmd.Run([]string{"mcp", "add", "filesystem", "--command", "npx", "--root", dir}, templater.FS); code != 0 {
+	if code := cli.Run([]string{"mcp", "add", "filesystem", "--command", "npx", "--root", dir}, templater.FS); code != 0 {
 		t.Fatalf("mcp add: exit %d", code)
 	}
 	b = newBrowser(dir)

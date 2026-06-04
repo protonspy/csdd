@@ -1,8 +1,8 @@
-// Package cmd implements every CLI subcommand. The TUI is a layer above this
+// Package cli implements every CLI subcommand. The TUI is a layer above this
 // package — both surfaces ultimately call the same operation helpers below,
 // guaranteeing that an AI agent driving the binary by flags has access to
 // every capability the TUI exposes.
-package cmd
+package cli
 
 import (
 	"embed"
@@ -17,7 +17,7 @@ import (
 // version is the build version string. It defaults to "dev" for local builds
 // and is overridden at release time via the linker:
 //
-//	go build -ldflags "-X github.com/protonspy/csdd/cmd.version=v1.2.3"
+//	go build -ldflags "-X github.com/protonspy/csdd/internal/cli.version=v1.2.3"
 var version = "dev"
 
 // Run dispatches `csdd <resource> <action> ...` to the appropriate handler.

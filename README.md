@@ -307,11 +307,11 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
 ## Architecture — two surfaces, one core
 
 ```
-                          main.go
+                    cmd/csdd/main.go
             (no args → TUI · with args → CLI)
                              │
         ┌────────────────────┴────────────────────┐
-     cmd/ · CLI                                tui/ · TUI
+        internal/cli · CLI       internal/tui · TUI
   dispatcher, 1 file/resource           Bubble Tea · wizards + browser
         └──── both call the SAME operation helpers ────┘
                              │
@@ -323,8 +323,8 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
 
 | Package | Responsibility | Why it matters |
 |---------|---------------|----------------|
-| `cmd/` | **CLI surface.** Dispatches `resource action`, flag parsing, 1 file per resource. Includes `CLAUDE.md` and `.gitignore` wiring. | The public contract — 100% of functionality, headless. |
-| `tui/` | **Interactive front-end** (Bubble Tea): menu, wizards, artifact browser. | Calls the same helpers as `cmd`. No duplicated logic. |
+| `internal/cli` | **CLI surface.** Dispatches `resource action`, flag parsing, 1 file per resource. Includes `CLAUDE.md` and `.gitignore` wiring. | The public contract — 100% of functionality, headless. |
+| `internal/tui` | **Interactive front-end** (Bubble Tea): menu, wizards, artifact browser. | Calls the same helpers as `cli`. No duplicated logic. |
 | `internal/workspace` | Resolves the `.claude/` root by walking up the tree; validates kebab-case; enumerates phases and artifacts. | Defines what a workspace *is* and the valid names. |
 | `internal/paths` | Centralizes the on-disk layout: `.claude/`, `CLAUDE.md`, `.mcp.json`, `specs/`. | The layout lives in *exactly one* place. |
 | `internal/validator` | **The mechanical checks:** EARS, unique IDs, traceability, annotations, parallelism safety, skill structure. | The agent's "friend." Never asks for judgment — only true/false. Exit 2. |

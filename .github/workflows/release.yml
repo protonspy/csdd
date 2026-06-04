@@ -74,8 +74,8 @@ jobs:
           [ "$GOOS" = "windows" ] && bin=csdd.exe
           mkdir -p dist
           go build -trimpath \
-            -ldflags "-s -w -X github.com/protonspy/csdd/cmd.version=${VERSION}" \
-            -o "dist/${bin}" .
+            -ldflags "-s -w -X github.com/protonspy/csdd/internal/cli.version=${VERSION}" \
+            -o "dist/${bin}" ./cmd/csdd
           name="csdd_${VERSION}_${GOOS}_${GOARCH}"
           cd dist
           if [ "$GOOS" = "windows" ]; then

@@ -6,17 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/cli"
 	"github.com/protonspy/csdd/internal/templater"
 )
 
 // freshTUIWorkspace bootstraps a full Claude Code workspace (with baseline steering)
-// so wizard submit() handlers — which call straight into the cmd package — have
+// so wizard submit() handlers — which call straight into the cli package — have
 // the directory tree they expect.
 func freshTUIWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if code := cmd.Run([]string{"init", "--with-baseline", "--root", dir}, templater.FS); code != 0 {
+	if code := cli.Run([]string{"init", "--with-baseline", "--root", dir}, templater.FS); code != 0 {
 		t.Fatalf("init failed: exit %d", code)
 	}
 	return dir
@@ -302,7 +302,7 @@ func TestWizardSubmitMCPRemote(t *testing.T) {
 
 func TestWizardSubmitSpecInit(t *testing.T) {
 	dir := freshTUIWorkspace(t)
-	// spec init goes through cmd.Run which resolves the workspace from cwd, so
+	// spec init goes through cli.Run which resolves the workspace from cwd, so
 	// run from inside the workspace.
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -328,7 +328,7 @@ func TestWizardSubmitSpecInit(t *testing.T) {
 
 func TestWizardSubmitSpecGenerateAndApprove(t *testing.T) {
 	dir := freshTUIWorkspace(t)
-	if code := cmd.Run([]string{"spec", "init", "feat", "--root", dir}, templater.FS); code != 0 {
+	if code := cli.Run([]string{"spec", "init", "feat", "--root", dir}, templater.FS); code != 0 {
 		t.Fatalf("spec init: exit %d", code)
 	}
 

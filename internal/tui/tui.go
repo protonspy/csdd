@@ -1,5 +1,5 @@
 // Package tui hosts the interactive Bubble Tea front end.
-// Every action the TUI surfaces calls into the cmd package so the wire format
+// Every action the TUI surfaces calls into the cli package so the wire format
 // matches the CLI exactly — there is one source of truth for behavior.
 package tui
 

@@ -21,7 +21,7 @@
 SHELL     := bash
 MODULE    := github.com/protonspy/csdd
 VERSION   ?= dev
-LDFLAGS   := -s -w -X $(MODULE)/cmd.version=$(VERSION)
+LDFLAGS   := -s -w -X $(MODULE)/internal/cli.version=$(VERSION)
 DIST      ?= dist
 ARTIFACTS ?= $(DIST)
 
@@ -37,7 +37,7 @@ help: ## Show this help
 
 .PHONY: build
 build: ## Build the binary locally (-> ./csdd); set VERSION to stamp it
-	go build -trimpath -ldflags '$(LDFLAGS)' -o csdd .
+	go build -trimpath -ldflags '$(LDFLAGS)' -o csdd ./cmd/csdd
 
 .PHONY: test
 test: ## Run tests (race + coverage)
@@ -70,7 +70,7 @@ dist: require-version ## Cross-compile every npm target into $(DIST)/ (set VERSI
 	@set -euo pipefail; for p in $(PLATFORMS); do \
 	  goos=$${p%/*}; goarch=$${p#*/}; bin=csdd; [ "$$goos" = windows ] && bin=csdd.exe; \
 	  echo ">> $$goos/$$goarch"; \
-	  GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o '$(DIST)'/$$bin .; \
+	  GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o '$(DIST)'/$$bin ./cmd/csdd; \
 	  name=csdd_$(VERSION)_$${goos}_$${goarch}; \
 	  if [ "$$goos" = windows ]; then (cd '$(DIST)' && zip -q $$name.zip $$bin); \
 	  else (cd '$(DIST)' && tar -czf $$name.tar.gz $$bin); fi; \

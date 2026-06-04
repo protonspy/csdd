@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/protonspy/csdd/cmd"
+	"github.com/protonspy/csdd/internal/cli"
 	"github.com/protonspy/csdd/internal/workspace"
 )
 
@@ -315,13 +315,13 @@ func (w wizardModel) View() string {
 	return b.String()
 }
 
-// submit hands the collected state to the matching cmd backend so the result
+// submit hands the collected state to the matching cli backend so the result
 // matches a direct CLI invocation exactly.
 func (w wizardModel) submit() tea.Cmd {
 	return func() tea.Msg {
 		switch w.kind {
 		case wizSteering:
-			opts := cmd.SteeringCreateOptions{
+			opts := cli.SteeringCreateOptions{
 				Root:        w.root,
 				Name:        getStr(w.state, "name"),
 				Inclusion:   getStr(w.state, "inclusion"),
@@ -329,7 +329,7 @@ func (w wizardModel) submit() tea.Cmd {
 				Description: getStr(w.state, "description"),
 				Title:       getStr(w.state, "title"),
 			}
-			if err := cmd.SteeringCreate(w.templates, opts); err != nil {
+			if err := cli.SteeringCreate(w.templates, opts); err != nil {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "steering '" + opts.Name + "' created (inclusion=" + opts.Inclusion + ")"}
@@ -342,14 +342,14 @@ func (w wizardModel) submit() tea.Cmd {
 					return resultMsg{text: err.Error(), isErr: true}
 				}
 				// Use the CLI Run path to avoid duplicating logic for spec init.
-				code := cmd.Run([]string{"spec", "init", feature}, w.templates)
+				code := cli.Run([]string{"spec", "init", feature}, w.templates)
 				if code != 0 {
 					return resultMsg{text: "spec init failed (exit " + fmt.Sprint(code) + ")", isErr: true}
 				}
 				return resultMsg{text: "spec '" + feature + "' initialized"}
 			case "generate":
 				artifact := getStr(w.state, "artifact")
-				if err := cmd.SpecGenerate(w.templates, cmd.SpecGenerateOptions{
+				if err := cli.SpecGenerate(w.templates, cli.SpecGenerateOptions{
 					Root: w.root, Feature: feature, Artifact: artifact,
 				}); err != nil {
 					return resultMsg{text: err.Error(), isErr: true}
@@ -357,7 +357,7 @@ func (w wizardModel) submit() tea.Cmd {
 				return resultMsg{text: "generated " + artifact + " for " + feature}
 			case "approve":
 				phase := getStr(w.state, "phase")
-				if err := cmd.SpecApprove(cmd.SpecApproveOptions{
+				if err := cli.SpecApprove(cli.SpecApproveOptions{
 					Root: w.root, Feature: feature, Phase: phase,
 				}); err != nil {
 					return resultMsg{text: err.Error(), isErr: true}
@@ -365,13 +365,13 @@ func (w wizardModel) submit() tea.Cmd {
 				return resultMsg{text: feature + ": " + phase + " approved"}
 			}
 		case wizSkill:
-			opts := cmd.SkillCreateOptions{
+			opts := cli.SkillCreateOptions{
 				Root:        w.root,
 				Name:        getStr(w.state, "name"),
 				Description: getStr(w.state, "description"),
 				Title:       getStr(w.state, "title"),
 			}
-			if err := cmd.SkillCreate(w.templates, opts); err != nil {
+			if err := cli.SkillCreate(w.templates, opts); err != nil {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "skill '" + opts.Name + "' created"}
@@ -384,7 +384,7 @@ func (w wizardModel) submit() tea.Cmd {
 			if len(tools) == 0 {
 				tools = []string{"Read", "Grep"}
 			}
-			opts := cmd.AgentCreateOptions{
+			opts := cli.AgentCreateOptions{
 				Root:        w.root,
 				Name:        getStr(w.state, "name"),
 				Description: getStr(w.state, "description"),
@@ -392,13 +392,13 @@ func (w wizardModel) submit() tea.Cmd {
 				Model:       model,
 				Title:       getStr(w.state, "title"),
 			}
-			if err := cmd.AgentCreate(w.templates, opts); err != nil {
+			if err := cli.AgentCreate(w.templates, opts); err != nil {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "agent '" + opts.Name + "' created"}
 		case wizMCP:
 			transport := getStr(w.state, "transport")
-			opts := cmd.MCPAddOptions{
+			opts := cli.MCPAddOptions{
 				Root:     w.root,
 				Name:     getStr(w.state, "name"),
 				Env:      splitCSV(getStr(w.state, "env")),
@@ -411,13 +411,13 @@ func (w wizardModel) submit() tea.Cmd {
 				opts.URL = getStr(w.state, "url")
 				opts.Type = transport
 			}
-			if err := cmd.MCPAdd(opts); err != nil {
+			if err := cli.MCPAdd(opts); err != nil {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "mcp server '" + opts.Name + "' added (" + transport + ")"}
 		case wizExport:
 			target := getStr(w.state, "target")
-			opts := cmd.ExportOptions{
+			opts := cli.ExportOptions{
 				Root:  w.root,
 				Out:   getStr(w.state, "out"),
 				Force: getStr(w.state, "force") == "yes",
@@ -425,9 +425,9 @@ func (w wizardModel) submit() tea.Cmd {
 			var err error
 			switch target {
 			case "kiro":
-				err = cmd.ExportKiro(opts)
+				err = cli.ExportKiro(opts)
 			case "codex":
-				err = cmd.ExportCodex(opts)
+				err = cli.ExportCodex(opts)
 			default:
 				return resultMsg{text: "unknown export target: " + target, isErr: true}
 			}

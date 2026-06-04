@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"io"
@@ -115,10 +115,10 @@ func TestEmptyArgsShowsHelp(t *testing.T) {
 }
 
 func TestTuiSentinelFailsInCmd(t *testing.T) {
-	// cmd.Run isn't supposed to handle "tui" — main.go must intercept it.
+	// cli.Run isn't supposed to handle "tui" — main.go must intercept it.
 	code, _, errOut := run(t, "tui")
 	if code == 0 || !strings.Contains(errOut, "internal") {
-		t.Errorf("tui should fail under cmd.Run, got code=%d err=%q", code, errOut)
+		t.Errorf("tui should fail under cli.Run, got code=%d err=%q", code, errOut)
 	}
 }
 
