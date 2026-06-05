@@ -1,12 +1,14 @@
 import type { TaskPhase, Task } from '../types'
 
 export function TaskBoard({ phases }: { phases: TaskPhase[] }) {
-  if (!phases.length) return <div className="empty">No tasks parsed yet.</div>
+  const list = phases ?? []
+  if (!list.length) return <div className="empty">No tasks parsed yet.</div>
   return (
     <div className="board">
-      {phases.map((p) => {
-        const total = p.tasks.length
-        const done = p.tasks.filter((t) => t.done).length
+      {list.map((p) => {
+        const tasks = p.tasks ?? []
+        const total = tasks.length
+        const done = tasks.filter((t) => t.done).length
         return (
           <div className="board-col" key={p.name}>
             <div className="board-col-head">
@@ -16,7 +18,7 @@ export function TaskBoard({ phases }: { phases: TaskPhase[] }) {
               </span>
             </div>
             <div className="board-cards">
-              {p.tasks.map((t, i) => (
+              {tasks.map((t, i) => (
                 <TaskCard key={`${t.id}-${i}`} task={t} />
               ))}
             </div>

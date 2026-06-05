@@ -17,7 +17,10 @@ export function Sidebar({ overview, selection, onSelect, version }: Props) {
   const [tree, setTree] = useState<TreeNode[]>([])
 
   useEffect(() => {
-    api.tree().then(setTree).catch(() => setTree([]))
+    api
+      .tree()
+      .then((t) => setTree(t ?? []))
+      .catch(() => setTree([]))
   }, [version])
 
   const selectedFeature = selection?.kind === 'spec' ? selection.feature : null
@@ -29,7 +32,7 @@ export function Sidebar({ overview, selection, onSelect, version }: Props) {
 
       <Section title="Specs" count={overview?.specs.length}>
         <div className="spec-list">
-          {overview?.specs.map((s) => (
+          {(overview?.specs ?? []).map((s) => (
             <SpecRow
               key={s.feature}
               spec={s}
@@ -37,7 +40,7 @@ export function Sidebar({ overview, selection, onSelect, version }: Props) {
               onClick={() => onSelect({ kind: 'spec', feature: s.feature })}
             />
           ))}
-          {overview && overview.specs.length === 0 && <div className="muted small">no specs</div>}
+          {overview && (overview.specs?.length ?? 0) === 0 && <div className="muted small">no specs</div>}
         </div>
       </Section>
 
@@ -82,12 +85,12 @@ function SpecRow({ spec, active, onClick }: { spec: SpecCard; active: boolean; o
 
 function WorkspaceChips({ overview }: { overview: Overview }) {
   const chips: [string, number][] = [
-    ['steering', overview.steering.length],
-    ['skills', overview.skills.length],
-    ['agents', overview.agents.length],
-    ['mcp', overview.mcp.length],
-    ['hooks', overview.hooks.length],
-    ['commands', overview.commands.length],
+    ['steering', overview.steering?.length ?? 0],
+    ['skills', overview.skills?.length ?? 0],
+    ['agents', overview.agents?.length ?? 0],
+    ['mcp', overview.mcp?.length ?? 0],
+    ['hooks', overview.hooks?.length ?? 0],
+    ['commands', overview.commands?.length ?? 0],
   ]
   return (
     <div className="ws-chips">

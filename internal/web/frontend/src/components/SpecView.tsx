@@ -24,7 +24,7 @@ export function SpecView({ feature, version }: { feature: string; version: numbe
   if (err) return <div className="banner error">{err}</div>
   if (!detail) return <div className="empty">Loading {feature}…</div>
 
-  const has = (name: string) => detail.artifacts.includes(name)
+  const has = (name: string) => (detail.artifacts ?? []).includes(name)
   const tabs: { id: Tab; label: string; enabled: boolean }[] = [
     { id: 'overview', label: 'Overview', enabled: true },
     { id: 'requirements', label: 'Requirements', enabled: has('requirements.md') },
@@ -71,6 +71,7 @@ export function SpecView({ feature, version }: { feature: string; version: numbe
 
 function OverviewTab({ detail }: { detail: SpecDetail }) {
   const phases = ['requirements', 'design', 'tasks']
+  const issues = detail.issueList ?? []
   return (
     <div className="overview-tab">
       <div className="cards">
@@ -104,17 +105,17 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
       <div className="card">
         <div className="card-title">
           Validation{' '}
-          {detail.issueList.length === 0 ? (
+          {issues.length === 0 ? (
             <span className="badge ready">passing</span>
           ) : (
-            <span className="badge warn">{detail.issueList.length}</span>
+            <span className="badge warn">{issues.length}</span>
           )}
         </div>
-        {detail.issueList.length === 0 ? (
+        {issues.length === 0 ? (
           <div className="muted small">No mechanical issues for the current phase.</div>
         ) : (
           <ul className="issues">
-            {detail.issueList.map((is, i) => (
+            {issues.map((is, i) => (
               <li key={i}>
                 <code>
                   {is.file}
