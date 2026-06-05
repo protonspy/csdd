@@ -31,18 +31,20 @@ export function Sidebar({ overview, selection, onSelect, version, open }: Props)
   const openResource = (resource: ResourceKind, artifact: Artifact) =>
     onSelect({ kind: 'resource', resource, artifact })
 
+  const specCount = overview?.specs?.length ?? 0
+
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
-      {overview && <WorkspaceChips overview={overview} />}
+      <nav className="side-nav">
+        <button
+          className={`nav-row ${selection?.kind === 'tests' ? 'active' : ''}`}
+          onClick={() => onSelect({ kind: 'tests' })}
+        >
+          <span className="nav-icon">✓</span> Tests &amp; Coverage
+        </button>
+      </nav>
 
-      <button
-        className={`nav-row ${selection?.kind === 'tests' ? 'active' : ''}`}
-        onClick={() => onSelect({ kind: 'tests' })}
-      >
-        <span className="nav-icon">✓</span> Tests &amp; Coverage
-      </button>
-
-      <Section title="Specs" count={overview?.specs?.length}>
+      <Section title="Specs" count={specCount} defaultOpen>
         <div className="spec-list">
           {(overview?.specs ?? []).map((s) => (
             <SpecRow
@@ -52,40 +54,55 @@ export function Sidebar({ overview, selection, onSelect, version, open }: Props)
               onClick={() => onSelect({ kind: 'spec', feature: s.feature })}
             />
           ))}
-          {overview && (overview.specs?.length ?? 0) === 0 && <div className="muted small">no specs</div>}
+          {overview && specCount === 0 && <div className="muted small">no specs</div>}
         </div>
       </Section>
 
-      <ResourceSection
-        title="Agents"
-        resource="agent"
-        items={overview?.agents}
-        selectedPath={selectedResource}
-        onOpen={openResource}
-      />
-      <ResourceSection
-        title="Skills"
-        resource="skill"
-        items={overview?.skills}
-        selectedPath={selectedResource}
-        onOpen={openResource}
-      />
-      <ResourceSection
-        title="Steering"
-        resource="steering"
-        items={overview?.steering}
-        selectedPath={selectedResource}
-        onOpen={openResource}
-      />
+      <SideGroup label="Resources">
+        <ResourceSection
+          title="Agents"
+          resource="agent"
+          items={overview?.agents}
+          selectedPath={selectedResource}
+          onOpen={openResource}
+        />
+        <ResourceSection
+          title="Skills"
+          resource="skill"
+          items={overview?.skills}
+          selectedPath={selectedResource}
+          onOpen={openResource}
+        />
+        <ResourceSection
+          title="Steering"
+          resource="steering"
+          items={overview?.steering}
+          selectedPath={selectedResource}
+          onOpen={openResource}
+        />
+      </SideGroup>
 
-      <Section title="csdd" count={tree.csdd.length}>
-        <FileTree nodes={tree.csdd} selectedPath={selectedPath} onOpenFile={openFile} />
-      </Section>
+      <SideGroup label="Files">
+        <Section title="csdd" count={tree.csdd.length} defaultOpen={false}>
+          <FileTree nodes={tree.csdd} selectedPath={selectedPath} onOpenFile={openFile} />
+        </Section>
+        <Section title="Project" count={tree.project.length} defaultOpen={false}>
+          <FileTree nodes={tree.project} selectedPath={selectedPath} onOpenFile={openFile} />
+        </Section>
+      </SideGroup>
 
-      <Section title="Project" count={tree.project.length}>
-        <FileTree nodes={tree.project} selectedPath={selectedPath} onOpenFile={openFile} />
-      </Section>
+      {overview && <WorkspaceChips overview={overview} />}
     </aside>
+  )
+}
+
+// SideGroup is a labelled band that visually groups related sections.
+function SideGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="side-group">
+      <div className="side-group-label">{label}</div>
+      {children}
+    </div>
   )
 }
 
@@ -137,7 +154,7 @@ function ResourceSection({
 }) {
   const list = items ?? []
   return (
-    <Section title={title} count={list.length}>
+    <Section title={title} count={list.length} defaultOpen={false}>
       <div className="resource-list">
         {list.map((a) => (
           <button
@@ -178,14 +195,26 @@ function WorkspaceChips({ overview }: { overview: Overview }) {
   )
 }
 
-function Section({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+function Section({
+  title,
+  count,
+  defaultOpen = true,
+  children,
+}: {
+  title: string
+  count?: number
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <section className="side-section">
-      <div className="side-heading">
-        {title}
+      <button className="side-heading" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span className={`side-caret ${open ? 'open' : ''}`}>▸</span>
+        <span className="side-title">{title}</span>
         {typeof count === 'number' && <span className="count">{count}</span>}
-      </div>
-      {children}
+      </button>
+      {open && <div className="side-body">{children}</div>}
     </section>
   )
 }

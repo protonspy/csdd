@@ -155,11 +155,14 @@ code {
   padding: 12px 10px 32px;
 }
 
+/* Chips footer (mcp/hooks/commands counts). */
 .ws-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin: 4px 4px 14px;
+  margin: 16px 4px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .chip {
   font-size: 11px;
@@ -173,26 +176,71 @@ code {
   color: var(--text);
 }
 
-.side-section {
-  margin-bottom: 18px;
+/* ---- Sidebar nav, groups & collapsible sections ---------------------- */
+.side-nav {
+  margin-bottom: 14px;
 }
-.side-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
+.side-group {
+  margin-bottom: 16px;
+}
+.side-group-label {
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--text-faint);
-  padding: 4px 6px 8px;
+  padding: 0 6px 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-section {
+  margin-bottom: 2px;
+}
+.side-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.side-heading:hover {
+  background: var(--bg-2);
+  color: var(--text);
+}
+.side-caret {
+  font-size: 9px;
+  color: var(--text-faint);
+  transition: transform 0.12s;
+  display: inline-block;
+}
+.side-caret.open {
+  transform: rotate(90deg);
+}
+.side-title {
+  flex: 1;
 }
 .side-heading .count {
   background: var(--bg-3);
   border-radius: 999px;
   padding: 0 7px;
   font-size: 10px;
+  font-weight: 600;
   color: var(--text-dim);
+}
+.side-body {
+  padding: 5px 2px 7px;
 }
 
 .spec-list {
