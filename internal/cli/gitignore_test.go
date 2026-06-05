@@ -120,17 +120,19 @@ func TestEnsureGitignoreRespectsExistingBareEntry(t *testing.T) {
 	}
 }
 
-// TestGitignoreTargetsOnlyExisting reports only the artifacts present at root.
+// TestGitignoreTargetsOnlyExisting reports the always-ignored token secret plus
+// only the artifacts actually present at root.
 func TestGitignoreTargetsOnlyExisting(t *testing.T) {
 	dir := t.TempDir()
-	if got := gitignoreTargets(dir); len(got) != 0 {
-		t.Errorf("empty dir should yield no targets, got %v", got)
+	// The pinggy token secret is always ignored, even before it exists.
+	if got := gitignoreTargets(dir); len(got) != 1 || got[0] != ".pinggy-token" {
+		t.Errorf("empty dir should yield [.pinggy-token], got %v", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "csdd.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := gitignoreTargets(dir)
-	if len(got) != 1 || got[0] != "csdd.md" {
-		t.Errorf("expected [csdd.md], got %v", got)
+	if len(got) != 2 || got[0] != ".pinggy-token" || got[1] != "csdd.md" {
+		t.Errorf("expected [.pinggy-token csdd.md], got %v", got)
 	}
 }

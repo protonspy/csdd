@@ -6,12 +6,16 @@ import (
 	"strings"
 )
 
+// pinggyTokenFile is the workspace-local store for the pinggy Pro access token.
+// It is a secret — never committed — so it is always gitignored.
+const pinggyTokenFile = ".pinggy-token"
+
 // gitignoreTargets lists the root-level csdd artifacts that should not be
-// committed — the compiled binary and the operational CLI guide — but only the
-// ones that actually exist at root. A fresh `csdd init` always materializes
-// csdd.md; the binary is present only when the user dropped it in the repo.
+// committed — the compiled binary, the operational CLI guide, and the pinggy
+// token secret. The binary/guide are added only when present; the token file is
+// always ignored because `csdd web --pinggy-token` may create it later.
 func gitignoreTargets(root string) []string {
-	var targets []string
+	targets := []string{pinggyTokenFile}
 	for _, name := range []string{"csdd", "csdd.exe", "csdd.md"} {
 		if pathExists(filepath.Join(root, name)) {
 			targets = append(targets, name)
