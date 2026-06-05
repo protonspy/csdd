@@ -1,7 +1,6 @@
 package session
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -14,33 +13,40 @@ func treeWorkspace(t *testing.T) string {
 		".claude/.git/config":         "[core]\n", // must be skipped
 		"CLAUDE.md":                   "# Claude\n",
 		".mcp.json":                   `{"mcpServers":{}}`,
-		"go.mod":                      "module x\n", // outside the allowlist
+		"go.mod":                      "module x\n",        // project file (not csdd)
+		"src/main.go":                 "package main\n",    // project file
+		"node_modules/dep/index.js":   "module.exports={}", // must be skipped
 	})
 }
 
-func TestTreeRoots(t *testing.T) {
-	root := treeWorkspace(t)
-	nodes := Tree(root)
-	names := map[string]bool{}
-	for _, n := range nodes {
-		names[n.Name] = true
-	}
+func TestTreeGroups(t *testing.T) {
+	wt := Tree(treeWorkspace(t))
+
+	csdd := names(wt.Csdd)
 	for _, want := range []string{"specs", ".claude", "CLAUDE.md", ".mcp.json"} {
-		if !names[want] {
-			t.Errorf("tree missing top-level node %q (got %v)", want, names)
+		if !csdd[want] {
+			t.Errorf("csdd group missing %q (got %v)", want, csdd)
 		}
 	}
-	if names["go.mod"] {
-		t.Errorf("go.mod must not appear in the tree (outside allowlist)")
+
+	proj := names(wt.Project)
+	for _, want := range []string{"go.mod", "src"} {
+		if !proj[want] {
+			t.Errorf("project group missing %q (got %v)", want, proj)
+		}
+	}
+	// csdd roots must not be duplicated into the project group.
+	for _, n := range []string{"specs", ".claude", "CLAUDE.md", ".mcp.json"} {
+		if proj[n] {
+			t.Errorf("%q should be in csdd group, not project", n)
+		}
+	}
+	// node_modules must be skipped entirely.
+	if proj["node_modules"] {
+		t.Errorf("node_modules must be skipped from the tree")
 	}
 	// .git must be skipped inside .claude.
-	var claude TreeNode
-	for _, n := range nodes {
-		if n.Name == ".claude" {
-			claude = n
-		}
-	}
-	for _, c := range claude.Children {
+	for _, c := range childOf(wt.Csdd, ".claude") {
 		if c.Name == ".git" {
 			t.Errorf(".git should be skipped in the tree")
 		}
@@ -49,34 +55,37 @@ func TestTreeRoots(t *testing.T) {
 
 func TestReadFileAllowed(t *testing.T) {
 	root := treeWorkspace(t)
-	fc, err := ReadFile(root, "specs/f/tasks.md")
-	if err != nil {
-		t.Fatal(err)
+	if fc, err := ReadFile(root, "specs/f/tasks.md"); err != nil || fc.Lang != "markdown" || fc.Text == "" {
+		t.Errorf("reading tasks.md: err=%v lang=%q", err, fc.Lang)
 	}
-	if fc.Lang != "markdown" {
-		t.Errorf("lang = %q, want markdown", fc.Lang)
-	}
-	if fc.Text == "" {
-		t.Errorf("expected file content")
-	}
-
-	if fc, err := ReadFile(root, ".mcp.json"); err != nil || fc.Lang != "json" {
-		t.Errorf("reading .mcp.json: err=%v lang=%q", err, fc.Lang)
+	// Project files are now browsable (whole-project explorer).
+	if fc, err := ReadFile(root, "src/main.go"); err != nil || fc.Lang != "go" {
+		t.Errorf("reading project file src/main.go: err=%v lang=%q", err, fc.Lang)
 	}
 }
 
-func TestReadFileBlocksTraversal(t *testing.T) {
+func TestReadFileRejectsEscapeAndDirs(t *testing.T) {
 	root := treeWorkspace(t)
-	bad := []string{
-		"../../etc/passwd",
-		"specs/f/../../../etc/passwd",
-		"go.mod",                      // exists at root but not under an allowed root
-		filepath.Join(root, "go.mod"), // absolute path
-		"",
-	}
-	for _, p := range bad {
+	for _, p := range []string{"../../etc/passwd", "/etc/passwd", "", "specs"} {
 		if _, err := ReadFile(root, p); err == nil {
 			t.Errorf("ReadFile(%q) should have been rejected", p)
 		}
 	}
+}
+
+func names(nodes []TreeNode) map[string]bool {
+	out := map[string]bool{}
+	for _, n := range nodes {
+		out[n.Name] = true
+	}
+	return out
+}
+
+func childOf(nodes []TreeNode, name string) []TreeNode {
+	for _, n := range nodes {
+		if n.Name == name {
+			return n.Children
+		}
+	}
+	return nil
 }

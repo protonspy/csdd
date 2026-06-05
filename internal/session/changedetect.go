@@ -15,12 +15,13 @@ type FileMeta struct {
 // Snapshot maps each watched file's workspace-relative path to its FileMeta.
 type Snapshot map[string]FileMeta
 
-// TakeSnapshot walks the watched roots (the same allowlist the file viewer uses)
-// and records every file's size + mtime. Transient read errors are tolerated by
-// skipping the offending entry, so a snapshot is always returned.
+// TakeSnapshot walks the csdd-managed roots (specs/, .claude/, CLAUDE.md,
+// .mcp.json) and records every file's size + mtime. Live updates track these —
+// not the whole project — so unrelated edits don't churn the dashboard.
+// Transient read errors are tolerated, so a snapshot is always returned.
 func TakeSnapshot(root string) Snapshot {
 	snap := Snapshot{}
-	for _, r := range allowedRoots {
+	for _, r := range csddRoots {
 		abs := filepath.Join(root, r.rel)
 		_ = filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {

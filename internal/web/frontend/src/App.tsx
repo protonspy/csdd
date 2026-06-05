@@ -15,6 +15,7 @@ export function App() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const { version, connected } = useLive()
 
   const refresh = useCallback(() => {
@@ -40,9 +41,23 @@ export function App() {
     }
   }, [overview, selection])
 
+  // Picking something closes the mobile drawer.
+  const handleSelect = (s: Selection) => {
+    setSelection(s)
+    setSidebarOpen(false)
+  }
+
   return (
     <div className="app">
       <header className="topbar">
+        <button
+          className="menu-btn"
+          onClick={() => setSidebarOpen((o) => !o)}
+          aria-label="Toggle sidebar"
+          aria-expanded={sidebarOpen}
+        >
+          ☰
+        </button>
         <div className="brand">
           <span className="logo">csdd</span>
           <span className="brand-sub">web</span>
@@ -60,7 +75,14 @@ export function App() {
       </header>
 
       <div className="layout">
-        <Sidebar overview={overview} selection={selection} onSelect={setSelection} version={version} />
+        <Sidebar
+          overview={overview}
+          selection={selection}
+          onSelect={handleSelect}
+          version={version}
+          open={sidebarOpen}
+        />
+        {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
         <main className="content">
           {error && <div className="banner error">Could not reach the server: {error}</div>}
           {selection?.kind === 'spec' && <SpecView feature={selection.feature} version={version} />}

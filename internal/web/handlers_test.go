@@ -109,18 +109,23 @@ func TestSpecEndpoint(t *testing.T) {
 
 func TestTreeEndpoint(t *testing.T) {
 	srv := testServer(t, sampleWorkspace(t))
-	var nodes []struct {
-		Name string `json:"name"`
+	var wt struct {
+		Csdd []struct {
+			Name string `json:"name"`
+		} `json:"csdd"`
+		Project []struct {
+			Name string `json:"name"`
+		} `json:"project"`
 	}
-	if code := getJSON(t, srv.URL+"/api/tree", &nodes); code != 200 {
+	if code := getJSON(t, srv.URL+"/api/tree", &wt); code != 200 {
 		t.Fatalf("tree code = %d", code)
 	}
-	names := map[string]bool{}
-	for _, n := range nodes {
-		names[n.Name] = true
+	csdd := map[string]bool{}
+	for _, n := range wt.Csdd {
+		csdd[n.Name] = true
 	}
-	if !names["specs"] || !names[".claude"] {
-		t.Errorf("tree top-level = %v", names)
+	if !csdd["specs"] || !csdd[".claude"] {
+		t.Errorf("csdd group = %v", csdd)
 	}
 }
 

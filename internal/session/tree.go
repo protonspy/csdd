@@ -11,10 +11,9 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// allowedRoots are the only paths the file viewer may surface or read. Anything
-// outside them (the rest of the filesystem) is off-limits; this is the single
-// allowlist that the tree walker and ReadFile both enforce.
-var allowedRoots = []struct {
+// csddRoots are the csdd-managed entries. They are grouped separately in the
+// file explorer and are the paths watched for live updates.
+var csddRoots = []struct {
 	rel string
 	dir bool
 }{
@@ -24,11 +23,24 @@ var allowedRoots = []struct {
 	{paths.MCPFile, false},   // .mcp.json
 }
 
-// skipDirs are never descended into (noise / heavy / irrelevant to the workspace).
-var skipDirs = map[string]bool{".git": true, "node_modules": true}
+// skipDirs are never descended into — VCS/dependency/cache noise that would
+// bloat the tree and isn't meaningful for analysing the project.
+var skipDirs = map[string]bool{
+	".git":          true,
+	"node_modules":  true,
+	"__pycache__":   true,
+	".venv":         true,
+	"venv":          true,
+	".mypy_cache":   true,
+	".pytest_cache": true,
+	".ruff_cache":   true,
+}
 
-// TreeNode is one node of the workspace file tree the explorer renders. Path is
-// workspace-relative and slash-separated.
+// maxViewBytes caps the size of a file served to the viewer; larger files (e.g.
+// model weights / datasets) are not loaded into memory.
+const maxViewBytes = 2 << 20 // 2 MiB
+
+// TreeNode is one node of the file tree. Path is workspace-relative (slash).
 type TreeNode struct {
 	Name     string     `json:"name"`
 	Path     string     `json:"path"`
@@ -36,11 +48,21 @@ type TreeNode struct {
 	Children []TreeNode `json:"children,omitempty"`
 }
 
-// Tree returns the top-level nodes of the workspace file tree (specs/, .claude/,
-// CLAUDE.md, .mcp.json), each directory walked recursively.
-func Tree(root string) []TreeNode {
-	var nodes []TreeNode
-	for _, r := range allowedRoots {
+// WorkspaceTree splits the explorer into the csdd-managed artifacts and the rest
+// of the project, so the two are visually separate.
+type WorkspaceTree struct {
+	Csdd    []TreeNode `json:"csdd"`
+	Project []TreeNode `json:"project"`
+}
+
+// Tree returns the full project file tree, with the csdd-managed entries
+// (specs/, .claude/, CLAUDE.md, .mcp.json) grouped separately from everything
+// else in the project root.
+func Tree(root string) WorkspaceTree {
+	csdd := []TreeNode{}
+	managed := map[string]bool{}
+	for _, r := range csddRoots {
+		managed[r.rel] = true
 		abs := filepath.Join(root, r.rel)
 		fi, err := os.Stat(abs)
 		if err != nil {
@@ -48,12 +70,30 @@ func Tree(root string) []TreeNode {
 		}
 		switch {
 		case r.dir && fi.IsDir():
-			nodes = append(nodes, walkDir(root, abs))
+			csdd = append(csdd, walkDir(root, abs))
 		case !r.dir && !fi.IsDir():
-			nodes = append(nodes, TreeNode{Name: r.rel, Path: rel(root, abs)})
+			csdd = append(csdd, TreeNode{Name: r.rel, Path: rel(root, abs)})
 		}
 	}
-	return orEmpty(nodes)
+
+	project := []TreeNode{}
+	if entries, err := os.ReadDir(root); err == nil {
+		sortEntries(entries)
+		for _, e := range entries {
+			name := e.Name()
+			if managed[name] || skipDirs[name] {
+				continue
+			}
+			abs := filepath.Join(root, name)
+			if e.IsDir() {
+				project = append(project, walkDir(root, abs))
+			} else {
+				project = append(project, TreeNode{Name: name, Path: rel(root, abs)})
+			}
+		}
+	}
+
+	return WorkspaceTree{Csdd: csdd, Project: project}
 }
 
 func walkDir(root, dir string) TreeNode {
@@ -62,12 +102,7 @@ func walkDir(root, dir string) TreeNode {
 	if err != nil {
 		return node
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].IsDir() != entries[j].IsDir() {
-			return entries[i].IsDir() // directories first
-		}
-		return entries[i].Name() < entries[j].Name()
-	})
+	sortEntries(entries)
 	for _, e := range entries {
 		if e.IsDir() && skipDirs[e.Name()] {
 			continue
@@ -82,6 +117,15 @@ func walkDir(root, dir string) TreeNode {
 	return node
 }
 
+func sortEntries(entries []os.DirEntry) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir() != entries[j].IsDir() {
+			return entries[i].IsDir() // directories first
+		}
+		return entries[i].Name() < entries[j].Name()
+	})
+}
+
 // FileContent is a single file's text plus a Monaco language id for highlighting.
 type FileContent struct {
 	Path string `json:"path"`
@@ -89,18 +133,39 @@ type FileContent struct {
 	Text string `json:"text"`
 }
 
-// ReadFile reads a workspace-relative file for the viewer. relPath is resolved
-// and confirmed to live under one of the allowed roots before any disk access,
-// so path-traversal inputs (../, absolute paths, paths outside the workspace)
-// are rejected.
+// ReadFile reads any project file for the viewer. relPath is resolved and
+// confirmed to stay under the project root, so traversal inputs (../, absolute
+// paths, anything outside the workspace) are rejected. Directories, oversized
+// files, and binaries are handled gracefully rather than dumped.
 func ReadFile(root, relPath string) (FileContent, error) {
 	abs, err := resolveInWorkspace(root, relPath)
 	if err != nil {
 		return FileContent{}, err
 	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return FileContent{}, err
+	}
+	if info.IsDir() {
+		return FileContent{}, fmt.Errorf("is a directory: %s", relPath)
+	}
+	if info.Size() > maxViewBytes {
+		return FileContent{
+			Path: filepath.ToSlash(relPath),
+			Lang: "plaintext",
+			Text: fmt.Sprintf("(file too large to preview: %d bytes)", info.Size()),
+		}, nil
+	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return FileContent{}, err
+	}
+	if isBinary(data) {
+		return FileContent{
+			Path: filepath.ToSlash(relPath),
+			Lang: "plaintext",
+			Text: "(binary file — not shown)",
+		}, nil
 	}
 	return FileContent{Path: filepath.ToSlash(relPath), Lang: langFor(abs), Text: string(data)}, nil
 }
@@ -118,20 +183,20 @@ func resolveInWorkspace(root, relPath string) (string, error) {
 	cleaned := filepath.Clean(string(filepath.Separator) + filepath.FromSlash(relPath))
 	cleaned = strings.TrimPrefix(cleaned, string(filepath.Separator))
 	target := filepath.Join(rootAbs, cleaned)
-	if !underAllowedRoot(rootAbs, target) {
+	if target != rootAbs && !strings.HasPrefix(target, rootAbs+string(filepath.Separator)) {
 		return "", fmt.Errorf("path not allowed: %s", relPath)
 	}
 	return target, nil
 }
 
-func underAllowedRoot(rootAbs, target string) bool {
-	for _, r := range allowedRoots {
-		base := filepath.Join(rootAbs, r.rel)
-		if r.dir {
-			if target == base || strings.HasPrefix(target, base+string(filepath.Separator)) {
-				return true
-			}
-		} else if target == base {
+// isBinary reports whether data looks binary (contains a NUL byte in its head).
+func isBinary(data []byte) bool {
+	n := len(data)
+	if n > 8000 {
+		n = 8000
+	}
+	for i := 0; i < n; i++ {
+		if data[i] == 0 {
 			return true
 		}
 	}
@@ -149,18 +214,42 @@ func langFor(path string) string {
 		return "javascript"
 	case ".ts", ".tsx":
 		return "typescript"
+	case ".jsx":
+		return "javascript"
 	case ".go":
 		return "go"
+	case ".py":
+		return "python"
+	case ".rs":
+		return "rust"
+	case ".java":
+		return "java"
+	case ".rb":
+		return "ruby"
+	case ".php":
+		return "php"
+	case ".c", ".h":
+		return "c"
+	case ".cpp", ".cc", ".hpp":
+		return "cpp"
 	case ".sh", ".bash":
 		return "shell"
 	case ".yml", ".yaml":
 		return "yaml"
 	case ".toml":
 		return "ini"
+	case ".sql":
+		return "sql"
 	case ".html", ".htm":
 		return "html"
 	case ".css":
 		return "css"
+	case ".scss":
+		return "scss"
+	case ".xml":
+		return "xml"
+	case ".dockerfile":
+		return "dockerfile"
 	default:
 		return "plaintext"
 	}

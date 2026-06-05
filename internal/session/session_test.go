@@ -112,10 +112,11 @@ func TestOverviewEmptyMarshalsArrays(t *testing.T) {
 	}
 }
 
-func TestTreeMarshalsArray(t *testing.T) {
+func TestTreeMarshalsArrays(t *testing.T) {
 	b, _ := json.Marshal(Tree(t.TempDir()))
-	if string(b) != "[]" {
-		t.Errorf("empty Tree = %s, want []", b)
+	s := string(b)
+	if strings.Contains(s, "null") {
+		t.Errorf("empty Tree should encode [] not null: %s", s)
 	}
 }
 

@@ -79,6 +79,11 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
+export interface WorkspaceTree {
+  csdd: TreeNode[]
+  project: TreeNode[]
+}
+
 export interface FileContent {
   path: string
   lang: string

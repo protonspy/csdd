@@ -786,3 +786,113 @@ code {
   flex: 1;
   min-height: 0;
 }
+
+/* ---- Sidebar scroll --------------------------------------------------- */
+/* The sidebar holds the spec list plus both file trees and can grow tall —
+   it scrolls independently of the content pane. */
+.sidebar {
+  overscroll-behavior: contain;
+}
+.spec-list {
+  max-height: 42vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* ---- Mobile / responsive ---------------------------------------------- */
+
+.menu-btn {
+  display: none; /* desktop: hidden; shown on mobile */
+  background: transparent;
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  line-height: 1;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.menu-btn:hover {
+  border-color: var(--accent);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .menu-btn {
+    display: inline-flex;
+  }
+  .root-path {
+    display: none;
+  }
+
+  /* Sidebar becomes a slide-in drawer over the content. */
+  .sidebar {
+    position: fixed;
+    inset: 48px auto 0 0;
+    height: calc(100% - 48px);
+    width: 86vw;
+    max-width: 320px;
+    z-index: 30;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 2px 0 18px rgba(0, 0, 0, 0.45);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 48px 0 0 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 20;
+  }
+  .spec-list {
+    max-height: none;
+  }
+
+  .content {
+    padding: 16px 14px 36px;
+  }
+  .content:has(.file-viewer) {
+    padding: 0;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+  .spec-view {
+    gap: 12px;
+  }
+  .spec-header h1 {
+    font-size: 18px;
+  }
+  .board-col {
+    flex-basis: 80vw;
+  }
+  .markdown {
+    max-width: 100%;
+  }
+  .topbar {
+    gap: 10px;
+    padding: 0 12px;
+  }
+}
+
+@media (max-width: 430px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .tabs {
+    overflow-x: auto;
+  }
+  .spec-header {
+    gap: 8px;
+  }
+}
