@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Selection } from '../App'
-import type { Overview, SpecCard, TreeNode } from '../types'
+import type { Overview, SpecCard, WorkspaceTree } from '../types'
 import { api } from '../api'
 import { FileTree } from './FileTree'
 import { ProgressBar, PhasePill } from './bits'
@@ -11,26 +11,28 @@ interface Props {
   selection: Selection
   onSelect: (s: Selection) => void
   version: number
+  open: boolean
 }
 
-export function Sidebar({ overview, selection, onSelect, version }: Props) {
-  const [tree, setTree] = useState<TreeNode[]>([])
+export function Sidebar({ overview, selection, onSelect, version, open }: Props) {
+  const [tree, setTree] = useState<WorkspaceTree>({ csdd: [], project: [] })
 
   useEffect(() => {
     api
       .tree()
-      .then((t) => setTree(t ?? []))
-      .catch(() => setTree([]))
+      .then((t) => setTree({ csdd: t?.csdd ?? [], project: t?.project ?? [] }))
+      .catch(() => setTree({ csdd: [], project: [] }))
   }, [version])
 
   const selectedFeature = selection?.kind === 'spec' ? selection.feature : null
   const selectedPath = selection?.kind === 'file' ? selection.path : null
+  const openFile = (path: string) => onSelect({ kind: 'file', path })
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${open ? 'open' : ''}`}>
       {overview && <WorkspaceChips overview={overview} />}
 
-      <Section title="Specs" count={overview?.specs.length}>
+      <Section title="Specs" count={overview?.specs?.length}>
         <div className="spec-list">
           {(overview?.specs ?? []).map((s) => (
             <SpecRow
@@ -44,12 +46,12 @@ export function Sidebar({ overview, selection, onSelect, version }: Props) {
         </div>
       </Section>
 
-      <Section title="Explorer">
-        <FileTree
-          nodes={tree}
-          selectedPath={selectedPath}
-          onOpenFile={(path) => onSelect({ kind: 'file', path })}
-        />
+      <Section title="csdd" count={tree.csdd.length}>
+        <FileTree nodes={tree.csdd} selectedPath={selectedPath} onOpenFile={openFile} />
+      </Section>
+
+      <Section title="Project" count={tree.project.length}>
+        <FileTree nodes={tree.project} selectedPath={selectedPath} onOpenFile={openFile} />
       </Section>
     </aside>
   )
