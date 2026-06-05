@@ -7,7 +7,15 @@ import { ProgressBar, PhasePill, covColor } from './bits'
 
 type Tab = 'overview' | 'requirements' | 'design' | 'tasks'
 
-export function SpecView({ feature, version }: { feature: string; version: number }) {
+export function SpecView({
+  feature,
+  version,
+  onBack,
+}: {
+  feature: string
+  version: number
+  onBack?: () => void
+}) {
   const [detail, setDetail] = useState<SpecDetail | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [err, setErr] = useState<string | null>(null)
@@ -21,8 +29,26 @@ export function SpecView({ feature, version }: { feature: string; version: numbe
     setTab('overview')
   }, [feature])
 
-  if (err) return <div className="banner error">{err}</div>
-  if (!detail) return <div className="empty">Loading {feature}…</div>
+  const back = onBack && (
+    <button className="back-link" onClick={onBack}>
+      ‹ All specs
+    </button>
+  )
+
+  if (err)
+    return (
+      <div className="spec-view">
+        {back}
+        <div className="banner error">{err}</div>
+      </div>
+    )
+  if (!detail)
+    return (
+      <div className="spec-view">
+        {back}
+        <div className="empty">Loading {feature}…</div>
+      </div>
+    )
 
   const has = (name: string) => (detail.artifacts ?? []).includes(name)
   const tabs: { id: Tab; label: string; enabled: boolean }[] = [
@@ -34,6 +60,7 @@ export function SpecView({ feature, version }: { feature: string; version: numbe
 
   return (
     <div className="spec-view">
+      {back}
       <div className="spec-header">
         <h1>{detail.feature}</h1>
         <PhasePill phase={detail.phase} />
