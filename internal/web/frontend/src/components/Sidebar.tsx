@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Selection } from '../App'
-import type { Overview, SpecCard, WorkspaceTree } from '../types'
+import type { ResourceKind, Selection } from '../App'
+import type { Artifact, Overview, SpecCard, WorkspaceTree } from '../types'
 import { api } from '../api'
 import { FileTree } from './FileTree'
 import { ProgressBar, PhasePill } from './bits'
@@ -26,7 +26,10 @@ export function Sidebar({ overview, selection, onSelect, version, open }: Props)
 
   const selectedFeature = selection?.kind === 'spec' ? selection.feature : null
   const selectedPath = selection?.kind === 'file' ? selection.path : null
+  const selectedResource = selection?.kind === 'resource' ? selection.artifact.path : null
   const openFile = (path: string) => onSelect({ kind: 'file', path })
+  const openResource = (resource: ResourceKind, artifact: Artifact) =>
+    onSelect({ kind: 'resource', resource, artifact })
 
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
@@ -52,6 +55,28 @@ export function Sidebar({ overview, selection, onSelect, version, open }: Props)
           {overview && (overview.specs?.length ?? 0) === 0 && <div className="muted small">no specs</div>}
         </div>
       </Section>
+
+      <ResourceSection
+        title="Agents"
+        resource="agent"
+        items={overview?.agents}
+        selectedPath={selectedResource}
+        onOpen={openResource}
+      />
+      <ResourceSection
+        title="Skills"
+        resource="skill"
+        items={overview?.skills}
+        selectedPath={selectedResource}
+        onOpen={openResource}
+      />
+      <ResourceSection
+        title="Steering"
+        resource="steering"
+        items={overview?.steering}
+        selectedPath={selectedResource}
+        onOpen={openResource}
+      />
 
       <Section title="csdd" count={tree.csdd.length}>
         <FileTree nodes={tree.csdd} selectedPath={selectedPath} onOpenFile={openFile} />
@@ -92,24 +117,63 @@ function SpecRow({ spec, active, onClick }: { spec: SpecCard; active: boolean; o
   )
 }
 
+// strip a trailing ".md" for display (agents/steering rows keep it on disk).
+function displayName(name: string): string {
+  return name.replace(/\.md$/, '')
+}
+
+function ResourceSection({
+  title,
+  resource,
+  items,
+  selectedPath,
+  onOpen,
+}: {
+  title: string
+  resource: ResourceKind
+  items: Artifact[] | undefined
+  selectedPath: string | null
+  onOpen: (resource: ResourceKind, a: Artifact) => void
+}) {
+  const list = items ?? []
+  return (
+    <Section title={title} count={list.length}>
+      <div className="resource-list">
+        {list.map((a) => (
+          <button
+            key={a.path}
+            className={`resource-row ${a.path === selectedPath ? 'active' : ''}`}
+            onClick={() => onOpen(resource, a)}
+            title={a.description || a.name}
+          >
+            <div className="resource-row-head">
+              <span className="resource-name">{displayName(a.name)}</span>
+              {a.inclusion && <span className="badge muted">{a.inclusion}</span>}
+            </div>
+            {a.description && <div className="resource-desc">{a.description}</div>}
+          </button>
+        ))}
+        {list.length === 0 && <div className="muted small">none</div>}
+      </div>
+    </Section>
+  )
+}
+
 function WorkspaceChips({ overview }: { overview: Overview }) {
   const chips: [string, number][] = [
-    ['steering', overview.steering?.length ?? 0],
-    ['skills', overview.skills?.length ?? 0],
-    ['agents', overview.agents?.length ?? 0],
     ['mcp', overview.mcp?.length ?? 0],
     ['hooks', overview.hooks?.length ?? 0],
     ['commands', overview.commands?.length ?? 0],
   ]
+  const shown = chips.filter(([, n]) => n > 0)
+  if (shown.length === 0) return null
   return (
     <div className="ws-chips">
-      {chips
-        .filter(([, n]) => n > 0)
-        .map(([label, n]) => (
-          <span className="chip" key={label}>
-            <b>{n}</b> {label}
-          </span>
-        ))}
+      {shown.map(([label, n]) => (
+        <span className="chip" key={label}>
+          <b>{n}</b> {label}
+        </span>
+      ))}
     </div>
   )
 }

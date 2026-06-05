@@ -85,6 +85,33 @@ func TestOverview(t *testing.T) {
 	}
 }
 
+func TestOverviewArtifactMetadata(t *testing.T) {
+	root := writeWorkspace(t, map[string]string{
+		".claude/agents/code-reviewer.md": "---\nname: code-reviewer\ndescription: Reviews diffs for bugs.\ntools: Read, Grep\n---\n# Agent\n",
+		".claude/skills/tdd/SKILL.md":     "---\nname: tdd\ndescription: Red-green-refactor one task.\n---\n# Skill\n",
+		".claude/steering/api.md":         "---\ninclusion: fileMatch\nfileMatchPattern: [\"**/*.go\"]\n---\n# API\n",
+		".claude/steering/obs.md":         "---\ninclusion: auto\nname: obs\ndescription: Use when adding instrumentation.\n---\n# Obs\n",
+	})
+	ov := LoadOverview(root)
+
+	if len(ov.Agents) != 1 || ov.Agents[0].Description != "Reviews diffs for bugs." || ov.Agents[0].Tools != "Read, Grep" {
+		t.Errorf("agent meta = %+v", ov.Agents)
+	}
+	if len(ov.Skills) != 1 || ov.Skills[0].Description != "Red-green-refactor one task." {
+		t.Errorf("skill meta = %+v", ov.Skills)
+	}
+	// Steering sorted: api.md then obs.md.
+	if len(ov.Steering) != 2 {
+		t.Fatalf("steering = %+v", ov.Steering)
+	}
+	if ov.Steering[0].Inclusion != "fileMatch" {
+		t.Errorf("api steering inclusion = %q, want fileMatch", ov.Steering[0].Inclusion)
+	}
+	if ov.Steering[1].Inclusion != "auto" || ov.Steering[1].Description != "Use when adding instrumentation." {
+		t.Errorf("obs steering = %+v", ov.Steering[1])
+	}
+}
+
 func TestOverviewEmptyWorkspace(t *testing.T) {
 	root := t.TempDir()
 	ov := LoadOverview(root) // no specs/, no .claude/

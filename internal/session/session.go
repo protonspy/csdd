@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/protonspy/csdd/internal/frontmatter"
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/validator"
 )
@@ -51,10 +52,15 @@ type Overview struct {
 }
 
 // Artifact is a non-spec workspace item (steering file, skill, agent, …). Path
-// is workspace-relative (slash-separated) so the file viewer can open it.
+// is workspace-relative (slash-separated) so the file viewer can open it. The
+// metadata fields are filled from frontmatter for agents/skills/steering (so the
+// dashboard can list them meaningfully) and left empty for other kinds.
 type Artifact struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Description string `json:"description,omitempty"` // agents, skills, steering(auto)
+	Tools       string `json:"tools,omitempty"`       // agents
+	Inclusion   string `json:"inclusion,omitempty"`   // steering: always|fileMatch|manual|auto
 }
 
 // Approval mirrors a single phase's generation/approval state for the UI.
@@ -111,9 +117,9 @@ func LoadOverview(root string) Overview {
 			ov.Specs = append(ov.Specs, buildCard(specsDir, n))
 		}
 	}
-	ov.Steering = listFiles(paths.Steering(root), root, ".md")
-	ov.Skills = listSkillDirs(paths.Skills(root), root)
-	ov.Agents = listFiles(paths.Agents(root), root, ".md")
+	ov.Steering = listSteering(paths.Steering(root), root)
+	ov.Skills = listSkills(paths.Skills(root), root)
+	ov.Agents = listAgents(paths.Agents(root), root)
 	ov.Hooks = listFiles(paths.Hooks(root), root, "")
 	ov.Commands = listFiles(paths.Commands(root), root, ".md")
 	ov.MCP = listMCP(root)
@@ -261,6 +267,49 @@ func listSkillDirs(dir, root string) []Artifact {
 		out = append(out, Artifact{Name: e.Name(), Path: rel(root, abs)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// readFrontmatter parses the YAML frontmatter of a file, tolerating a missing or
+// malformed file by returning an empty Frontmatter.
+func readFrontmatter(abs string) frontmatter.Frontmatter {
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return frontmatter.Frontmatter{}
+	}
+	return frontmatter.Parse(string(data))
+}
+
+// listAgents lists .claude/agents/*.md with their description and tools.
+func listAgents(dir, root string) []Artifact {
+	out := listFiles(dir, root, ".md")
+	for i := range out {
+		fm := readFrontmatter(filepath.Join(dir, out[i].Name))
+		out[i].Description = fm.AsString("description", "")
+		out[i].Tools = fm.AsString("tools", "")
+	}
+	return out
+}
+
+// listSteering lists .claude/steering/*.md with their inclusion mode and (for
+// auto inclusion) description.
+func listSteering(dir, root string) []Artifact {
+	out := listFiles(dir, root, ".md")
+	for i := range out {
+		fm := readFrontmatter(filepath.Join(dir, out[i].Name))
+		out[i].Inclusion = fm.AsString("inclusion", "")
+		out[i].Description = fm.AsString("description", "")
+	}
+	return out
+}
+
+// listSkills lists .claude/skills/<name>/ with each SKILL.md description.
+func listSkills(dir, root string) []Artifact {
+	out := listSkillDirs(dir, root)
+	for i := range out {
+		fm := readFrontmatter(filepath.Join(dir, out[i].Name, "SKILL.md"))
+		out[i].Description = fm.AsString("description", "")
+	}
 	return out
 }
 
