@@ -91,9 +91,13 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
 	go pollChanges(pollCtx, opts.Root, h)
 
 	srv := &http.Server{
-		Handler:      newMux(opts.Root, h, a),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 0, // SSE streams indefinitely — no write deadline
+		Handler: newMux(opts.Root, h, a),
+		// Bound only the header read (slow-loris guard), not the whole request:
+		// a full ReadTimeout would also cap idle keep-alive connections, which the
+		// tunnel holds open between requests — closing them surfaces as 502s.
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		WriteTimeout:      0, // SSE streams indefinitely — no write deadline
 	}
 
 	errCh := make(chan error, 1)

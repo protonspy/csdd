@@ -52,13 +52,20 @@ func startTunnel(ctx context.Context, localPort int, subdomain string) (string, 
 	if err != nil {
 		return "", err
 	}
-	// Clamp the connection count: the server controls max_conn_count, so cap it
-	// to avoid a hostile response spawning unbounded goroutines/sockets locally.
-	max := info.MaxConn
-	if max <= 0 || max > 10 {
-		max = 10
+	// Size the connection pool. loca.lt's free tier advertises max_conn_count=2,
+	// which is far too few for a browser (it opens ~6 parallel connections and the
+	// dashboard lazy-loads many chunks) — with only 2 pooled upstreams the rest of
+	// the requests get a 502 from loca.lt. So floor the pool well above the advert,
+	// while still capping a hostile/huge value to bound local goroutines/sockets.
+	const poolFloor, poolCap = 10, 16
+	pool := info.MaxConn
+	if pool < poolFloor {
+		pool = poolFloor
 	}
-	for i := 0; i < max; i++ {
+	if pool > poolCap {
+		pool = poolCap
+	}
+	for i := 0; i < pool; i++ {
 		go tunnelWorker(ctx, info.Port, localPort)
 	}
 	return info.URL, nil
@@ -91,8 +98,13 @@ func requestTunnel(ctx context.Context, subdomain string) (tunnelInfo, error) {
 	return info, nil
 }
 
-// tunnelWorker maintains one proxied connection to the tunnel server, piping it
+// tunnelWorker maintains one pooled connection to the tunnel server, piping it
 // to the local server and reconnecting when it drops, until ctx is cancelled.
+//
+// The local connection is opened lazily — only once loca.lt actually routes a
+// request to this pooled connection (signalled by the first byte arriving). This
+// avoids holding an idle local socket that the HTTP server could close out from
+// under a pooled connection, which loca.lt would surface to visitors as a 502.
 func tunnelWorker(ctx context.Context, remotePort, localPort int) {
 	d := net.Dialer{Timeout: 10 * time.Second}
 	for ctx.Err() == nil {
@@ -101,10 +113,22 @@ func tunnelWorker(ctx context.Context, remotePort, localPort int) {
 			tunnelSleep(ctx, time.Second)
 			continue
 		}
-		local, err := d.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
-		if err != nil {
+		// Block until a request arrives on this pooled connection (or it closes).
+		first := make([]byte, 1)
+		n, rerr := remote.Read(first)
+		if rerr != nil {
+			remote.Close()
+			continue // idle pooled connection dropped; reconnect promptly
+		}
+		local, lerr := d.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
+		if lerr != nil {
 			remote.Close()
 			tunnelSleep(ctx, time.Second)
+			continue
+		}
+		if _, werr := local.Write(first[:n]); werr != nil {
+			remote.Close()
+			local.Close()
 			continue
 		}
 		pipe(remote, local)
