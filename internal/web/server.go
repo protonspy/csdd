@@ -1,9 +1,10 @@
 // Package web serves a read-only browser dashboard of a csdd workspace: spec
-// progress, navigable spec docs, a live task board, and a VS Code-style file
-// viewer. It is a *view* only — the CLI remains the sole author of artifacts —
-// and depends on internal/session for its read-model. The HTTP surface is pure
-// net/http; live updates use Server-Sent Events fed by a filesystem poller, so
-// no third-party dependency is introduced.
+// progress, navigable spec docs, a live task board, a VS Code-style file viewer,
+// and test/coverage metrics. It is a *view* only — the CLI remains the sole
+// author of artifacts — and depends on internal/session for its read-model. The
+// HTTP surface is pure net/http; live updates use Server-Sent Events fed by a
+// filesystem poller; an optional token guards the API and an optional
+// localtunnel exposes it publicly — all stdlib, no third-party dependency.
 package web
 
 import (
@@ -25,6 +26,9 @@ type Options struct {
 	Host        string // bind address; defaults to 127.0.0.1
 	Port        int    // TCP port; 0 picks a free port
 	OpenBrowser bool   // best-effort open the default browser on start
+	Auth        bool   // require a token on the API
+	Password    string // explicit token (else a random one is generated when Auth)
+	Tunnel      bool   // expose publicly via localtunnel (forces Auth)
 }
 
 // Serve starts the dashboard and blocks until interrupted (Ctrl-C). It returns
@@ -33,6 +37,13 @@ func Serve(opts Options) int {
 	if opts.Host == "" {
 		opts.Host = "127.0.0.1"
 	}
+	if opts.Tunnel {
+		opts.Auth = true // never expose the API publicly without a token
+		if opts.Password != "" && len(opts.Password) < 8 {
+			render.Err("refusing to tunnel with a weak --password (<8 chars). Use a stronger one, or omit it for a random token.")
+			return 1
+		}
+	}
 	addr := net.JoinHostPort(opts.Host, fmt.Sprintf("%d", opts.Port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -40,18 +51,28 @@ func Serve(opts Options) int {
 		return 1
 	}
 
-	url := "http://" + ln.Addr().String()
-	render.OK("csdd web → " + url)
-	render.Info("read-only dashboard · watching " + opts.Root + " · press Ctrl-C to stop")
+	a := newAuth(opts.Auth, opts.Password)
+	localURL := "http://" + ln.Addr().String()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if opts.OpenBrowser {
-		openBrowser(url)
+	var publicURL string
+	if opts.Tunnel {
+		render.Info("requesting a public tunnel…")
+		if u, err := startTunnel(ctx, tcpPort(ln)); err != nil {
+			render.Warn("tunnel failed: " + err.Error())
+		} else {
+			publicURL = u
+		}
 	}
 
-	if err := serve(ctx, ln, opts); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	printStartup(localURL, publicURL, a, opts.Root)
+	if opts.OpenBrowser {
+		openBrowser(entryURL(localURL, a))
+	}
+
+	if err := serve(ctx, ln, opts, a); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		render.Err("csdd web: " + err.Error())
 		return 1
 	}
@@ -59,9 +80,8 @@ func Serve(opts Options) int {
 }
 
 // serve wires the mux, starts the change poller, and runs the HTTP server until
-// ctx is cancelled. It is separated from Serve so tests can inject their own
-// listener and context and shut down deterministically.
-func serve(ctx context.Context, ln net.Listener, opts Options) error {
+// ctx is cancelled. Separated from Serve so tests can inject a listener + ctx.
+func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
 	h := newHub()
 
 	pollCtx, cancelPoll := context.WithCancel(ctx)
@@ -69,7 +89,7 @@ func serve(ctx context.Context, ln net.Listener, opts Options) error {
 	go pollChanges(pollCtx, opts.Root, h)
 
 	srv := &http.Server{
-		Handler:      newMux(opts.Root, h),
+		Handler:      newMux(opts.Root, h, a),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // SSE streams indefinitely — no write deadline
 	}
@@ -85,4 +105,39 @@ func serve(ctx context.Context, ln net.Listener, opts Options) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// printStartup writes the access banner: the local URL, the auth token and a
+// one-click magic link, and the public tunnel URL when enabled.
+func printStartup(localURL, publicURL string, a *auth, root string) {
+	render.OK("csdd web → " + localURL)
+	if a.enabled {
+		render.Info("auth token: " + render.Bold(a.token))
+		render.Info("open authenticated: " + entryURL(localURL, a))
+	}
+	if publicURL != "" {
+		render.OK("public tunnel → " + publicURL)
+		if a.enabled {
+			render.Info("share this link: " + entryURL(publicURL, a))
+		}
+		render.Warn("tunnel is PUBLIC: anyone with the link can read every file under " + root + " (read-only).")
+		render.Warn("the link embeds the token and passes through the tunnel provider — share it only with people you trust.")
+	}
+	render.Info("read-only dashboard · watching " + root + " · press Ctrl-C to stop")
+}
+
+// entryURL returns the URL to open: the /token/<token> magic link when auth is
+// on (it stores the token and redirects), otherwise the bare URL.
+func entryURL(base string, a *auth) string {
+	if a.enabled {
+		return base + "/token/" + a.token
+	}
+	return base
+}
+
+func tcpPort(ln net.Listener) int {
+	if t, ok := ln.Addr().(*net.TCPAddr); ok {
+		return t.Port
+	}
+	return 0
 }

@@ -1060,3 +1060,64 @@ code {
   font-size: 14px;
   margin-bottom: 8px;
 }
+
+/* ---- Auth screen ------------------------------------------------------ */
+.auth-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.auth-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.auth-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.auth-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.auth-err {
+  color: var(--bad);
+  font-size: 13px;
+}
+.auth-btn {
+  background: linear-gradient(180deg, var(--accent), #d98e2a);
+  color: #1a1205;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.auth-btn:disabled {
+  opacity: 0.6;
+}

@@ -27,7 +27,7 @@ func tempWorkspace(t *testing.T, files map[string]string) string {
 
 func testServer(t *testing.T, root string) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(newMux(root, newHub()))
+	srv := httptest.NewServer(newMux(root, newHub(), newAuth(false, "")))
 	t.Cleanup(srv.Close)
 	return srv
 }

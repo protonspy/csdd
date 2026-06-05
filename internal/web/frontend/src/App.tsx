@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
+import { AuthScreen } from './components/AuthScreen'
 
 export type Selection =
   | { kind: 'spec'; feature: string }
@@ -18,7 +19,15 @@ export function App() {
   const [error, setError] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [needsAuth, setNeedsAuth] = useState(window.location.pathname === '/auth')
   const { version, connected } = useLive()
+
+  // A 401 anywhere raises this; show the login screen.
+  useEffect(() => {
+    const onAuth = () => setNeedsAuth(true)
+    window.addEventListener('csdd-auth-required', onAuth)
+    return () => window.removeEventListener('csdd-auth-required', onAuth)
+  }, [])
 
   const refresh = useCallback(() => {
     api
@@ -47,6 +56,10 @@ export function App() {
   const handleSelect = (s: Selection) => {
     setSelection(s)
     setSidebarOpen(false)
+  }
+
+  if (needsAuth) {
+    return <AuthScreen />
   }
 
   return (
