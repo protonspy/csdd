@@ -113,10 +113,13 @@ func ParseTasks(text string) ([]TaskPhase, TaskStats) {
 		}
 	}
 	flush()
+	for i := range phases {
+		phases[i].Tasks = orEmpty(phases[i].Tasks)
+	}
 	if stats.Total > 0 {
 		stats.Pct = (stats.Done*100 + stats.Total/2) / stats.Total
 	}
-	return phases, stats
+	return orEmpty(phases), stats
 }
 
 func applyAnnotations(t *Task, line string) {

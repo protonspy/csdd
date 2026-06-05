@@ -34,8 +34,9 @@ export function App() {
 
   // Auto-select the first spec once the overview loads.
   useEffect(() => {
-    if (!selection && overview && overview.specs.length > 0) {
-      setSelection({ kind: 'spec', feature: overview.specs[0].feature })
+    const specs = overview?.specs ?? []
+    if (!selection && specs.length > 0) {
+      setSelection({ kind: 'spec', feature: specs[0].feature })
     }
   }, [overview, selection])
 
@@ -75,7 +76,7 @@ function EmptyState({ overview }: { overview: Overview | null }) {
   if (!overview) {
     return <div className="empty">Loading workspace…</div>
   }
-  if (overview.specs.length === 0) {
+  if ((overview.specs?.length ?? 0) === 0) {
     return (
       <div className="empty">
         <h2>No specs yet</h2>

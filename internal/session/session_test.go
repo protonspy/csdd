@@ -1,8 +1,10 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +93,29 @@ func TestOverviewEmptyWorkspace(t *testing.T) {
 	}
 	if len(ov.Specs) != 0 || len(ov.Steering) != 0 {
 		t.Errorf("expected empty sections, got specs=%d steering=%d", len(ov.Specs), len(ov.Steering))
+	}
+}
+
+func TestOverviewEmptyMarshalsArrays(t *testing.T) {
+	// Empty sections must serialize as [] not null — the dashboard reads these
+	// as arrays (.length/.map) and crashes on null. Regression for that bug.
+	ov := LoadOverview(t.TempDir())
+	b, err := json.Marshal(ov)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, key := range []string{"specs", "steering", "skills", "agents", "mcp", "hooks", "commands"} {
+		if strings.Contains(s, `"`+key+`":null`) {
+			t.Errorf("overview JSON encodes %q as null (want []): %s", key, s)
+		}
+	}
+}
+
+func TestTreeMarshalsArray(t *testing.T) {
+	b, _ := json.Marshal(Tree(t.TempDir()))
+	if string(b) != "[]" {
+		t.Errorf("empty Tree = %s, want []", b)
 	}
 }
 

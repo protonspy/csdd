@@ -116,6 +116,15 @@ func LoadOverview(root string) Overview {
 	ov.Hooks = listFiles(paths.Hooks(root), root, "")
 	ov.Commands = listFiles(paths.Commands(root), root, ".md")
 	ov.MCP = listMCP(root)
+	// Always emit arrays (never nil) so the JSON encodes [] not null. The
+	// dashboard treats these as always-present arrays and crashes on null.
+	ov.Specs = orEmpty(ov.Specs)
+	ov.Steering = orEmpty(ov.Steering)
+	ov.Skills = orEmpty(ov.Skills)
+	ov.Agents = orEmpty(ov.Agents)
+	ov.MCP = orEmpty(ov.MCP)
+	ov.Hooks = orEmpty(ov.Hooks)
+	ov.Commands = orEmpty(ov.Commands)
 	return ov
 }
 
@@ -138,6 +147,8 @@ func LoadSpecDetail(root, feature string) (SpecDetail, error) {
 	for _, is := range validationIssues(specDir, s) {
 		d.IssueList = append(d.IssueList, ValidationIssue{File: is.File, Line: is.Line, Msg: is.Msg})
 	}
+	d.Phases = orEmpty(d.Phases)
+	d.IssueList = orEmpty(d.IssueList)
 	return d, nil
 }
 
@@ -174,6 +185,7 @@ func buildCard(specsDir, feature string) SpecCard {
 		card.Tasks = stats
 	}
 	card.Issues = len(validationIssues(specDir, s))
+	card.Artifacts = orEmpty(card.Artifacts)
 	return card
 }
 
@@ -290,4 +302,14 @@ func rel(root, abs string) string {
 func fileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+// orEmpty returns a non-nil slice so JSON encodes [] instead of null. The web
+// dashboard consumes these as always-present arrays (.length/.map), so a null
+// would crash the client.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }

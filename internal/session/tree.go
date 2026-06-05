@@ -53,7 +53,7 @@ func Tree(root string) []TreeNode {
 			nodes = append(nodes, TreeNode{Name: r.rel, Path: rel(root, abs)})
 		}
 	}
-	return nodes
+	return orEmpty(nodes)
 }
 
 func walkDir(root, dir string) TreeNode {

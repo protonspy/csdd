@@ -8,12 +8,13 @@ interface Props {
 }
 
 export function FileTree({ nodes, selectedPath, onOpenFile }: Props) {
-  if (nodes.length === 0) {
+  const list = nodes ?? []
+  if (list.length === 0) {
     return <div className="muted small">empty</div>
   }
   return (
     <div className="tree">
-      {nodes.map((n) => (
+      {list.map((n) => (
         <TreeItem key={n.path || n.name} node={n} depth={0} selectedPath={selectedPath} onOpenFile={onOpenFile} />
       ))}
     </div>
