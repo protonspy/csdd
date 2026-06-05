@@ -31,7 +31,7 @@ A **CLI + TUI** in a single Go binary — the only sanctioned author of the work
 Flag-driven, headless. Exposes **100% of the functionality** so Claude Code, Cursor, Codex, or CI can drive the binary without reading the source.
 
 ```bash
-csdd spec generate photo-albums --artifact requirements
+npx @protonspy/csdd spec generate photo-albums --artifact requirements
 ```
 
 ### ⌨️ TUI — for humans
@@ -39,7 +39,7 @@ csdd spec generate photo-albums --artifact requirements
 Interactive interface (Bubble Tea). Running `csdd` with no arguments opens wizards and an artifact browser. Same operations, same rules.
 
 ```bash
-csdd          # no args → interactive TUI
+npx @protonspy/csdd   # no args → interactive TUI
 ```
 
 > 🔑 **Core principle:** both surfaces call the **same operation helpers**. A single source of truth — what a human does in the TUI, an agent does identically via the CLI.
@@ -53,9 +53,9 @@ files change on disk, and a VS Code-style file viewer (Monaco) for the whole
 workspace — specs, steering, skills, agents, MCP, hooks and commands.
 
 ```bash
-csdd web                 # open the dashboard in your browser (also: csdd --web)
-csdd web --port 8080     # custom port
-csdd web --no-open       # print the URL instead of opening a browser
+npx @protonspy/csdd web              # open the dashboard in your browser (also: … --web)
+npx @protonspy/csdd web --port 8080  # custom port
+npx @protonspy/csdd web --no-open    # print the URL instead of opening a browser
 ```
 
 It is a *view*, not an author — the CLI stays the only thing that writes
@@ -88,8 +88,9 @@ npm install -g @protonspy/csdd     # then: csdd
 [releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on
 your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
 
-> The examples below call `csdd` directly. Running via npx? Prefix them with
-> `npx @protonspy/csdd`, or alias it: `alias csdd='npx @protonspy/csdd'`.
+> The examples below use `npx @protonspy/csdd` (no install needed). Installed
+> globally or built from source? Drop the prefix and call `csdd` directly — or
+> alias it: `alias csdd='npx @protonspy/csdd'`.
 
 ---
 
@@ -98,8 +99,8 @@ your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
 A new csdd version ships new and improved managed artifacts (rules, templates, the shipped skills/agents/commands/hooks, the guide). `csdd update` brings your workspace up to that version **without ever losing your setup**:
 
 ```bash
-csdd update --dry-run     # preview exactly what would change
-csdd update               # apply it
+npx @protonspy/csdd update --dry-run   # preview exactly what would change
+npx @protonspy/csdd update             # apply it
 ```
 
 It tracks what it wrote in `.claude/.csdd-manifest.json` (a content-hash baseline) and, for each csdd-managed file, decides:
@@ -159,12 +160,12 @@ State lives in `spec.json`. Generating `design` while `requirements` is not appr
 - `--force` breaks the gate — only with explicit human authorization (Quick Plan), and it shows up in history.
 
 ```bash
-csdd spec generate albums --artifact design
+npx @protonspy/csdd spec generate albums --artifact design
 ✗ phase gate: 'requirements' must be
   approved before generating 'design'.
 
 # the right path:
-csdd spec approve albums --phase requirements
+npx @protonspy/csdd spec approve albums --phase requirements
 ✓ requirements approved
 ```
 
@@ -174,24 +175,24 @@ csdd spec approve albums --phase requirements
 
 ```bash
 # 1 · bootstrap (once per repo)
-csdd init --with-baseline
+npx @protonspy/csdd init --with-baseline
 
 # 2 · create the feature workspace
-csdd spec init photo-albums
+npx @protonspy/csdd spec init photo-albums
 
 # 3 · requirements → edit in EARS → validate → approve
-csdd spec generate photo-albums --artifact requirements
-csdd spec validate photo-albums          # exit 2 = fix what it flags
-csdd spec approve  photo-albums --phase requirements
+npx @protonspy/csdd spec generate photo-albums --artifact requirements
+npx @protonspy/csdd spec validate photo-albums   # exit 2 = fix what it flags
+npx @protonspy/csdd spec approve  photo-albums --phase requirements
 
 # 4 · design (blocked until step 3 passes)  → 5 · tasks (same)
-csdd spec generate photo-albums --artifact design   # ... validate, approve
-csdd spec generate photo-albums --artifact tasks    # ... validate, approve
+npx @protonspy/csdd spec generate photo-albums --artifact design   # ... validate, approve
+npx @protonspy/csdd spec generate photo-albums --artifact tasks    # ... validate, approve
 
 ✓ spec.json: ready_for_implementation = true   # implementation can begin
 ```
 
-> 💡 `csdd spec status <feature>` between any two steps: phase + approvals + validation issues on a single screen.
+> 💡 `npx @protonspy/csdd spec status <feature>` between any two steps: phase + approvals + validation issues on a single screen.
 
 ---
 
@@ -439,9 +440,9 @@ converts the workspace to other agentic toolchains — a one-way, **additive** e
 that lives alongside `.claude/` (nothing is overwritten in place):
 
 ```bash
-csdd export kiro     # → .kiro/steering/*.md + .kiro/specs/<feature>/{requirements,design,tasks}.md
-csdd export codex    # → AGENTS.md (CLAUDE.md + steering inlined) + .codex/config.toml (MCP)
-csdd export kiro --out ./build --force
+npx @protonspy/csdd export kiro     # → .kiro/steering/*.md + .kiro/specs/<feature>/{requirements,design,tasks}.md
+npx @protonspy/csdd export codex    # → AGENTS.md (CLAUDE.md + steering inlined) + .codex/config.toml (MCP)
+npx @protonspy/csdd export kiro --out ./build --force
 ```
 
 - **Kiro** — steering frontmatter (`inclusion: always|fileMatch|manual|auto`, `fileMatchPattern`) is already Kiro-compatible, so steering copies verbatim; specs copy their SDD markdown (`spec.json` is dropped — Kiro tracks phase state in-IDE).
@@ -452,15 +453,12 @@ csdd export kiro --out ./build --force
 ## Getting started
 
 ```bash
-# build the binary
-go build -o csdd .
-
 # bootstrap a repo with baseline steering
-csdd init --with-baseline
+npx @protonspy/csdd init --with-baseline
 
 # take your first feature through to ready_for_implementation
-csdd spec init my-feature
-csdd spec generate my-feature --artifact requirements
+npx @protonspy/csdd spec init my-feature
+npx @protonspy/csdd spec generate my-feature --artifact requirements
 ```
 
 **Takeaways:** The validator is your friend. The gate makes the decision *visible*. Contract before code — requirements → design → tasks, each approved by a human before the next. Always generate from a template; never hand-write frontmatter or `spec.json`. Least privilege everywhere.
