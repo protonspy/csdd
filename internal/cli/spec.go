@@ -13,6 +13,7 @@ import (
 
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/session"
 	"github.com/protonspy/csdd/internal/templater"
 	"github.com/protonspy/csdd/internal/validator"
 	"github.com/protonspy/csdd/internal/workspace"
@@ -55,6 +56,8 @@ func runSpec(args []string, templates embed.FS) int {
 		return specApprove(rest)
 	case "validate":
 		return specValidate(rest)
+	case "test-report":
+		return specTestReport(rest)
 	case "delete":
 		return specDelete(rest)
 	default:
@@ -558,6 +561,113 @@ func specDelete(args []string) int {
 	}
 	render.OK("deleted " + workspace.Relative(r, sdir))
 	return 0
+}
+
+// specTestReport records structured TDD test/coverage metrics for a spec into
+// specs/<feature>/test-report.json (the convention the dashboard reads). It
+// parses a JUnit/lcov/Cobertura report when given, or takes explicit counts.
+func specTestReport(args []string) int {
+	fs := flag.NewFlagSet("spec test-report", flag.ContinueOnError)
+	var root, junit, coverage, command string
+	var total, passed, failed, skipped, covered, lines int
+	var pct float64
+	addRoot(fs, &root)
+	fs.StringVar(&junit, "junit", "", "JUnit XML report to parse for test counts.")
+	fs.StringVar(&coverage, "coverage", "", "lcov/Cobertura report to parse for coverage.")
+	fs.StringVar(&command, "command", "", "Test command, recorded for display.")
+	fs.IntVar(&total, "total", -1, "Explicit test total (when no --junit).")
+	fs.IntVar(&passed, "passed", -1, "Explicit tests passed.")
+	fs.IntVar(&failed, "failed", -1, "Explicit tests failed.")
+	fs.IntVar(&skipped, "skipped", -1, "Explicit tests skipped.")
+	fs.Float64Var(&pct, "pct", -1, "Explicit coverage percent (when no --coverage).")
+	fs.IntVar(&covered, "covered", -1, "Explicit covered lines.")
+	fs.IntVar(&lines, "lines", -1, "Explicit total lines.")
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
+		return failOnFlagParse(err)
+	}
+	if len(positionals) < 1 {
+		render.Err("usage: " + prog() + " spec test-report FEATURE [--junit FILE] [--coverage FILE] [--command \"...\"]")
+		return 1
+	}
+	feature := positionals[0]
+	r, err := workspace.Resolve(root)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	sdir := filepath.Join(paths.Specs(r), feature)
+	if !pathExists(sdir) {
+		render.Err("spec not found: " + feature)
+		return 1
+	}
+
+	rep := session.SpecReport{
+		Feature:   feature,
+		UpdatedAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		Command:   command,
+	}
+
+	if junit != "" {
+		ts, err := session.ParseJUnit(r, junit)
+		if err != nil {
+			render.Err(err.Error())
+			return 1
+		}
+		rep.Tests = &session.SpecTestCounts{Total: ts.Total, Passed: ts.Passed, Failed: ts.Failed, Skipped: ts.Skipped}
+	} else if total >= 0 || passed >= 0 || failed >= 0 || skipped >= 0 {
+		rep.Tests = &session.SpecTestCounts{Total: nz(total), Passed: nz(passed), Failed: nz(failed), Skipped: nz(skipped)}
+	}
+
+	if coverage != "" {
+		cov, err := session.ParseCoverageFile(r, coverage)
+		if err != nil {
+			render.Err(err.Error())
+			return 1
+		}
+		rep.Coverage = &session.SpecCovSummary{Pct: cov.Pct, Covered: cov.Covered, Lines: cov.Lines}
+	} else if pct >= 0 || covered >= 0 || lines >= 0 {
+		c := &session.SpecCovSummary{Covered: nz(covered), Lines: nz(lines)}
+		switch {
+		case pct >= 0:
+			c.Pct = pct
+		case c.Lines > 0:
+			c.Pct = float64(c.Covered) * 100 / float64(c.Lines)
+		}
+		rep.Coverage = c
+	}
+
+	if rep.Tests == nil && rep.Coverage == nil {
+		render.Err("nothing to record: pass --junit/--coverage or explicit --total/--passed/--pct flags")
+		return 1
+	}
+
+	b, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	target := filepath.Join(sdir, session.SpecReportFile)
+	if err := os.WriteFile(target, append(b, '\n'), 0o644); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	render.OK("wrote " + workspace.Relative(r, target))
+	if rep.Tests != nil {
+		render.Info(fmt.Sprintf("tests: %d passed · %d failed · %d skipped (of %d)", rep.Tests.Passed, rep.Tests.Failed, rep.Tests.Skipped, rep.Tests.Total))
+	}
+	if rep.Coverage != nil {
+		render.Info(fmt.Sprintf("coverage: %.1f%% (%d/%d lines)", rep.Coverage.Pct, rep.Coverage.Covered, rep.Coverage.Lines))
+	}
+	return 0
+}
+
+// nz clamps an "unset" (-1) flag value to 0.
+func nz(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 func loadSpecJSON(specDir string) (SpecJSON, error) {

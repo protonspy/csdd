@@ -51,6 +51,10 @@ func newMux(root string, h *hub) http.Handler {
 		writeJSON(w, http.StatusOK, fc)
 	})
 
+	mux.HandleFunc("GET /api/tests", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, session.LoadTestReport(root))
+	})
+
 	mux.HandleFunc("GET /api/events", h.sseHandler)
 
 	// Everything else is the embedded SPA (with index.html fallback).

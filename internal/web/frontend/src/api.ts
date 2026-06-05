@@ -1,4 +1,4 @@
-import type { Overview, SpecDetail, WorkspaceTree, FileContent } from './types'
+import type { Overview, SpecDetail, WorkspaceTree, FileContent, TestReport } from './types'
 
 async function get<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -13,4 +13,5 @@ export const api = {
   spec: (feature: string) => get<SpecDetail>(`/api/spec/${encodeURIComponent(feature)}`),
   tree: () => get<WorkspaceTree>('/api/tree'),
   file: (path: string) => get<FileContent>(`/api/file?path=${encodeURIComponent(path)}`),
+  tests: () => get<TestReport>('/api/tests'),
 }

@@ -32,6 +32,13 @@ export function Sidebar({ overview, selection, onSelect, version, open }: Props)
     <aside className={`sidebar ${open ? 'open' : ''}`}>
       {overview && <WorkspaceChips overview={overview} />}
 
+      <button
+        className={`nav-row ${selection?.kind === 'tests' ? 'active' : ''}`}
+        onClick={() => onSelect({ kind: 'tests' })}
+      >
+        <span className="nav-icon">✓</span> Tests &amp; Coverage
+      </button>
+
       <Section title="Specs" count={overview?.specs?.length}>
         <div className="spec-list">
           {(overview?.specs ?? []).map((s) => (

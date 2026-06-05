@@ -55,9 +55,31 @@ export interface ValidationIssue {
   msg: string
 }
 
+export interface SpecTestCounts {
+  total: number
+  passed: number
+  failed: number
+  skipped: number
+}
+
+export interface SpecCovSummary {
+  pct: number
+  covered: number
+  lines: number
+}
+
+export interface SpecReport {
+  feature: string
+  updatedAt: string
+  command?: string
+  tests?: SpecTestCounts
+  coverage?: SpecCovSummary
+}
+
 export interface SpecDetail extends SpecCard {
   phases: TaskPhase[]
   issueList: ValidationIssue[]
+  report: SpecReport | null
 }
 
 export interface Overview {
@@ -88,4 +110,52 @@ export interface FileContent {
   path: string
   lang: string
   text: string
+}
+
+export interface FileCoverage {
+  path: string
+  pct: number
+  lines: number
+  covered: number
+}
+
+export interface Coverage {
+  format: string
+  source: string
+  pct: number
+  lines: number
+  covered: number
+  files: FileCoverage[]
+}
+
+export interface TestSuite {
+  name: string
+  total: number
+  passed: number
+  failed: number
+  skipped: number
+  time: number
+}
+
+export interface TestFailure {
+  suite: string
+  name: string
+  message: string
+}
+
+export interface TestSummary {
+  source: string
+  total: number
+  passed: number
+  failed: number
+  skipped: number
+  durationSec: number
+  suites: TestSuite[]
+  failures?: TestFailure[]
+}
+
+export interface TestReport {
+  coverage: Coverage | null
+  tests: TestSummary | null
+  sources: string[]
 }

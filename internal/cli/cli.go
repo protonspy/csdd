@@ -126,7 +126,7 @@ RESOURCES
   init                        Bootstrap a Claude Code workspace.
   update                      Refresh csdd-managed artifacts to this version (keeps your edits as .old).
   steering {init,create,list,show,delete,validate}
-  spec     {init,list,show,status,generate,approve,validate,delete}
+  spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
   mcp      {add,list,show,remove,enable,disable,validate}
@@ -150,6 +150,7 @@ EXAMPLES
   %[1]s spec init photo-albums
   %[1]s spec generate photo-albums --artifact requirements
   %[1]s spec approve photo-albums --phase requirements
+  %[1]s spec test-report photo-albums --junit junit.xml --coverage coverage/lcov.info   # → specs/<f>/test-report.json
   %[1]s skill create spec-tasks \
         --description 'Generate tasks.md with boundary/depends annotations.'   # .claude/skills/
   %[1]s agent create code-reviewer \
