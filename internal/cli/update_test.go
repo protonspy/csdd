@@ -228,6 +228,76 @@ func TestUpdateOldCounterIncrements(t *testing.T) {
 	}
 }
 
+func TestUpdateConfirmDeclineSkipsOverride(t *testing.T) {
+	dir := freshWorkspace(t)
+	rule := filepath.Join(dir, ".claude", "rules", "ears-format.md")
+	if err := os.WriteFile(rule, []byte("USER EDIT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	confirmStdin = strings.NewReader("n\n") // interactive "no"
+	defer func() { confirmStdin = nil }()
+
+	code, out, _ := run(t, "update", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update failed: code=%d\n%s", code, out)
+	}
+	if got := readFile(t, rule); got != "USER EDIT\n" {
+		t.Errorf("declining the prompt must keep the user's file, got %q", got)
+	}
+	if olds := oldBackups(t, dir); len(olds) != 0 {
+		t.Errorf("declining must not create .old backups: %v", olds)
+	}
+	if !strings.Contains(out, "skip") {
+		t.Errorf("a skipped override should be reported:\n%s", out)
+	}
+}
+
+func TestUpdateConfirmAcceptOverrides(t *testing.T) {
+	dir := freshWorkspace(t)
+	rule := filepath.Join(dir, ".claude", "rules", "ears-format.md")
+	if err := os.WriteFile(rule, []byte("USER EDIT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	confirmStdin = strings.NewReader("y\n") // interactive "yes"
+	defer func() { confirmStdin = nil }()
+
+	code, out, _ := run(t, "update", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update failed: code=%d\n%s", code, out)
+	}
+	if got := readFile(t, rule); got == "USER EDIT\n" {
+		t.Error("accepting the prompt should write the shipped version in place")
+	}
+	if got := readFile(t, rule+"-1.old"); got != "USER EDIT\n" {
+		t.Errorf("the user's edit must be preserved as .old")
+	}
+}
+
+func TestUpdateYesSkipsPrompt(t *testing.T) {
+	dir := freshWorkspace(t)
+	rule := filepath.Join(dir, ".claude", "rules", "ears-format.md")
+	if err := os.WriteFile(rule, []byte("USER EDIT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Even with an interactive stdin available, --yes must not prompt.
+	confirmStdin = strings.NewReader("n\n")
+	defer func() { confirmStdin = nil }()
+
+	code, _, _ := run(t, "update", "--yes", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update --yes failed: %d", code)
+	}
+	if got := readFile(t, rule); got == "USER EDIT\n" {
+		t.Error("--yes should override without consulting the prompt")
+	}
+	if got := readFile(t, rule+"-1.old"); got != "USER EDIT\n" {
+		t.Errorf("--yes still keeps the user's edit as .old")
+	}
+}
+
 func TestInitWritesManifest(t *testing.T) {
 	dir := freshWorkspace(t)
 	m, exists, err := manifest.Load(paths.Manifest(dir))

@@ -29,6 +29,7 @@ type Options struct {
 	Auth        bool   // require a token on the API
 	Password    string // explicit token (else a random one is generated when Auth)
 	Tunnel      bool   // expose publicly via localtunnel (forces Auth)
+	Subdomain   string // requested tunnel subdomain (stable URL); empty = random
 }
 
 // Serve starts the dashboard and blocks until interrupted (Ctrl-C). It returns
@@ -57,17 +58,18 @@ func Serve(opts Options) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	var publicURL string
+	var publicURL, tunnelPass string
 	if opts.Tunnel {
 		render.Info("requesting a public tunnel…")
-		if u, err := startTunnel(ctx, tcpPort(ln)); err != nil {
+		if u, err := startTunnel(ctx, tcpPort(ln), opts.Subdomain); err != nil {
 			render.Warn("tunnel failed: " + err.Error())
 		} else {
 			publicURL = u
+			tunnelPass = tunnelPassword(ctx)
 		}
 	}
 
-	printStartup(localURL, publicURL, a, opts.Root)
+	printStartup(localURL, publicURL, tunnelPass, a, opts.Root)
 	if opts.OpenBrowser {
 		openBrowser(entryURL(localURL, a))
 	}
@@ -108,8 +110,9 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
 }
 
 // printStartup writes the access banner: the local URL, the auth token and a
-// one-click magic link, and the public tunnel URL when enabled.
-func printStartup(localURL, publicURL string, a *auth, root string) {
+// one-click magic link, and the public tunnel URL when enabled. tunnelPass is
+// the loca.lt interstitial password (this machine's public IP); empty omits it.
+func printStartup(localURL, publicURL, tunnelPass string, a *auth, root string) {
 	render.OK("csdd web → " + localURL)
 	if a.enabled {
 		render.Info("auth token: " + render.Bold(a.token))
@@ -120,6 +123,14 @@ func printStartup(localURL, publicURL string, a *auth, root string) {
 		if a.enabled {
 			render.Info("share this link: " + entryURL(publicURL, a))
 		}
+		// loca.lt shows a one-time "Tunnel website ahead" page to browser
+		// visitors before the app loads; they must enter this machine's public
+		// IP once per subdomain. Surface it so that click is a copy-paste.
+		render.Info("on first visit loca.lt shows a 'Tunnel website ahead' page — enter the password below and click Continue (once per subdomain).")
+		if tunnelPass != "" {
+			render.Info("tunnel password (visitor enters this): " + render.Bold(tunnelPass))
+		}
+		render.Info("tip: pass --subdomain <name> for a stable URL so that step is needed only once, not every run.")
 		render.Warn("tunnel is PUBLIC: anyone with the link can read every file under " + root + " (read-only).")
 		render.Warn("the link embeds the token and passes through the tunnel provider — share it only with people you trust.")
 	}

@@ -21,6 +21,9 @@
 - Pure scaffolding (migrations, type skeletons, config) needs no RED test — but any task
   that adds observable behavior does.
 - Phase 4 (Validation) holds end-to-end tests, not the unit tests — those live with their behavior in Phases 2–3.
+- Run unit tests through the csdd CLI so the spec keeps traceable evidence:
+  `csdd spec test-report <feature> --run --lang <lang>` writes `specs/<feature>/test-report.json`.
+  Phase 4 SHOULD include a task that records this evidence (tests green, coverage captured).
 
 ## Avoid
 - Generic tasks like "implement the backend".

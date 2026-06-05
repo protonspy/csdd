@@ -196,6 +196,20 @@ function MetricsCard({ report, red, green }: { report: SpecReport; red: number; 
           </div>
         </div>
       </div>
+      {report.attentions && report.attentions.length > 0 && (
+        <ul className="attentions">
+          {report.attentions.map((a, i) => (
+            <li key={i} className="attention">
+              {a}
+            </li>
+          ))}
+        </ul>
+      )}
+      {report.testPaths && report.testPaths.length > 0 && (
+        <div className="muted small evidence">
+          evidence: {report.testPaths.map((p) => <code key={p}>{p}</code>).reduce((a, b) => <>{a} · {b}</>)}
+        </div>
+      )}
       <div className="muted small">updated {report.updatedAt}</div>
     </div>
   )
@@ -209,8 +223,12 @@ function MetricsHint({ feature }: { feature: string }) {
         No <code>test-report.json</code> yet. Record one after running the suite:
       </div>
       <pre className="codeblock" style={{ marginTop: 8 }}>
-        <code>csdd spec test-report {feature} --junit junit.xml --coverage coverage/lcov.info</code>
+        <code>npx @protonspy/csdd spec test-report {feature} --junit junit.xml --coverage coverage/lcov.info</code>
       </pre>
+      <div className="muted small" style={{ marginTop: 6 }}>
+        Or auto-discover reports by language (python · typescript · java · go · rust):{' '}
+        <code>npx @protonspy/csdd spec test-report {feature} --lang go --path tests/</code>
+      </div>
     </div>
   )
 }

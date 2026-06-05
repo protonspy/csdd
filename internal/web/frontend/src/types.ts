@@ -74,6 +74,8 @@ export interface SpecReport {
   command?: string
   tests?: SpecTestCounts
   coverage?: SpecCovSummary
+  testPaths?: string[]
+  attentions?: string[]
 }
 
 export interface SpecDetail extends SpecCard {
@@ -120,7 +122,7 @@ export interface FileCoverage {
 }
 
 export interface Coverage {
-  format: string
+  format: string // 'lcov' | 'jacoco' | 'cobertura' | 'gocover'
   source: string
   pct: number
   lines: number

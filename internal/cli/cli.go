@@ -46,6 +46,8 @@ func Run(args []string, templates embed.FS) int {
 		return runInit(rest, templates)
 	case "update":
 		return runUpdate(rest, templates)
+	case "clean":
+		return runClean(rest, templates)
 	case "steering":
 		return runSteering(rest, templates)
 	case "spec":
@@ -124,7 +126,8 @@ USAGE
 
 RESOURCES
   init                        Bootstrap a Claude Code workspace.
-  update                      Refresh csdd-managed artifacts to this version (keeps your edits as .old).
+  update                      Refresh csdd-managed artifacts to this version (confirms before overriding your edits; keeps them as .old).
+  clean                       Remove the *-N.old backups update left under the workspace.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
@@ -151,6 +154,7 @@ EXAMPLES
   %[1]s spec generate photo-albums --artifact requirements
   %[1]s spec approve photo-albums --phase requirements
   %[1]s spec test-report photo-albums --junit junit.xml --coverage coverage/lcov.info   # → specs/<f>/test-report.json
+  %[1]s spec test-report photo-albums --lang go --path tests/   # auto-discover reports (python|typescript|java|go|rust)
   %[1]s skill create spec-tasks \
         --description 'Generate tasks.md with boundary/depends annotations.'   # .claude/skills/
   %[1]s agent create code-reviewer \

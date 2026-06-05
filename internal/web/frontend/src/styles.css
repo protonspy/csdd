@@ -1060,6 +1060,30 @@ code {
   font-size: 14px;
   margin-bottom: 8px;
 }
+.attentions {
+  list-style: none;
+  margin: 10px 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attention {
+  font-size: 12px;
+  color: var(--text-faint);
+  border-left: 2px solid var(--warn, #d6a23e);
+  padding: 2px 0 2px 8px;
+}
+.evidence {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.evidence code {
+  font-size: 11px;
+}
 
 /* ---- Auth screen ------------------------------------------------------ */
 .auth-screen {

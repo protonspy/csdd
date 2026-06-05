@@ -9,6 +9,9 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 - [ ] Test-first: a test failed (RED) for the expected reason before the implementation, when the task adds behavior.
 - [ ] That test now passes (GREEN); refactoring kept it green.
 - [ ] The relevant suite, lint, and typecheck pass for the touched scope.
+- [ ] Unit tests were run **through the csdd CLI** so the spec carries the evidence:
+      `csdd spec test-report <feature> --run --lang <lang>` wrote `specs/<feature>/test-report.json`
+      (tests green, coverage recorded, no open attentions).
 - [ ] Scope was respected — no opportunistic refactors or unrelated changes.
 - [ ] `## Implementation Notes` in tasks.md updated with any cross-task learning.
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.
@@ -26,7 +29,7 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 
 ```
 ## Verification
-- <test command>      ✅
+- csdd spec test-report <feature> --run --lang <lang>   ✅  (tests + coverage evidence)
 - <lint command>      ✅
 - <typecheck command> ✅
 - <build command>     ✅

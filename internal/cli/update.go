@@ -98,23 +98,34 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 // recordManifest rewrites the workspace manifest to record the shipped-content
 // hash of every managed file for this csdd version. Both `init` and `update`
 // call it so the baseline always reflects what csdd last wrote — which is what
-// the next update compares the user's on-disk files against.
-func recordManifest(root string, templates embed.FS, now time.Time) error {
+// the next update compares the user's on-disk files against. Files in skipped
+// (conflicts the user declined to override) keep their prior baseline, so they
+// are re-detected as conflicts on the next run.
+func recordManifest(root string, templates embed.FS, now time.Time, skipped map[string]bool) error {
 	files, err := collectManagedFiles(root, templates)
 	if err != nil {
 		return err
 	}
+	prior, _, _ := manifest.Load(paths.Manifest(root))
 	m := manifest.New()
 	for _, f := range files {
+		if skipped[f.Rel] {
+			if h, ok := prior.Files[f.Rel]; ok {
+				m.Files[f.Rel] = h
+				continue
+			}
+		}
 		m.Files[f.Rel] = manifest.Hash(f.Content)
 	}
 	return m.Save(paths.Manifest(root), version, now)
 }
 
 type updateOptions struct {
-	root   string
-	dryRun bool
-	force  bool
+	root          string
+	dryRun        bool
+	force         bool
+	yes           bool
+	skipConflicts bool // internal: leave user-edited conflicts untouched
 }
 
 func runUpdate(args []string, templates embed.FS) int {
@@ -123,6 +134,7 @@ func runUpdate(args []string, templates embed.FS) int {
 	addRoot(fset, &opts.root)
 	fset.BoolVar(&opts.dryRun, "dry-run", false, "Preview changes without writing anything.")
 	fset.BoolVar(&opts.force, "force", false, "Overwrite your edits in place WITHOUT creating .old backups.")
+	fset.BoolVar(&opts.yes, "yes", false, "Override user-edited files without the interactive confirmation (their version is still kept as .old).")
 	if err := fset.Parse(args); err != nil {
 		return failOnFlagParse(err)
 	}
@@ -137,13 +149,44 @@ func runUpdate(args []string, templates embed.FS) int {
 		return 1
 	}
 	opts.root = root
+	now := time.Now()
 
-	res, err := updateWorkspace(opts, templates, time.Now())
+	// Plan first (no writes) so we can confirm before overriding any file the
+	// user edited. On a dry run, just show the plan.
+	plan, err := updateWorkspace(updateOptions{root: root, dryRun: true, force: opts.force}, templates, now)
 	if err != nil {
 		render.Err(err.Error())
 		return 1
 	}
-	res.report(opts.dryRun)
+	if opts.dryRun {
+		plan.report(true)
+		return 0
+	}
+
+	// When the user edited files that this version changed, ask before clobbering
+	// them — but only interactively. Non-interactive runs (CI, agents) keep the
+	// safe-by-backup behaviour: apply and preserve the old copy as .old.
+	conflicts := plan.countConflicts()
+	if conflicts > 0 && !opts.force && !opts.yes && stdinIsInteractive() {
+		render.Warn(fmt.Sprintf("%d file(s) you edited differ from this version and would be overridden:", conflicts))
+		for _, c := range plan.changes {
+			if c.kind == kindConflict {
+				render.Info("  ! " + c.rel)
+			}
+		}
+		render.Info("Your current versions are saved as .old before the new ones are written.")
+		if !confirm("Override these files?") {
+			opts.skipConflicts = true
+			render.Info("Keeping your versions untouched. Re-run with --yes to override.")
+		}
+	}
+
+	res, err := updateWorkspace(opts, templates, now)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	res.report(false)
 	return 0
 }
 
@@ -158,14 +201,27 @@ const (
 )
 
 type fileChange struct {
-	rel    string
-	kind   changeKind
-	backup string // workspace-relative .old path created (conflict, non-force)
+	rel     string
+	kind    changeKind
+	backup  string // workspace-relative .old path created (conflict, non-force)
+	skipped bool   // conflict left untouched (user declined the override)
 }
 
 type updateResult struct {
 	changes  []fileChange
 	firstRun bool // no manifest existed: baselines are unknown this run
+}
+
+// countConflicts returns how many managed files differ from this version and the
+// recorded baseline (i.e. the user edited them).
+func (r updateResult) countConflicts() int {
+	n := 0
+	for _, c := range r.changes {
+		if c.kind == kindConflict {
+			n++
+		}
+	}
+	return n
 }
 
 // updateWorkspace reconciles every managed file against its shipped content and
@@ -226,8 +282,15 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 		}
 
 		// Conflict: the file differs from both the shipped version and the known
-		// baseline (or there is no baseline). Preserve the user's copy as .old.
+		// baseline (or there is no baseline).
 		ch := fileChange{rel: f.Rel, kind: kindConflict}
+		if opts.skipConflicts {
+			// The user declined the override: leave their file exactly as-is.
+			ch.skipped = true
+			res.changes = append(res.changes, ch)
+			continue
+		}
+		// Preserve the user's copy as .old, then write the new version.
 		if !opts.force {
 			old := nextOldPath(f.Abs)
 			ch.backup = filepath.ToSlash(workspace.Relative(opts.root, old))
@@ -246,7 +309,13 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 	}
 
 	if !opts.dryRun {
-		if err := recordManifest(opts.root, templates, now); err != nil {
+		skipped := map[string]bool{}
+		for _, c := range res.changes {
+			if c.skipped {
+				skipped[c.rel] = true
+			}
+		}
+		if err := recordManifest(opts.root, templates, now, skipped); err != nil {
 			return res, err
 		}
 	}
@@ -281,7 +350,7 @@ func nextOldPath(abs string) string {
 }
 
 func (r updateResult) report(dryRun bool) {
-	var added, updated, current, conflicts int
+	var added, updated, current, conflicts, skipped int
 	for _, c := range r.changes {
 		switch c.kind {
 		case kindAdded:
@@ -291,7 +360,11 @@ func (r updateResult) report(dryRun bool) {
 		case kindCurrent:
 			current++
 		case kindConflict:
-			conflicts++
+			if c.skipped {
+				skipped++
+			} else {
+				conflicts++
+			}
 		}
 	}
 
@@ -306,9 +379,12 @@ func (r updateResult) report(dryRun bool) {
 		case kindUpdated:
 			render.Info("~ update   " + c.rel)
 		case kindConflict:
-			if c.backup != "" {
+			switch {
+			case c.skipped:
+				render.Info("! skip     " + c.rel + "  (kept your version; --yes to override)")
+			case c.backup != "":
 				render.Info("! merge    " + c.rel + "  (your version kept → " + c.backup + ")")
-			} else {
+			default:
 				render.Info("! overwrite " + c.rel + "  (--force; no backup)")
 			}
 		}
@@ -318,12 +394,14 @@ func (r updateResult) report(dryRun bool) {
 	if dryRun {
 		verb = "Dry run"
 	}
-	render.OK(fmt.Sprintf("%s: %d added, %d updated, %d unchanged, %d conflict(s).", verb, added, updated, current, conflicts))
+	render.OK(fmt.Sprintf("%s: %d added, %d updated, %d unchanged, %d conflict(s), %d skipped.", verb, added, updated, current, conflicts, skipped))
 
 	switch {
 	case dryRun:
 		render.Info("No files were written. Re-run without --dry-run to apply.")
 	case conflicts > 0:
-		render.Info("Review the .old backups, fold in anything you customized, then delete them.")
+		render.Info("Review the .old backups, fold in anything you customized, then delete them (`" + prog() + " clean`).")
+	case skipped > 0:
+		render.Info("Skipped your edited files. Re-run with --yes to take the new versions (yours kept as .old).")
 	}
 }
