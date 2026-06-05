@@ -107,6 +107,9 @@ func walkDir(root, dir string) TreeNode {
 		if e.IsDir() && skipDirs[e.Name()] {
 			continue
 		}
+		if e.Type()&os.ModeSymlink != 0 {
+			continue // don't follow or list symlinks (escape / loop risk)
+		}
 		abs := filepath.Join(dir, e.Name())
 		if e.IsDir() {
 			node.Children = append(node.Children, walkDir(root, abs))
@@ -149,6 +152,13 @@ func ReadFile(root, relPath string) (FileContent, error) {
 	if info.IsDir() {
 		return FileContent{}, fmt.Errorf("is a directory: %s", relPath)
 	}
+	if isSecretFile(filepath.Base(abs)) {
+		return FileContent{
+			Path: filepath.ToSlash(relPath),
+			Lang: "plaintext",
+			Text: "(hidden — looks like a secret/credentials file)",
+		}, nil
+	}
 	if info.Size() > maxViewBytes {
 		return FileContent{
 			Path: filepath.ToSlash(relPath),
@@ -186,7 +196,39 @@ func resolveInWorkspace(root, relPath string) (string, error) {
 	if target != rootAbs && !strings.HasPrefix(target, rootAbs+string(filepath.Separator)) {
 		return "", fmt.Errorf("path not allowed: %s", relPath)
 	}
+	// Symlink-safe containment: resolve symlinks and re-check, so a symlink
+	// inside the workspace can't disclose a file outside it — important once the
+	// dashboard is reachable publicly via --tunnel.
+	rootReal := rootAbs
+	if rr, err := filepath.EvalSymlinks(rootAbs); err == nil {
+		rootReal = rr
+	}
+	targetReal, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return "", fmt.Errorf("path not allowed: %s", relPath)
+	}
+	if targetReal != rootReal && !strings.HasPrefix(targetReal, rootReal+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes workspace: %s", relPath)
+	}
 	return target, nil
+}
+
+// isSecretFile reports whether a filename looks like it holds credentials. The
+// viewer refuses to serve these even with auth, so a leaked token (or a public
+// tunnel) can't dump them. Names only — directories are skipped via skipDirs.
+func isSecretFile(name string) bool {
+	n := strings.ToLower(name)
+	switch {
+	case n == ".env" || strings.HasPrefix(n, ".env."),
+		n == ".npmrc" || n == ".netrc" || n == "credentials",
+		strings.HasPrefix(n, "id_rsa") || strings.HasPrefix(n, "id_ed25519") || strings.HasPrefix(n, "id_dsa"):
+		return true
+	}
+	switch filepath.Ext(n) {
+	case ".pem", ".key", ".tfstate", ".pfx", ".p12", ".keystore":
+		return true
+	}
+	return false
 }
 
 // isBinary reports whether data looks binary (contains a NUL byte in its head).

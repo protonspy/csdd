@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getToken } from './auth'
 
 // useLive subscribes to the server's SSE change stream and returns a version
 // number that increments whenever the workspace changes on disk. Components
@@ -8,7 +9,9 @@ export function useLive(): { version: number; connected: boolean } {
   const [connected, setConnected] = useState(false)
 
   useEffect(() => {
-    const es = new EventSource('/api/events')
+    // EventSource can't set headers, so the token rides as a query param.
+    const t = getToken()
+    const es = new EventSource(t ? `/api/events?token=${encodeURIComponent(t)}` : '/api/events')
     es.addEventListener('open', () => setConnected(true))
     es.addEventListener('change', (e) => {
       setConnected(true)

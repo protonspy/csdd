@@ -20,7 +20,7 @@ func TestServeStartAndShutdown(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serve(ctx, ln, Options{Root: root}) }()
+	go func() { done <- serve(ctx, ln, Options{Root: root}, newAuth(false, "")) }()
 
 	url := "http://" + ln.Addr().String() + "/api/health"
 	var ok bool

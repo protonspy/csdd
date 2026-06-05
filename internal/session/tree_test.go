@@ -1,6 +1,9 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +73,40 @@ func TestReadFileRejectsEscapeAndDirs(t *testing.T) {
 		if _, err := ReadFile(root, p); err == nil {
 			t.Errorf("ReadFile(%q) should have been rejected", p)
 		}
+	}
+}
+
+func TestReadFileBlocksSymlinkEscape(t *testing.T) {
+	root := treeWorkspace(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("topsecret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Skip("symlinks unsupported here: " + err.Error())
+	}
+	if _, err := ReadFile(root, "escape/secret.txt"); err == nil {
+		t.Errorf("reading through a symlink pointing outside root must be rejected")
+	}
+}
+
+func TestReadFileHidesSecrets(t *testing.T) {
+	root := writeWorkspace(t, map[string]string{
+		".env":       "SECRET=x\n",
+		"key.pem":    "-----BEGIN-----\n",
+		"src/app.go": "package main\n",
+	})
+	for _, name := range []string{".env", "key.pem"} {
+		fc, err := ReadFile(root, name)
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", name, err)
+		}
+		if !strings.Contains(fc.Text, "hidden") {
+			t.Errorf("%s content should be hidden, got %q", name, fc.Text)
+		}
+	}
+	if fc, err := ReadFile(root, "src/app.go"); err != nil || !strings.Contains(fc.Text, "package main") {
+		t.Errorf("normal file should still read: err=%v", err)
 	}
 }
 

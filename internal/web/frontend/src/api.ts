@@ -1,7 +1,12 @@
 import type { Overview, SpecDetail, WorkspaceTree, FileContent, TestReport } from './types'
+import { authHeader, requireAuth } from './auth'
 
 async function get<T>(url: string): Promise<T> {
-  const res = await fetch(url)
+  const res = await fetch(url, { headers: { ...authHeader() } })
+  if (res.status === 401) {
+    requireAuth()
+    throw new Error('unauthorized')
+  }
   if (!res.ok) {
     throw new Error(`${url} → ${res.status}`)
   }
