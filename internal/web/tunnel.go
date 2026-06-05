@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,25 @@ import (
 // protocol (request a subdomain, then proxy raw TCP connections) directly in
 // Go — no Node, no third-party dependency.
 const tunnelHost = "localtunnel.me"
+
+// subdomainRE is a single DNS label: lowercase alphanumeric, internal hyphens
+// allowed, 1–63 chars. loca.lt enforces the same shape, so rejecting early
+// gives a clearer error than a remote 4xx.
+var subdomainRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// tunnelEndpoint builds the localtunnel request URL. An empty subdomain asks for
+// a random one (/?new); a non-empty one requests that fixed subdomain so the
+// public URL — and thus loca.lt's per-subdomain interstitial bypass — is stable
+// across restarts. Invalid names are rejected before any network call.
+func tunnelEndpoint(subdomain string) (string, error) {
+	if subdomain == "" {
+		return "https://" + tunnelHost + "/?new", nil
+	}
+	if !subdomainRE.MatchString(subdomain) {
+		return "", fmt.Errorf("invalid --subdomain %q: use 1–63 lowercase letters, digits, or hyphens (no leading/trailing hyphen)", subdomain)
+	}
+	return "https://" + tunnelHost + "/" + subdomain, nil
+}
 
 type tunnelInfo struct {
 	ID      string `json:"id"`
@@ -23,10 +44,11 @@ type tunnelInfo struct {
 }
 
 // startTunnel requests a public URL from localtunnel and starts proxying its
-// connections to the local server. It returns the public URL; the proxy
-// goroutines run until ctx is cancelled.
-func startTunnel(ctx context.Context, localPort int) (string, error) {
-	info, err := requestTunnel(ctx)
+// connections to the local server. A non-empty subdomain requests a fixed public
+// URL (stable across restarts); empty asks for a random one. It returns the
+// public URL; the proxy goroutines run until ctx is cancelled.
+func startTunnel(ctx context.Context, localPort int, subdomain string) (string, error) {
+	info, err := requestTunnel(ctx, subdomain)
 	if err != nil {
 		return "", err
 	}
@@ -42,9 +64,13 @@ func startTunnel(ctx context.Context, localPort int) (string, error) {
 	return info.URL, nil
 }
 
-func requestTunnel(ctx context.Context) (tunnelInfo, error) {
+func requestTunnel(ctx context.Context, subdomain string) (tunnelInfo, error) {
 	var info tunnelInfo
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+tunnelHost+"/?new", nil)
+	endpoint, err := tunnelEndpoint(subdomain)
+	if err != nil {
+		return info, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return info, err
 	}
@@ -93,6 +119,30 @@ func pipe(a, b net.Conn) {
 	<-done
 	a.Close()
 	b.Close()
+}
+
+// tunnelPassword fetches the value loca.lt's "Tunnel website ahead" interstitial
+// asks first-time browser visitors to type: this machine's public IP. Surfacing
+// it in the startup banner turns that one-time click into a copy-paste. Best
+// effort — an empty string just omits the hint.
+func tunnelPassword(ctx context.Context) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://loca.lt/mytunnelpassword", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(body))
 }
 
 func tunnelSleep(ctx context.Context, d time.Duration) {

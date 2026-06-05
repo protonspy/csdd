@@ -43,3 +43,4 @@ go.work.sum
 internal/web/frontend/node_modules/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
+dist/

@@ -146,14 +146,19 @@ function NoReports() {
       </p>
       <pre className="codeblock" style={{ textAlign: 'left', maxWidth: 560, margin: '12px auto' }}>
         <code>{`# Tests (JUnit XML)
-pytest --junitxml=junit.xml
-jest --reporters=default --reporters=jest-junit
-gotestsum --junitfile=junit.xml
+pytest --junitxml=junit.xml                   # Python
+jest --reporters=default --reporters=jest-junit  # TypeScript/JS
+gotestsum --junitfile=junit.xml               # Go
+mvn test                                      # Java → surefire-reports/*.xml
 
-# Coverage (lcov or Cobertura)
-jest --coverage --coverageReporters=lcov     # coverage/lcov.info
-pytest --cov --cov-report=xml                # coverage.xml
-coverage lcov                                # lcov.info`}</code>
+# Coverage (lcov · Cobertura · JaCoCo · Go coverprofile)
+jest --coverage --coverageReporters=lcov      # TS/JS → coverage/lcov.info
+pytest --cov --cov-report=xml                 # Python → coverage.xml
+go test ./... -coverprofile=coverage.out      # Go → coverage.out
+mvn jacoco:report                             # Java → target/site/jacoco/jacoco.xml
+
+# Record it for a spec (npx, or 'csdd' if installed) — --lang: python|typescript|java|go|rust:
+npx @protonspy/csdd spec test-report <feature> --lang go --path tests/`}</code>
       </pre>
     </div>
   )

@@ -32,7 +32,7 @@ function TreeItem({
   selectedPath: string | null
   onOpenFile: (path: string) => void
 }) {
-  const [open, setOpen] = useState(depth < 1) // top-level expanded by default
+  const [open, setOpen] = useState(false) // all folders start collapsed
   const pad = { paddingLeft: 6 + depth * 12 }
 
   if (node.dir) {

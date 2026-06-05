@@ -38,6 +38,21 @@ test, not production code.
 - Run the broader relevant suite (not just the focused test) to catch regressions.
 - Run lint / typecheck if the project has them.
 
+### 5) Record the spec evidence (via the csdd CLI)
+- Run the suite **through `csdd`** so the result is parsed into the spec's
+  traceable evidence file (`specs/<feature>/test-report.json`):
+
+  ```bash
+  csdd spec test-report <feature> --run --lang <python|typescript|java|go|rust> --path <tests-dir>
+  ```
+
+  - `--run` executes the language's default test command (or your `--cmd "..."`),
+    then parses the JUnit + coverage reports it produces into the JSON contract.
+  - A custom `--cmd` is validated against the language's expected tooling
+    (e.g. Python → `pytest`, Java → `mvn`/`jacoco`); a mismatch is recorded as an attention.
+  - The command exits non-zero when tests fail, so it gates the task.
+- The dashboard (`csdd web`) surfaces these per-spec metrics, paths, and attentions.
+
 ## Gotchas
 
 - One task per invocation. Do not batch tasks "to save time".
@@ -48,6 +63,8 @@ test, not production code.
 ## Verification Before Reporting
 
 - Run: the focused test (RED then GREEN), then the relevant suite.
+- Record: the run via `csdd spec test-report <feature> --run --lang <lang>` so the
+  spec carries up-to-date test/coverage evidence.
 - Check: the new behavior is exercised and the suite is green.
 - If blocked: report the blocked step explicitly; do not mark the task done.
 
@@ -55,4 +72,5 @@ test, not production code.
 - [ ] A test existed that failed before the change (or documented why not).
 - [ ] The test passes after the minimal implementation.
 - [ ] The relevant suite + lint/typecheck pass.
+- [ ] `csdd spec test-report <feature> --run …` recorded the evidence (tests green, coverage updated).
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

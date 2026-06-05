@@ -3,11 +3,15 @@ package cli
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -568,13 +572,18 @@ func specDelete(args []string) int {
 // parses a JUnit/lcov/Cobertura report when given, or takes explicit counts.
 func specTestReport(args []string) int {
 	fs := flag.NewFlagSet("spec test-report", flag.ContinueOnError)
-	var root, junit, coverage, command string
+	var root, junit, coverage, command, lang, path, cmd string
+	var run bool
 	var total, passed, failed, skipped, covered, lines int
 	var pct float64
 	addRoot(fs, &root)
 	fs.StringVar(&junit, "junit", "", "JUnit XML report to parse for test counts.")
-	fs.StringVar(&coverage, "coverage", "", "lcov/Cobertura report to parse for coverage.")
+	fs.StringVar(&coverage, "coverage", "", "Coverage report to parse (lcov/Cobertura/JaCoCo/Go coverprofile).")
 	fs.StringVar(&command, "command", "", "Test command, recorded for display.")
+	fs.StringVar(&lang, "lang", "", "Language for --run defaults and coverage discovery: python | typescript | java | go | rust.")
+	fs.StringVar(&path, "path", "", "Directory to run in / auto-discover JUnit+coverage reports under (e.g. tests/). Defaults to the workspace root.")
+	fs.BoolVar(&run, "run", false, "Execute the tests (per-language default, or --cmd) before parsing the reports they produce.")
+	fs.StringVar(&cmd, "cmd", "", "Test command to execute with --run (overrides the per-language default).")
 	fs.IntVar(&total, "total", -1, "Explicit test total (when no --junit).")
 	fs.IntVar(&passed, "passed", -1, "Explicit tests passed.")
 	fs.IntVar(&failed, "failed", -1, "Explicit tests failed.")
@@ -587,7 +596,7 @@ func specTestReport(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " spec test-report FEATURE [--junit FILE] [--coverage FILE] [--command \"...\"]")
+		render.Err("usage: " + prog() + " spec test-report FEATURE [--run [--cmd \"...\"]] [--lang LANG] [--path DIR] [--junit FILE] [--coverage FILE]")
 		return 1
 	}
 	feature := positionals[0]
@@ -608,24 +617,97 @@ func specTestReport(args []string) int {
 		Command:   command,
 	}
 
+	// Parsed summaries (from explicit reports, a --run execution, or discovery).
+	var ts *session.TestSummary
+	var cov *session.Coverage
+
 	if junit != "" {
-		ts, err := session.ParseJUnit(r, junit)
+		ts, err = session.ParseJUnit(r, junit)
 		if err != nil {
 			render.Err(err.Error())
 			return 1
 		}
+	}
+	if coverage != "" {
+		cov, err = session.ParseCoverageFile(r, coverage)
+		if err != nil {
+			render.Err(err.Error())
+			return 1
+		}
+	}
+
+	// Run the tests and/or auto-discover the reports they produce, scoped by
+	// --path and filtered by --lang.
+	ranExit, ran := 0, false
+	if run || lang != "" || path != "" {
+		if _, ok := session.CoverageFormatsForLang(lang); !ok {
+			render.Err("unsupported --lang " + strconv.Quote(lang) + "; supported: " + strings.Join(session.SupportedLangs(), ", "))
+			return 1
+		}
+		dir := r
+		if path != "" {
+			if filepath.IsAbs(path) {
+				dir = path
+			} else {
+				dir = filepath.Join(r, path)
+			}
+			if !pathExists(dir) {
+				render.Err("--path not found: " + path)
+				return 1
+			}
+		}
+		if run {
+			toRun := cmd
+			if toRun == "" {
+				dc, ok := session.DefaultTestCommand(lang)
+				if !ok {
+					render.Err("with --run, pass --cmd \"...\" or a --lang that has a default (python|typescript|java|go|rust)")
+					return 1
+				}
+				toRun = dc
+			} else if ok, markers := session.ValidateTestCommandForLang(lang, cmd); !ok {
+				// The override doesn't look like this language's test tooling —
+				// flag it (and record it) but don't block a deliberate custom run.
+				msg := fmt.Sprintf("--cmd does not look like a %s test command (expected one of: %s)", lang, strings.Join(markers, ", "))
+				render.Warn(msg)
+				rep.Attentions = append(rep.Attentions, msg)
+			}
+			rep.Command = toRun
+			render.Info("running tests: " + toRun + "  (in " + workspace.Relative(r, dir) + ")")
+			ranExit = runTestCommand(dir, toRun)
+			ran = true
+			if ranExit == 0 {
+				render.OK("test command finished (exit 0)")
+			} else {
+				render.Warn(fmt.Sprintf("test command exited with code %d — recording reports anyway", ranExit))
+			}
+		}
+		dts, dcov := session.DiscoverReport(r, dir, lang)
+		if ts == nil {
+			ts = dts
+		}
+		if cov == nil {
+			cov = dcov
+		}
+	}
+
+	// Fold tests: parsed summary first, else explicit counts.
+	if ts != nil {
 		rep.Tests = &session.SpecTestCounts{Total: ts.Total, Passed: ts.Passed, Failed: ts.Failed, Skipped: ts.Skipped}
+		if ts.Source != "" {
+			rep.TestPaths = appendUnique(rep.TestPaths, ts.Source)
+		}
+		rep.Attentions = append(rep.Attentions, testAttentions(ts)...)
 	} else if total >= 0 || passed >= 0 || failed >= 0 || skipped >= 0 {
 		rep.Tests = &session.SpecTestCounts{Total: nz(total), Passed: nz(passed), Failed: nz(failed), Skipped: nz(skipped)}
 	}
 
-	if coverage != "" {
-		cov, err := session.ParseCoverageFile(r, coverage)
-		if err != nil {
-			render.Err(err.Error())
-			return 1
-		}
+	// Fold coverage: parsed summary first, else explicit counts.
+	if cov != nil {
 		rep.Coverage = &session.SpecCovSummary{Pct: cov.Pct, Covered: cov.Covered, Lines: cov.Lines}
+		if cov.Source != "" {
+			rep.TestPaths = appendUnique(rep.TestPaths, cov.Source)
+		}
 	} else if pct >= 0 || covered >= 0 || lines >= 0 {
 		c := &session.SpecCovSummary{Covered: nz(covered), Lines: nz(lines)}
 		switch {
@@ -637,8 +719,12 @@ func specTestReport(args []string) int {
 		rep.Coverage = c
 	}
 
+	if ran && ranExit != 0 {
+		rep.Attentions = append([]string{fmt.Sprintf("test command exited with code %d", ranExit)}, rep.Attentions...)
+	}
+
 	if rep.Tests == nil && rep.Coverage == nil {
-		render.Err("nothing to record: pass --junit/--coverage or explicit --total/--passed/--pct flags")
+		render.Err("nothing to record: pass --run, --junit/--coverage, --lang/--path, or explicit --total/--passed/--pct flags")
 		return 1
 	}
 
@@ -659,7 +745,65 @@ func specTestReport(args []string) int {
 	if rep.Coverage != nil {
 		render.Info(fmt.Sprintf("coverage: %.1f%% (%d/%d lines)", rep.Coverage.Pct, rep.Coverage.Covered, rep.Coverage.Lines))
 	}
+	for _, a := range rep.Attentions {
+		render.Warn(a)
+	}
+	// A failed test run is reflected in the exit code so callers (CI, MCP) can gate.
+	if ran && ranExit != 0 {
+		return 1
+	}
 	return 0
+}
+
+// runTestCommand executes a test command string in dir via the platform shell,
+// streaming its output, and returns its exit code (-1 if it could not start).
+func runTestCommand(dir, command string) int {
+	var c *exec.Cmd
+	if runtime.GOOS == "windows" {
+		c = exec.Command("cmd", "/c", command)
+	} else {
+		c = exec.Command("sh", "-c", command)
+	}
+	c.Dir = dir
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		return -1
+	}
+	return 0
+}
+
+// testAttentions derives the key unit-test signals worth flagging: failing tests
+// (capped) and a skipped-count note.
+func testAttentions(ts *session.TestSummary) []string {
+	var out []string
+	const cap = 5
+	for i, f := range ts.Failures {
+		if i >= cap {
+			out = append(out, fmt.Sprintf("… +%d more failing test(s)", len(ts.Failures)-cap))
+			break
+		}
+		label := strings.TrimSpace(f.Suite + " / " + f.Name)
+		out = append(out, "FAIL "+strings.TrimPrefix(label, "/ "))
+	}
+	if ts.Skipped > 0 {
+		out = append(out, fmt.Sprintf("%d test(s) skipped", ts.Skipped))
+	}
+	return out
+}
+
+// appendUnique appends s to xs unless already present.
+func appendUnique(xs []string, s string) []string {
+	for _, x := range xs {
+		if x == s {
+			return xs
+		}
+	}
+	return append(xs, s)
 }
 
 // nz clamps an "unset" (-1) flag value to 0.

@@ -52,6 +52,16 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
   ["csdd_spec_approve", { feature: "f", phase: "design", force: true }, ["spec", "approve", "f", "--phase", "design", "--force"]],
   ["csdd_spec_validate", { feature: "f" }, ["spec", "validate", "f"]],
   ["csdd_spec_delete", { feature: "f", force: true }, ["spec", "delete", "f", "--force"]],
+  [
+    "csdd_spec_test_report",
+    { feature: "f", lang: "go", path: "tests/" },
+    ["spec", "test-report", "f", "--lang", "go", "--path", "tests/"],
+  ],
+  [
+    "csdd_spec_test_report",
+    { feature: "f", run: true, cmd: "go test ./...", junit: "junit.xml", coverage: "coverage.out", root: "/p" },
+    ["spec", "test-report", "f", "--run", "--cmd", "go test ./...", "--junit", "junit.xml", "--coverage", "coverage.out", "--root", "/p"],
+  ],
 
   // skill
   ["csdd_skill_create", { name: "s", description: "d" }, ["skill", "create", "s", "--description", "d"]],

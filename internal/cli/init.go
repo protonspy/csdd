@@ -257,7 +257,7 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 	}
 	// Record the manifest of csdd-managed artifacts so a later `csdd update` can
 	// tell pristine shipped files from ones the user has since edited.
-	if err := recordManifest(root, templates, time.Now()); err != nil {
+	if err := recordManifest(root, templates, time.Now(), nil); err != nil {
 		return c, err
 	}
 	return c, nil

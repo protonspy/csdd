@@ -94,4 +94,47 @@ export const specTools: ToolDef[] = [
     inputSchema: { feature, force: forceField, root: rootField },
     toArgs: (p) => ["spec", "delete", p.feature, ...bool("--force", p.force), ...rootArg(p)],
   },
+  {
+    name: "csdd_spec_test_report",
+    title: "Spec test report",
+    description:
+      "Record per-spec unit-test evidence into specs/<feature>/test-report.json (surfaced by the dashboard). With run=true it executes the tests (the per-language default command, or cmd) and parses the JUnit + coverage reports they produce into the JSON contract; lang/path auto-discover reports (python|typescript|java|go|rust); or pass an explicit junit and/or coverage file. The run exits non-zero when tests fail, so it gates the task.",
+    inputSchema: {
+      feature,
+      run: z
+        .boolean()
+        .optional()
+        .describe("Execute the tests before parsing (per-language default command, or cmd)."),
+      cmd: z
+        .string()
+        .optional()
+        .describe("Test command to execute with run=true (overrides the per-language default; validated against the language's tooling)."),
+      lang: z
+        .enum(["python", "typescript", "java", "go", "rust"])
+        .optional()
+        .describe("Language: selects the run default command and the coverage format to auto-discover."),
+      path: z
+        .string()
+        .optional()
+        .describe("Directory to run in / discover JUnit+coverage reports under (e.g. tests/). Defaults to the workspace root."),
+      junit: z.string().optional().describe("Explicit JUnit XML report to parse for test counts."),
+      coverage: z
+        .string()
+        .optional()
+        .describe("Explicit coverage report to parse (lcov/Cobertura/JaCoCo/Go coverprofile)."),
+      root: rootField,
+    },
+    toArgs: (p) => [
+      "spec",
+      "test-report",
+      p.feature,
+      ...bool("--run", p.run),
+      ...flag("--cmd", p.cmd),
+      ...flag("--lang", p.lang),
+      ...flag("--path", p.path),
+      ...flag("--junit", p.junit),
+      ...flag("--coverage", p.coverage),
+      ...rootArg(p),
+    ],
+  },
 ];

@@ -6,6 +6,44 @@ import (
 	"time"
 )
 
+// TestTunnelEndpoint covers the localtunnel request URL: a random subdomain when
+// none is requested, a fixed subdomain when one is, and rejection of names that
+// are not valid DNS labels (which loca.lt would reject anyway).
+func TestTunnelEndpoint(t *testing.T) {
+	cases := []struct {
+		name      string
+		subdomain string
+		want      string
+		wantErr   bool
+	}{
+		{"random when empty", "", "https://localtunnel.me/?new", false},
+		{"fixed subdomain", "csdd-demo", "https://localtunnel.me/csdd-demo", false},
+		{"single char", "a", "https://localtunnel.me/a", false},
+		{"rejects uppercase", "Csdd", "", true},
+		{"rejects underscore", "bad_name", "", true},
+		{"rejects leading hyphen", "-bad", "", true},
+		{"rejects trailing hyphen", "bad-", "", true},
+		{"rejects dot", "a.b", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := tunnelEndpoint(c.subdomain)
+			if c.wantErr {
+				if err == nil {
+					t.Fatalf("tunnelEndpoint(%q) = %q, want error", c.subdomain, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("tunnelEndpoint(%q) unexpected error: %v", c.subdomain, err)
+			}
+			if got != c.want {
+				t.Errorf("tunnelEndpoint(%q) = %q, want %q", c.subdomain, got, c.want)
+			}
+		})
+	}
+}
+
 // TestPipeRelays checks the tunnel's bidirectional proxy without any network.
 func TestPipeRelays(t *testing.T) {
 	ac, as := net.Pipe()
