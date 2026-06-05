@@ -3,6 +3,7 @@ import { api } from './api'
 import { useLive } from './useLive'
 import type { Artifact, Overview } from './types'
 import { Sidebar } from './components/Sidebar'
+import { SpecsPage } from './components/SpecsPage'
 import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
@@ -11,16 +12,26 @@ import { AuthScreen } from './components/AuthScreen'
 
 export type ResourceKind = 'agent' | 'skill' | 'steering'
 
+// View is the top-level workspace area chosen from the header tabs. Specs and
+// Tests are full-width pages; Resources and Files use the contextual sidebar.
+export type View = 'specs' | 'resources' | 'files' | 'tests'
+const VIEWS: { id: View; label: string }[] = [
+  { id: 'specs', label: 'Specs' },
+  { id: 'resources', label: 'Resources' },
+  { id: 'files', label: 'Files' },
+  { id: 'tests', label: 'Tests' },
+]
+
 export type Selection =
   | { kind: 'spec'; feature: string }
   | { kind: 'resource'; resource: ResourceKind; artifact: Artifact }
   | { kind: 'file'; path: string }
-  | { kind: 'tests' }
   | null
 
 export function App() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [view, setView] = useState<View>('specs')
   const [selection, setSelection] = useState<Selection>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [needsAuth, setNeedsAuth] = useState(window.location.pathname === '/auth')
@@ -48,15 +59,14 @@ export function App() {
     refresh()
   }, [refresh, version])
 
-  // Auto-select the first spec once the overview loads.
-  useEffect(() => {
-    const specs = overview?.specs ?? []
-    if (!selection && specs.length > 0) {
-      setSelection({ kind: 'spec', feature: specs[0].feature })
-    }
-  }, [overview, selection])
+  // Switching the top-level view clears the selection so each area opens on its
+  // own landing screen (the Specs list, an empty prompt for Resources/Files).
+  const changeView = (v: View) => {
+    setView(v)
+    setSelection(null)
+    setSidebarOpen(false)
+  }
 
-  // Picking something closes the mobile drawer.
   const handleSelect = (s: Selection) => {
     setSelection(s)
     setSidebarOpen(false)
@@ -66,21 +76,36 @@ export function App() {
     return <AuthScreen />
   }
 
+  const hasSidebar = view === 'resources' || view === 'files'
+
   return (
     <div className="app">
       <header className="topbar">
-        <button
-          className="menu-btn"
-          onClick={() => setSidebarOpen((o) => !o)}
-          aria-label="Toggle sidebar"
-          aria-expanded={sidebarOpen}
-        >
-          ☰
-        </button>
+        {hasSidebar && (
+          <button
+            className="menu-btn"
+            onClick={() => setSidebarOpen((o) => !o)}
+            aria-label="Toggle sidebar"
+            aria-expanded={sidebarOpen}
+          >
+            ☰
+          </button>
+        )}
         <div className="brand">
           <span className="logo">csdd</span>
           <span className="brand-sub">web</span>
         </div>
+        <nav className="top-tabs">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              className={`top-tab ${view === v.id ? 'active' : ''}`}
+              onClick={() => changeView(v.id)}
+            >
+              {v.label}
+            </button>
+          ))}
+        </nav>
         <div className="topbar-spacer" />
         {overview && (
           <div className="root-path" title={overview.root}>
@@ -94,43 +119,56 @@ export function App() {
       </header>
 
       <div className="layout">
-        <Sidebar
-          overview={overview}
-          selection={selection}
-          onSelect={handleSelect}
-          version={version}
-          open={sidebarOpen}
-        />
-        {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+        {hasSidebar && (
+          <Sidebar
+            overview={overview}
+            view={view}
+            selection={selection}
+            onSelect={handleSelect}
+            version={version}
+            open={sidebarOpen}
+          />
+        )}
+        {hasSidebar && sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
         <main className="content">
           {error && <div className="banner error">Could not reach the server: {error}</div>}
-          {selection?.kind === 'spec' && <SpecView feature={selection.feature} version={version} />}
-          {selection?.kind === 'resource' && (
-            <ResourceView resource={selection.resource} artifact={selection.artifact} version={version} />
-          )}
-          {selection?.kind === 'file' && <FileViewer path={selection.path} version={version} />}
-          {selection?.kind === 'tests' && <TestsView version={version} />}
-          {!selection && <EmptyState overview={overview} />}
+
+          {view === 'specs' &&
+            (selection?.kind === 'spec' ? (
+              <SpecView feature={selection.feature} version={version} onBack={() => setSelection(null)} />
+            ) : (
+              <SpecsPage
+                specs={overview?.specs ?? null}
+                onOpen={(feature) => setSelection({ kind: 'spec', feature })}
+              />
+            ))}
+
+          {view === 'resources' &&
+            (selection?.kind === 'resource' ? (
+              <ResourceView resource={selection.resource} artifact={selection.artifact} version={version} />
+            ) : (
+              <EmptyPrompt title="Resources" hint="Pick an agent, skill, or steering file on the left." />
+            ))}
+
+          {view === 'files' &&
+            (selection?.kind === 'file' ? (
+              <FileViewer path={selection.path} version={version} />
+            ) : (
+              <EmptyPrompt title="Files" hint="Pick a file on the left to view it." />
+            ))}
+
+          {view === 'tests' && <TestsView version={version} />}
         </main>
       </div>
     </div>
   )
 }
 
-function EmptyState({ overview }: { overview: Overview | null }) {
-  if (!overview) {
-    return <div className="empty">Loading workspace…</div>
-  }
-  if ((overview.specs?.length ?? 0) === 0) {
-    return (
-      <div className="empty">
-        <h2>No specs yet</h2>
-        <p>
-          Create one with <code>csdd spec init &lt;feature&gt;</code>, then generate its requirements.
-          The dashboard updates live as you go.
-        </p>
-      </div>
-    )
-  }
-  return <div className="empty">Select a spec or a file on the left.</div>
+function EmptyPrompt({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="empty">
+      <h2>{title}</h2>
+      <p className="muted">{hint}</p>
+    </div>
+  )
 }
