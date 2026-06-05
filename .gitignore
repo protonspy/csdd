@@ -36,9 +36,10 @@ go.work.sum
 /csdd
 /csdd.md
 
-# Web dashboard tooling. node_modules is not committed; the BUILT dashboard in
-# internal/web/dist/ IS committed (it is embedded into the binary, so a plain
-# `go build` / `go install` works without Node).
+# Web dashboard. Neither node_modules nor the built bundle is committed — CI and
+# the release pipeline run `make web-build` to produce internal/web/dist before
+# `go build`. The committed dist/.gitkeep keeps //go:embed compiling for source
+# builds (which then serve a "run make web-build" placeholder).
 internal/web/frontend/node_modules/
 internal/web/dist/*
-*/dist/*
+!internal/web/dist/.gitkeep

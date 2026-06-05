@@ -1,0 +1,5 @@
+# Keep internal/web/dist/ in git so `//go:embed all:dist` always compiles, even
+# on a source checkout where the frontend has not been built. The actual built
+# bundle (index.html + assets/) is produced by `make web-build` and is NOT
+# committed (see .gitignore). CI and the release pipeline build it before
+# `go build`; a source build with only this marker serves a placeholder page.

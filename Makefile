@@ -3,7 +3,7 @@
 # Day-to-day:
 #   make build                       # local binary -> ./csdd (embeds the committed web dist)
 #   make check                       # gofmt + vet + race tests (the CI gate)
-#   make web-build                   # rebuild the web dashboard into internal/web/dist (commit it)
+#   make web-build                   # rebuild the web dashboard into internal/web/dist (build artifact)
 #
 # Release (manual — dispatches the release workflow; CI builds + publishes npm):
 #   make release VERSION=v0.2.0      # = gh workflow run release.yml --field version=v0.2.0
@@ -41,13 +41,15 @@ build: ## Build the binary locally (-> ./csdd); set VERSION to stamp it
 	go build -trimpath -ldflags '$(LDFLAGS)' -o csdd ./cmd/csdd
 
 # The `csdd web` dashboard is a React/Vite/Monaco app under internal/web/frontend.
-# It builds into internal/web/dist, which is committed and embedded into the
-# binary via //go:embed — so `go build`/`go install` work without Node. Run this
-# after changing anything under internal/web/frontend, and commit the result.
+# It builds into internal/web/dist, which is embedded into the binary via
+# //go:embed. The built bundle is NOT committed (only dist/.gitkeep is), so run
+# this before building a binary you intend to ship the dashboard with. `make
+# build` from a fresh source tree embeds a placeholder until you run this.
 .PHONY: web-build
-web-build: ## Rebuild the web dashboard (npm) into internal/web/dist (commit the result)
+web-build: ## Rebuild the web dashboard (npm) into internal/web/dist (build artifact, not committed)
 	npm --prefix internal/web/frontend ci
 	npm --prefix internal/web/frontend run build
+	@touch internal/web/dist/.gitkeep
 
 .PHONY: test
 test: ## Run tests (race + coverage)
@@ -75,7 +77,7 @@ require-version:
 	@case '$(VERSION)' in v*.*.*) : ;; *) echo "set a release VERSION like v0.1.1 (got '$(VERSION)'); e.g. make $(MAKECMDGOALS) VERSION=v0.1.1" >&2; exit 1 ;; esac
 
 .PHONY: dist
-dist: require-version ## Cross-compile every npm target into $(DIST)/ (set VERSION=vX.Y.Z)
+dist: require-version web-build ## Cross-compile every npm target into $(DIST)/ (set VERSION=vX.Y.Z)
 	@rm -rf '$(DIST)' && mkdir -p '$(DIST)'
 	@set -euo pipefail; for p in $(PLATFORMS); do \
 	  goos=$${p%/*}; goarch=$${p#*/}; bin=csdd; [ "$$goos" = windows ] && bin=csdd.exe; \

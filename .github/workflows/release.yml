@@ -62,6 +62,19 @@ jobs:
           go-version: '1.22'
           cache: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: internal/web/frontend/package-lock.json
+
+      # Build the dashboard into internal/web/dist so //go:embed picks up the
+      # real UI (the bundle is not committed). Must run before `go build`.
+      - name: Build web dashboard
+        run: |
+          npm --prefix internal/web/frontend ci
+          npm --prefix internal/web/frontend run build
+
       - name: Build & package
         env:
           GOOS: ${{ matrix.goos }}

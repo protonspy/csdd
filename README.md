@@ -63,6 +63,10 @@ artifacts. And it's still a single binary: the React/Vite/Monaco UI is built
 ahead of time and embedded, so it runs **offline** with no extra runtime
 dependency. Binds to `127.0.0.1` by default.
 
+> The prebuilt binaries (npm / releases) embed the dashboard. Building from
+> source (`go install …` or `go build`)? Run `make web-build` first to embed the
+> UI — otherwise `csdd web` serves a placeholder page (the API still works).
+
 ---
 
 ## Install
