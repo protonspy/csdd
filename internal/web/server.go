@@ -26,7 +26,6 @@ type Options struct {
 	Root        string // workspace root (already resolved by the caller)
 	Host        string // bind address; defaults to 127.0.0.1
 	Port        int    // TCP port; 0 picks a free port
-	OpenBrowser bool   // best-effort open the default browser on start
 	Auth        bool   // require a token on the API
 	Password    string // explicit token (else a random one is generated when Auth)
 	Tunnel      bool   // expose publicly via a tunnel provider (forces Auth)
@@ -43,7 +42,7 @@ type Options struct {
 // unit-tested directly.
 func resolveTunnelOptions(opts Options) (Options, error) {
 	if opts.Provider == "" {
-		opts.Provider = providerLocaltunnel
+		opts.Provider = providerPinggy
 	}
 	if opts.Tunnel {
 		if !isKnownProvider(opts.Provider) {
@@ -97,9 +96,6 @@ func Serve(opts Options) int {
 	}
 
 	printStartup(localURL, publicURL, opts.Provider, tunnelPass, a, opts.Root)
-	if opts.OpenBrowser {
-		openBrowser(entryURL(localURL, a))
-	}
 
 	if err := serve(ctx, ln, opts, a); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		render.Err("csdd web: " + err.Error())

@@ -25,6 +25,16 @@ func TestResolveTunnelOptionsForcesAuth(t *testing.T) {
 	}
 }
 
+func TestResolveTunnelOptionsDefaultsToPinggy(t *testing.T) {
+	got, err := resolveTunnelOptions(Options{Tunnel: true}) // no provider given
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Provider != providerPinggy {
+		t.Errorf("default provider = %q, want pinggy", got.Provider)
+	}
+}
+
 func TestResolveTunnelOptionsRejections(t *testing.T) {
 	if _, err := resolveTunnelOptions(Options{Tunnel: true, Provider: "ngrok"}); err == nil {
 		t.Error("unknown provider should be rejected")

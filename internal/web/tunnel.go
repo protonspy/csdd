@@ -36,9 +36,9 @@ func isKnownProvider(p string) bool {
 // token-guarded regardless of provider.
 func startTunnel(ctx context.Context, localPort int, opts Options) (string, error) {
 	switch opts.Provider {
-	case providerPinggy:
+	case providerPinggy, "": // pinggy is the default
 		return startPinggy(ctx, localPort, opts.PinggyToken)
-	case providerLocaltunnel, "":
+	case providerLocaltunnel:
 		return startLocaltunnel(ctx, localPort, opts.Subdomain)
 	default:
 		return "", fmt.Errorf("unknown tunnel provider %q (use localtunnel or pinggy)", opts.Provider)

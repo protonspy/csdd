@@ -165,8 +165,8 @@ EXAMPLES
   %[1]s mcp validate
   %[1]s export kiro                                          # .kiro/steering + .kiro/specs
   %[1]s export codex --out ./build                           # AGENTS.md + .codex/config.toml
-  %[1]s web                                                  # open the live dashboard in your browser
-  %[1]s web --port 8080 --no-open                            # custom port; print URL instead of opening
+  %[1]s web                                                  # serve the live dashboard; prints the local URL
+  %[1]s web --tunnel                                         # expose it publicly (pinggy by default; forces auth)
 `, prog())
 }
 

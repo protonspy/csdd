@@ -18,23 +18,29 @@ func runWeb(args []string) int {
 	fs := flag.NewFlagSet("web", flag.ContinueOnError)
 	var root, host, password, subdomain, provider, pinggyToken string
 	var port int
-	var noOpen, noAuth, tunnel bool
+	var noAuth, tunnel bool
 	addRoot(fs, &root)
 	fs.StringVar(&host, "host", "127.0.0.1", "Bind address (default: 127.0.0.1, localhost only).")
 	fs.IntVar(&port, "port", 7777, "Port to listen on (0 picks a free port).")
-	fs.BoolVar(&noOpen, "no-open", false, "Do not open a browser on start.")
 	fs.StringVar(&password, "password", os.Getenv("CSDD_PASSWORD"), "API token (default: random; or CSDD_PASSWORD env).")
 	fs.BoolVar(&noAuth, "no-auth", false, "Disable API authentication (localhost only).")
-	fs.BoolVar(&tunnel, "tunnel", false, "Expose the dashboard publicly via a tunnel provider (forces auth).")
-	fs.StringVar(&provider, "provider", "localtunnel", "Tunnel provider: localtunnel | pinggy.")
-	fs.StringVar(&subdomain, "subdomain", "", "localtunnel: request a fixed subdomain for a stable public URL (implies --tunnel).")
+	fs.BoolVar(&tunnel, "tunnel", false, "Expose the dashboard publicly via a tunnel provider (forces auth; default provider: pinggy).")
+	fs.StringVar(&provider, "provider", "pinggy", "Tunnel provider: pinggy (default) | localtunnel.")
+	fs.StringVar(&subdomain, "subdomain", "", "localtunnel: request a fixed subdomain for a stable public URL (implies --tunnel via localtunnel).")
 	fs.StringVar(&pinggyToken, "pinggy-token", "", "pinggy: Pro access token (custom domains). Saved to .pinggy-token for reuse; also read from CSDD_PINGGY_TOKEN.")
 	if _, err := parseFlags(fs, args); err != nil {
 		return failOnFlagParse(err)
 	}
 	explicitToken := pinggyToken
-	if subdomain != "" || explicitToken != "" || provider != "localtunnel" {
-		tunnel = true // any tunnel-specific flag implies --tunnel
+	// Decide tunnelling from flags the user actually set (not defaults), so a plain
+	// `csdd web` never tunnels even though --provider now defaults to pinggy.
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if set["subdomain"] && !set["provider"] {
+		provider = "localtunnel" // --subdomain is localtunnel-specific
+	}
+	if set["provider"] || set["subdomain"] || set["pinggy-token"] {
+		tunnel = true // any explicit tunnel flag enables the tunnel
 	}
 	r, err := workspace.Resolve(root)
 	if err != nil {
@@ -43,14 +49,13 @@ func runWeb(args []string) int {
 	}
 	// pinggy token: an explicit --pinggy-token is persisted (and gitignored) so it
 	// need not be passed again; otherwise fall back to env, then the saved file.
-	if provider == "pinggy" {
+	if tunnel && provider == "pinggy" {
 		pinggyToken = resolvePinggyToken(r, explicitToken)
 	}
 	return web.Serve(web.Options{
 		Root:        r,
 		Host:        host,
 		Port:        port,
-		OpenBrowser: !noOpen,
 		Auth:        !noAuth,
 		Password:    password,
 		Tunnel:      tunnel,
