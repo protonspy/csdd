@@ -17,6 +17,9 @@ export interface TaskStats {
 export interface Artifact {
   name: string
   path: string
+  description?: string // agents, skills, steering(auto)
+  tools?: string // agents
+  inclusion?: string // steering: always | fileMatch | manual | auto
 }
 
 export interface SpecCard {

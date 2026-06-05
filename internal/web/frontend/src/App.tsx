@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { useLive } from './useLive'
-import type { Overview } from './types'
+import type { Artifact, Overview } from './types'
 import { Sidebar } from './components/Sidebar'
 import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
+import { ResourceView } from './components/ResourceView'
 import { AuthScreen } from './components/AuthScreen'
+
+export type ResourceKind = 'agent' | 'skill' | 'steering'
 
 export type Selection =
   | { kind: 'spec'; feature: string }
+  | { kind: 'resource'; resource: ResourceKind; artifact: Artifact }
   | { kind: 'file'; path: string }
   | { kind: 'tests' }
   | null
@@ -101,6 +105,9 @@ export function App() {
         <main className="content">
           {error && <div className="banner error">Could not reach the server: {error}</div>}
           {selection?.kind === 'spec' && <SpecView feature={selection.feature} version={version} />}
+          {selection?.kind === 'resource' && (
+            <ResourceView resource={selection.resource} artifact={selection.artifact} version={version} />
+          )}
           {selection?.kind === 'file' && <FileViewer path={selection.path} version={version} />}
           {selection?.kind === 'tests' && <TestsView version={version} />}
           {!selection && <EmptyState overview={overview} />}

@@ -211,6 +211,98 @@ code {
   gap: 7px;
   transition: border-color 0.12s, background 0.12s;
 }
+
+/* ---- Resource rows (agents / skills / steering) ---------------------- */
+.resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.resource-row {
+  text-align: left;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.resource-row:hover {
+  border-color: var(--border-2);
+}
+.resource-row.active {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(240, 162, 59, 0.08), var(--bg-2));
+}
+.resource-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.resource-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-desc {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---- Resource detail view -------------------------------------------- */
+.resource-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+.resource-view-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.resource-view-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.resource-view-title h1 {
+  font-size: 18px;
+  margin: 0;
+  font-family: var(--mono);
+}
+.resource-view-desc {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.resource-view-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+}
+.meta-tag {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.meta-tag b {
+  color: var(--text);
+  font-family: var(--mono);
+}
+.resource-view-body {
+  padding: 4px 20px 24px;
+}
 .spec-row:hover {
   border-color: var(--border-2);
 }
