@@ -28,8 +28,32 @@ type Options struct {
 	OpenBrowser bool   // best-effort open the default browser on start
 	Auth        bool   // require a token on the API
 	Password    string // explicit token (else a random one is generated when Auth)
-	Tunnel      bool   // expose publicly via localtunnel (forces Auth)
-	Subdomain   string // requested tunnel subdomain (stable URL); empty = random
+	Tunnel      bool   // expose publicly via a tunnel provider (forces Auth)
+	Provider    string // tunnel provider: "localtunnel" (default) or "pinggy"
+	Subdomain   string // localtunnel: requested subdomain (stable URL); empty = random
+	PinggyToken string // pinggy: access token for the Pro tier (custom domains); empty = free
+}
+
+// resolveTunnelOptions applies the tunnel safety policy: it defaults the
+// provider and, whenever a tunnel is requested, forces the API token on for
+// EVERY provider (so a public URL can never reach project data unauthenticated —
+// see newMux: only the static SPA shell and /api/health are public) and rejects
+// an unknown provider or a weak explicit password. Pure, so the guarantee is
+// unit-tested directly.
+func resolveTunnelOptions(opts Options) (Options, error) {
+	if opts.Provider == "" {
+		opts.Provider = providerLocaltunnel
+	}
+	if opts.Tunnel {
+		if !isKnownProvider(opts.Provider) {
+			return opts, fmt.Errorf("unknown --provider %s (use localtunnel or pinggy)", opts.Provider)
+		}
+		opts.Auth = true // never expose the API publicly without a token
+		if opts.Password != "" && len(opts.Password) < 8 {
+			return opts, fmt.Errorf("refusing to tunnel with a weak --password (<8 chars). Use a stronger one, or omit it for a random token")
+		}
+	}
+	return opts, nil
 }
 
 // Serve starts the dashboard and blocks until interrupted (Ctrl-C). It returns
@@ -38,12 +62,10 @@ func Serve(opts Options) int {
 	if opts.Host == "" {
 		opts.Host = "127.0.0.1"
 	}
-	if opts.Tunnel {
-		opts.Auth = true // never expose the API publicly without a token
-		if opts.Password != "" && len(opts.Password) < 8 {
-			render.Err("refusing to tunnel with a weak --password (<8 chars). Use a stronger one, or omit it for a random token.")
-			return 1
-		}
+	opts, err := resolveTunnelOptions(opts)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
 	}
 	addr := net.JoinHostPort(opts.Host, fmt.Sprintf("%d", opts.Port))
 	ln, err := net.Listen("tcp", addr)
@@ -60,16 +82,18 @@ func Serve(opts Options) int {
 
 	var publicURL, tunnelPass string
 	if opts.Tunnel {
-		render.Info("requesting a public tunnel…")
-		if u, err := startTunnel(ctx, tcpPort(ln), opts.Subdomain); err != nil {
+		render.Info("requesting a public tunnel via " + opts.Provider + "…")
+		if u, err := startTunnel(ctx, tcpPort(ln), opts); err != nil {
 			render.Warn("tunnel failed: " + err.Error())
 		} else {
 			publicURL = u
-			tunnelPass = tunnelPassword(ctx)
+			if opts.Provider == providerLocaltunnel {
+				tunnelPass = tunnelPassword(ctx) // loca.lt interstitial password
+			}
 		}
 	}
 
-	printStartup(localURL, publicURL, tunnelPass, a, opts.Root)
+	printStartup(localURL, publicURL, opts.Provider, tunnelPass, a, opts.Root)
 	if opts.OpenBrowser {
 		openBrowser(entryURL(localURL, a))
 	}
@@ -114,27 +138,30 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
 }
 
 // printStartup writes the access banner: the local URL, the auth token and a
-// one-click magic link, and the public tunnel URL when enabled. tunnelPass is
-// the loca.lt interstitial password (this machine's public IP); empty omits it.
-func printStartup(localURL, publicURL, tunnelPass string, a *auth, root string) {
+// one-click magic link, and the public tunnel URL when enabled. provider names
+// the tunnel in use; tunnelPass is the loca.lt interstitial password (this
+// machine's public IP), set only for localtunnel.
+func printStartup(localURL, publicURL, provider, tunnelPass string, a *auth, root string) {
 	render.OK("csdd web → " + localURL)
 	if a.enabled {
 		render.Info("auth token: " + render.Bold(a.token))
 		render.Info("open authenticated: " + entryURL(localURL, a))
 	}
 	if publicURL != "" {
-		render.OK("public tunnel → " + publicURL)
+		render.OK("public tunnel (" + provider + ") → " + publicURL)
 		if a.enabled {
 			render.Info("share this link: " + entryURL(publicURL, a))
 		}
-		// loca.lt shows a one-time "Tunnel website ahead" page to browser
-		// visitors before the app loads; they must enter this machine's public
-		// IP once per subdomain. Surface it so that click is a copy-paste.
-		render.Info("on first visit loca.lt shows a 'Tunnel website ahead' page — enter the password below and click Continue (once per subdomain).")
-		if tunnelPass != "" {
-			render.Info("tunnel password (visitor enters this): " + render.Bold(tunnelPass))
+		if provider == providerLocaltunnel {
+			// loca.lt shows a one-time "Tunnel website ahead" page to browser
+			// visitors before the app loads; they must enter this machine's public
+			// IP once per subdomain. Surface it so that click is a copy-paste.
+			render.Info("on first visit loca.lt shows a 'Tunnel website ahead' page — enter the password below and click Continue (once per subdomain).")
+			if tunnelPass != "" {
+				render.Info("tunnel password (visitor enters this): " + render.Bold(tunnelPass))
+			}
+			render.Info("tip: pass --subdomain <name> for a stable URL so that step is needed only once, not every run.")
 		}
-		render.Info("tip: pass --subdomain <name> for a stable URL so that step is needed only once, not every run.")
 		render.Warn("tunnel is PUBLIC: anyone with the link can read every file under " + root + " (read-only).")
 		render.Warn("the link embeds the token and passes through the tunnel provider — share it only with people you trust.")
 	}

@@ -14,7 +14,7 @@ import (
 // takes no mutating flags. It blocks until interrupted (Ctrl-C).
 func runWeb(args []string) int {
 	fs := flag.NewFlagSet("web", flag.ContinueOnError)
-	var root, host, password, subdomain string
+	var root, host, password, subdomain, provider, pinggyToken string
 	var port int
 	var noOpen, noAuth, tunnel bool
 	addRoot(fs, &root)
@@ -23,13 +23,15 @@ func runWeb(args []string) int {
 	fs.BoolVar(&noOpen, "no-open", false, "Do not open a browser on start.")
 	fs.StringVar(&password, "password", os.Getenv("CSDD_PASSWORD"), "API token (default: random; or CSDD_PASSWORD env).")
 	fs.BoolVar(&noAuth, "no-auth", false, "Disable API authentication (localhost only).")
-	fs.BoolVar(&tunnel, "tunnel", false, "Expose the dashboard publicly via a localtunnel (forces auth).")
-	fs.StringVar(&subdomain, "subdomain", "", "Request a fixed tunnel subdomain for a stable public URL (implies --tunnel).")
+	fs.BoolVar(&tunnel, "tunnel", false, "Expose the dashboard publicly via a tunnel provider (forces auth).")
+	fs.StringVar(&provider, "provider", "localtunnel", "Tunnel provider: localtunnel | pinggy.")
+	fs.StringVar(&subdomain, "subdomain", "", "localtunnel: request a fixed subdomain for a stable public URL (implies --tunnel).")
+	fs.StringVar(&pinggyToken, "pinggy-token", os.Getenv("CSDD_PINGGY_TOKEN"), "pinggy: access token for the Pro tier / custom domains (or CSDD_PINGGY_TOKEN env).")
 	if _, err := parseFlags(fs, args); err != nil {
 		return failOnFlagParse(err)
 	}
-	if subdomain != "" {
-		tunnel = true // a requested subdomain is meaningless without the tunnel
+	if subdomain != "" || pinggyToken != "" || provider != "localtunnel" {
+		tunnel = true // any tunnel-specific flag implies --tunnel
 	}
 	r, err := workspace.Resolve(root)
 	if err != nil {
@@ -44,6 +46,8 @@ func runWeb(args []string) int {
 		Auth:        !noAuth,
 		Password:    password,
 		Tunnel:      tunnel,
+		Provider:    provider,
 		Subdomain:   subdomain,
+		PinggyToken: pinggyToken,
 	})
 }

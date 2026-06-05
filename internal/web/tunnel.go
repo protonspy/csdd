@@ -1,12 +1,14 @@
 package web
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -16,6 +18,31 @@ import (
 // protocol (request a subdomain, then proxy raw TCP connections) directly in
 // Go — no Node, no third-party dependency.
 const tunnelHost = "localtunnel.me"
+
+// Supported tunnel providers.
+const (
+	providerLocaltunnel = "localtunnel"
+	providerPinggy      = "pinggy"
+)
+
+func isKnownProvider(p string) bool {
+	return p == providerLocaltunnel || p == providerPinggy
+}
+
+// startTunnel exposes the local server publicly via the configured provider and
+// returns the public URL. Proxy goroutines / the ssh process run until ctx is
+// cancelled. Auth is already forced on by the caller, so the exposed surface is
+// token-guarded regardless of provider.
+func startTunnel(ctx context.Context, localPort int, opts Options) (string, error) {
+	switch opts.Provider {
+	case providerPinggy:
+		return startPinggy(ctx, localPort, opts.PinggyToken)
+	case providerLocaltunnel, "":
+		return startLocaltunnel(ctx, localPort, opts.Subdomain)
+	default:
+		return "", fmt.Errorf("unknown tunnel provider %q (use localtunnel or pinggy)", opts.Provider)
+	}
+}
 
 // subdomainRE is a single DNS label: lowercase alphanumeric, internal hyphens
 // allowed, 1–63 chars. loca.lt enforces the same shape, so rejecting early
@@ -43,11 +70,11 @@ type tunnelInfo struct {
 	MaxConn int    `json:"max_conn_count"`
 }
 
-// startTunnel requests a public URL from localtunnel and starts proxying its
-// connections to the local server. A non-empty subdomain requests a fixed public
-// URL (stable across restarts); empty asks for a random one. It returns the
-// public URL; the proxy goroutines run until ctx is cancelled.
-func startTunnel(ctx context.Context, localPort int, subdomain string) (string, error) {
+// startLocaltunnel requests a public URL from localtunnel and starts proxying
+// its connections to the local server. A non-empty subdomain requests a fixed
+// public URL (stable across restarts); empty asks for a random one. It returns
+// the public URL; the proxy goroutines run until ctx is cancelled.
+func startLocaltunnel(ctx context.Context, localPort int, subdomain string) (string, error) {
 	info, err := requestTunnel(ctx, subdomain)
 	if err != nil {
 		return "", err
@@ -167,6 +194,79 @@ func tunnelPassword(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(string(body))
+}
+
+// ---- pinggy (SSH reverse tunnel) -----------------------------------------
+
+// pinggyHost is Pinggy's SSH endpoint (port 443). The free tier is anonymous;
+// the Pro tier (custom domains, no expiry) authenticates with token@host.
+const pinggyHost = "a.pinggy.io"
+
+// pinggyURLRE matches the public https URL Pinggy prints once the tunnel is up
+// (free: *.pinggy-free.link; Pro: a custom domain).
+var pinggyURLRE = regexp.MustCompile(`https://[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
+
+// startPinggy opens a reverse SSH tunnel to Pinggy with the system ssh client,
+// parses the public https URL it prints, and keeps the ssh process alive until
+// ctx is cancelled. A non-empty token selects the Pro tier (custom domains).
+// The exposed surface is already token-guarded by the dashboard auth the caller
+// forced on, so a public URL never reaches project data unauthenticated.
+func startPinggy(ctx context.Context, localPort int, token string) (string, error) {
+	target := pinggyHost
+	if token != "" {
+		target = token + "@" + pinggyHost
+	}
+	// -T: no PTY (we parse output). `x:https` forces an https-only public
+	// endpoint (no plaintext). ExitOnForwardFailure fails fast if the remote
+	// forward is rejected. Host-key checks are off because Pinggy rotates
+	// anonymous endpoints — acceptable since the tunnel is token-guarded.
+	cmd := exec.CommandContext(ctx, "ssh",
+		"-p", "443",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "ServerAliveInterval=30",
+		"-o", "ExitOnForwardFailure=yes",
+		"-T",
+		"-R", fmt.Sprintf("0:localhost:%d", localPort),
+		target,
+		"x:https",
+	)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	cmd.Stderr = io.Discard // ssh's own diagnostics; the URL arrives on stdout
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("pinggy needs the ssh client on PATH: %w", err)
+	}
+
+	urlCh := make(chan string, 1)
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		sent := false
+		for sc.Scan() { // keep draining so ssh never blocks on a full pipe
+			if sent {
+				continue
+			}
+			// Skip the "Upgrade to Pinggy Pro … dashboard.pinggy.io" notice; the
+			// real endpoint is the tunnel host (*.pinggy-free.link or a custom domain).
+			line := sc.Text()
+			if m := pinggyURLRE.FindString(line); m != "" && !strings.Contains(m, "pinggy.io") {
+				sent = true
+				urlCh <- m
+			}
+		}
+	}()
+
+	select {
+	case u := <-urlCh:
+		return u, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-time.After(25 * time.Second):
+		_ = cmd.Process.Kill()
+		return "", fmt.Errorf("pinggy: no public URL after 25s (is ssh able to reach %s:443? is the token valid?)", pinggyHost)
+	}
 }
 
 func tunnelSleep(ctx context.Context, d time.Duration) {
