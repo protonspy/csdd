@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -231,6 +232,12 @@ func startPinggy(ctx context.Context, localPort int, token string) (string, erro
 		target,
 		"x:https",
 	)
+	// Teardown policy: when csdd exits (ctx cancelled), stop ssh so the reverse
+	// tunnel is torn down and the endpoint is freed for reuse. SIGINT lets ssh
+	// remove the remote forward cleanly; WaitDelay then force-kills if it lingers.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
+	cmd.WaitDelay = 5 * time.Second
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", err
@@ -239,6 +246,9 @@ func startPinggy(ctx context.Context, localPort int, token string) (string, erro
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("pinggy needs the ssh client on PATH: %w", err)
 	}
+	// Reap the process: Wait blocks until ssh exits (i.e. until teardown), then
+	// releases its resources. This also activates Cancel/WaitDelay on ctx.Done.
+	go func() { _ = cmd.Wait() }()
 
 	urlCh := make(chan string, 1)
 	go func() {
@@ -264,7 +274,7 @@ func startPinggy(ctx context.Context, localPort int, token string) (string, erro
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case <-time.After(25 * time.Second):
-		_ = cmd.Process.Kill()
+		_ = cmd.Process.Signal(os.Interrupt) // stop the stalled ssh; the reaper Waits
 		return "", fmt.Errorf("pinggy: no public URL after 25s (is ssh able to reach %s:443? is the token valid?)", pinggyHost)
 	}
 }

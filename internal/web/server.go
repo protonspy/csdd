@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/protonspy/csdd/internal/render"
@@ -77,7 +78,9 @@ func Serve(opts Options) int {
 	a := newAuth(opts.Auth, opts.Password)
 	localURL := "http://" + ln.Addr().String()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// Catch both Ctrl-C and SIGTERM (kill / service stop) so the tunnel teardown
+	// (e.g. the pinggy ssh child) always runs and the public endpoint is freed.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	var publicURL, tunnelPass string
