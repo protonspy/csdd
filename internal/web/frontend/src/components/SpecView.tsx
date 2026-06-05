@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import type { SpecDetail } from '../types'
+import type { SpecDetail, SpecReport } from '../types'
 import { Markdown } from './Markdown'
 import { TaskBoard } from './TaskBoard'
-import { ProgressBar, PhasePill } from './bits'
+import { ProgressBar, PhasePill, covColor } from './bits'
 
 type Tab = 'overview' | 'requirements' | 'design' | 'tasks'
 
@@ -102,6 +102,12 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
         </div>
       </div>
 
+      {detail.report ? (
+        <MetricsCard report={detail.report} red={detail.tasks.red} green={detail.tasks.green} />
+      ) : (
+        <MetricsHint feature={detail.feature} />
+      )}
+
       <div className="card">
         <div className="card-title">
           Validation{' '}
@@ -136,6 +142,75 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="stat">
       <div className="stat-val">{value}</div>
       <div className="stat-label">{label}</div>
+    </div>
+  )
+}
+
+function MetricsCard({ report, red, green }: { report: SpecReport; red: number; green: number }) {
+  const t = report.tests
+  const c = report.coverage
+  const passRate = t && t.total > 0 ? Math.round((t.passed * 100) / t.total) : 0
+  return (
+    <div className="card">
+      <div className="card-title">
+        Test metrics
+        {report.command && <span className="muted small">· {report.command}</span>}
+      </div>
+      <div className="metrics-grid">
+        {t && (
+          <div className="metric-block">
+            <div className="metric-head">
+              <span>Tests</span>
+              {t.failed > 0 ? (
+                <span className="badge warn">{t.failed} failed</span>
+              ) : (
+                <span className="badge ready">passing</span>
+              )}
+            </div>
+            <div className="metric-line">
+              <b>{t.passed}</b>/{t.total} passed{t.skipped > 0 ? ` · ${t.skipped} skipped` : ''}
+            </div>
+            <ProgressBar pct={passRate} />
+          </div>
+        )}
+        {c && (
+          <div className="metric-block">
+            <div className="metric-head">
+              <span>Coverage</span>
+              <span className="muted small">
+                {c.covered}/{c.lines} lines
+              </span>
+            </div>
+            <div className="metric-line">
+              <b style={{ color: covColor(c.pct) }}>{c.pct.toFixed(1)}%</b>
+            </div>
+            <ProgressBar pct={c.pct} />
+          </div>
+        )}
+        <div className="metric-block">
+          <div className="metric-head">
+            <span>TDD</span>
+          </div>
+          <div className="metric-line">
+            <span className="tdd red">RED {red}</span> <span className="tdd green">GREEN {green}</span>
+          </div>
+        </div>
+      </div>
+      <div className="muted small">updated {report.updatedAt}</div>
+    </div>
+  )
+}
+
+function MetricsHint({ feature }: { feature: string }) {
+  return (
+    <div className="card">
+      <div className="card-title">Test metrics</div>
+      <div className="muted small">
+        No <code>test-report.json</code> yet. Record one after running the suite:
+      </div>
+      <pre className="codeblock" style={{ marginTop: 8 }}>
+        <code>csdd spec test-report {feature} --junit junit.xml --coverage coverage/lcov.info</code>
+      </pre>
     </div>
   )
 }

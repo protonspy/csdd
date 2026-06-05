@@ -6,6 +6,13 @@ export function ProgressBar({ pct }: { pct: number }) {
   )
 }
 
+// covColor maps a coverage/pass percentage to a status color.
+export function covColor(pct: number): string {
+  if (pct >= 80) return 'var(--ok)'
+  if (pct >= 50) return 'var(--mid)'
+  return 'var(--bad)'
+}
+
 export function PhasePill({ phase }: { phase: string }) {
   const tone = phase.endsWith('approved')
     ? 'ok'

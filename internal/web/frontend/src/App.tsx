@@ -5,10 +5,12 @@ import type { Overview } from './types'
 import { Sidebar } from './components/Sidebar'
 import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
+import { TestsView } from './components/TestsView'
 
 export type Selection =
   | { kind: 'spec'; feature: string }
   | { kind: 'file'; path: string }
+  | { kind: 'tests' }
   | null
 
 export function App() {
@@ -87,6 +89,7 @@ export function App() {
           {error && <div className="banner error">Could not reach the server: {error}</div>}
           {selection?.kind === 'spec' && <SpecView feature={selection.feature} version={version} />}
           {selection?.kind === 'file' && <FileViewer path={selection.path} version={version} />}
+          {selection?.kind === 'tests' && <TestsView version={version} />}
           {!selection && <EmptyState overview={overview} />}
         </main>
       </div>

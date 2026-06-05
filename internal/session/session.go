@@ -83,6 +83,7 @@ type SpecDetail struct {
 	SpecCard
 	Phases    []TaskPhase       `json:"phases"`
 	IssueList []ValidationIssue `json:"issueList"`
+	Report    *SpecReport       `json:"report"` // nil when no test-report.json exists
 }
 
 // ValidationIssue is a JSON-friendly mirror of validator.Issue.
@@ -149,6 +150,7 @@ func LoadSpecDetail(root, feature string) (SpecDetail, error) {
 	}
 	d.Phases = orEmpty(d.Phases)
 	d.IssueList = orEmpty(d.IssueList)
+	d.Report = loadSpecReport(specDir)
 	return d, nil
 }
 
