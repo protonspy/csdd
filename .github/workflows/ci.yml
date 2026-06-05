@@ -46,6 +46,34 @@ jobs:
       - name: test (race + coverage)
         run: go test -race -coverprofile=coverage.out ./...
 
+  web:
+    name: web dashboard (build & drift check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: internal/web/frontend/package-lock.json
+
+      - name: install
+        run: npm --prefix internal/web/frontend ci
+
+      - name: build dashboard
+        run: npm --prefix internal/web/frontend run build
+
+      # The built dashboard (internal/web/dist) is committed so `go install`
+      # works without Node. Fail if a source change wasn't rebuilt + committed.
+      - name: ensure committed dist is up to date
+        run: |
+          if ! git diff --quiet -- internal/web/dist; then
+            echo "::error::internal/web/dist is stale — run 'make web-build' and commit the result"
+            git diff --stat -- internal/web/dist
+            exit 1
+          fi
+
   mcp-server:
     name: mcp-server (build & test)
     runs-on: ubuntu-latest

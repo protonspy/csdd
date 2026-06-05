@@ -44,6 +44,25 @@ csdd          # no args → interactive TUI
 
 > 🔑 **Core principle:** both surfaces call the **same operation helpers**. A single source of truth — what a human does in the TUI, an agent does identically via the CLI.
 
+### 🌐 Web — live dashboard
+
+`csdd web` serves a **read-only** dashboard in your browser: spec progress (phase,
+approvals, % of tasks done, validation status), navigable requirements / design /
+tasks (Markdown + Mermaid Boundary Maps), a **live task board** that updates as
+files change on disk, and a VS Code-style file viewer (Monaco) for the whole
+workspace — specs, steering, skills, agents, MCP, hooks and commands.
+
+```bash
+csdd web                 # open the dashboard in your browser (also: csdd --web)
+csdd web --port 8080     # custom port
+csdd web --no-open       # print the URL instead of opening a browser
+```
+
+It is a *view*, not an author — the CLI stays the only thing that writes
+artifacts. And it's still a single binary: the React/Vite/Monaco UI is built
+ahead of time and embedded, so it runs **offline** with no extra runtime
+dependency. Binds to `127.0.0.1` by default.
+
 ---
 
 ## Install

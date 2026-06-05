@@ -35,4 +35,10 @@ go.work.sum
 # Anchored with a leading slash so they do NOT match the npm/csdd/ package dir.
 /csdd
 /csdd.md
-/dist
+
+# Web dashboard tooling. node_modules is not committed; the BUILT dashboard in
+# internal/web/dist/ IS committed (it is embedded into the binary, so a plain
+# `go build` / `go install` works without Node).
+internal/web/frontend/node_modules/
+internal/web/dist/*
+*/dist/*

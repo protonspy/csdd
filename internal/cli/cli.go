@@ -58,6 +58,8 @@ func Run(args []string, templates embed.FS) int {
 		return runMCP(rest)
 	case "export":
 		return runExport(rest)
+	case "web", "--web":
+		return runWeb(rest)
 	case "tui":
 		// main.go intercepts this so the TUI can be wired without a cmd → tui cycle.
 		render.Err("internal: 'tui' must be handled by main")
@@ -129,6 +131,7 @@ RESOURCES
   agent    {create,list,show,delete}
   mcp      {add,list,show,remove,enable,disable,validate}
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
+  web                         Launch a read-only web dashboard (live spec progress + file viewer).
 
 GLOBAL FLAGS
   --root PATH        Project root (default: nearest enclosing .claude/).
@@ -157,6 +160,8 @@ EXAMPLES
   %[1]s mcp validate
   %[1]s export kiro                                          # .kiro/steering + .kiro/specs
   %[1]s export codex --out ./build                           # AGENTS.md + .codex/config.toml
+  %[1]s web                                                  # open the live dashboard in your browser
+  %[1]s web --port 8080 --no-open                            # custom port; print URL instead of opening
 `, prog())
 }
 

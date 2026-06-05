@@ -1,8 +1,9 @@
 # csdd — build, test, and npm release tasks.
 #
 # Day-to-day:
-#   make build                       # local binary -> ./csdd
+#   make build                       # local binary -> ./csdd (embeds the committed web dist)
 #   make check                       # gofmt + vet + race tests (the CI gate)
+#   make web-build                   # rebuild the web dashboard into internal/web/dist (commit it)
 #
 # Release (manual — dispatches the release workflow; CI builds + publishes npm):
 #   make release VERSION=v0.2.0      # = gh workflow run release.yml --field version=v0.2.0
@@ -38,6 +39,15 @@ help: ## Show this help
 .PHONY: build
 build: ## Build the binary locally (-> ./csdd); set VERSION to stamp it
 	go build -trimpath -ldflags '$(LDFLAGS)' -o csdd ./cmd/csdd
+
+# The `csdd web` dashboard is a React/Vite/Monaco app under internal/web/frontend.
+# It builds into internal/web/dist, which is committed and embedded into the
+# binary via //go:embed — so `go build`/`go install` work without Node. Run this
+# after changing anything under internal/web/frontend, and commit the result.
+.PHONY: web-build
+web-build: ## Rebuild the web dashboard (npm) into internal/web/dist (commit the result)
+	npm --prefix internal/web/frontend ci
+	npm --prefix internal/web/frontend run build
 
 .PHONY: test
 test: ## Run tests (race + coverage)
@@ -115,5 +125,5 @@ release: require-version ## Dispatch the manual release workflow (CI builds bina
 	@echo "dispatched release $(VERSION) — track it with: gh run list --workflow=release.yml"
 
 .PHONY: clean
-clean: ## Remove build artifacts (dist/, npm/dist/, ./csdd, coverage)
-	rm -rf '$(DIST)' npm/dist csdd csdd.exe coverage.out
+clean: ## Remove build artifacts (dist/, npm/dist/, ./csdd, coverage, frontend node_modules)
+	rm -rf '$(DIST)' npm/dist csdd csdd.exe coverage.out internal/web/frontend/node_modules
