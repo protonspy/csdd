@@ -259,3 +259,97 @@ func TestRuleFilesSkipsSubdirectories(t *testing.T) {
 		t.Error("RuleFiles should not descend into subdirectories")
 	}
 }
+
+// TestImplementerAgentShipped covers requirements 1.1, 1.3, 1.4, 1.5: the generic
+// implementer agent ships alongside (not instead of) the existing agents, with
+// least-privilege tools and well-formed frontmatter.
+func TestImplementerAgentShipped(t *testing.T) {
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := agents["implementer.md"]
+	if !ok {
+		t.Fatal("AgentFiles is missing implementer.md")
+	}
+	for _, prior := range []string{
+		"code-reviewer.md", "security-reviewer.md", "test-designer.md",
+		"wf-development.md", "wf-product-discovery.md",
+	} {
+		if _, ok := agents[prior]; !ok {
+			t.Errorf("adding implementer dropped prior agent %q", prior)
+		}
+	}
+	for _, want := range []string{"name: implementer", "tools: Read, Grep, Glob, Edit, Write, Bash"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("implementer.md frontmatter missing %q", want)
+		}
+	}
+	if !strings.Contains(body, "description:") {
+		t.Error("implementer.md missing a description")
+	}
+}
+
+// TestImplementerAgentEncodesDiscipline covers requirements 2.1–2.6, 4.1–4.3: the
+// agent body encodes the per-task discipline, defers language specifics to
+// steering/skills, and documents how to specialize it.
+func TestImplementerAgentEncodesDiscipline(t *testing.T) {
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := agents["implementer.md"]
+	for _, want := range []string{
+		"tdd-cycle",            // 2.1 RED→GREEN→REFACTOR
+		"Scope discipline",     // 2.2 one task, in-boundary, no scope creep
+		"one task",             // 2.2 binds the discipline, not a bare keyword
+		"verify-change",        // 2.3 run the gate
+		"test-report",          // 2.3 record evidence
+		"Implementation Notes", // 2.5 notes
+		"[x]",                  // 2.4 mark the task done
+		"Specialize",           // 4.3 specialization section
+		"language-agnostic",    // 4.1 no single language as a hard requirement
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("implementer.md should reference %q", want)
+		}
+	}
+	if !strings.Contains(strings.ToLower(body), "steering") {
+		t.Error("implementer.md should defer language/framework specifics to steering (4.1/4.2)")
+	}
+}
+
+// TestTddCycleMarksTaskDone covers requirements 3.1, 3.2, 3.3, 5.3: the shipped
+// tdd-cycle now instructs marking the completed task [x] on green, and keeps its
+// existing steps (no regression).
+func TestTddCycleMarksTaskDone(t *testing.T) {
+	skills, err := SkillFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := skills["tdd-cycle/SKILL.md"]
+	if !ok {
+		t.Fatal("SkillFiles is missing tdd-cycle/SKILL.md")
+	}
+	for _, anchor := range []string{
+		"RED — write the failing test",
+		"GREEN — minimal implementation",
+		"Record the spec evidence",
+	} {
+		if !strings.Contains(body, anchor) {
+			t.Errorf("tdd-cycle lost existing step %q", anchor)
+		}
+	}
+	// 3.1: the workflow step exists; 3.3: the Completion-Criteria box exists;
+	// 3.2: both pin "only" the completed task. Assert each anchor distinctly so a
+	// regression that drops one (but keeps the other) still fails.
+	if !strings.Contains(body, "Mark the task done") {
+		t.Error("tdd-cycle should have a 'Mark the task done' workflow step (3.1)")
+	}
+	if !strings.Contains(body, "[x]") || !strings.Contains(body, "tasks.md") {
+		t.Error("tdd-cycle should instruct marking the completed task [x] in tasks.md (3.1)")
+	}
+	if !strings.Contains(body, "only that task") {
+		t.Error("tdd-cycle Completion Criteria should mark only the completed task (3.2/3.3)")
+	}
+}
