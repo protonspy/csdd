@@ -53,6 +53,12 @@ test, not production code.
   - The command exits non-zero when tests fail, so it gates the task.
 - The dashboard (`csdd web`) surfaces these per-spec metrics, paths, and attentions.
 
+### 6) Mark the task done
+- Once the focused test passes (GREEN) and the relevant suite is green, edit
+  `specs/<feature>/tasks.md` and change this task's checkbox from `- [ ]` to `- [x]`.
+- Mark **only** the task you just completed — never another task. Leave blocked or
+  unfinished tasks unchecked so `tasks.md` (and the dashboard) reflect reality.
+
 ## Gotchas
 
 - One task per invocation. Do not batch tasks "to save time".
@@ -73,4 +79,5 @@ test, not production code.
 - [ ] The test passes after the minimal implementation.
 - [ ] The relevant suite + lint/typecheck pass.
 - [ ] `csdd spec test-report <feature> --run …` recorded the evidence (tests green, coverage updated).
+- [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.
