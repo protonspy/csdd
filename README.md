@@ -10,6 +10,43 @@
 
 ---
 
+## Quickstart — set up csdd in your project
+
+```bash
+npm install -g @protonspy/csdd        # or call `npx @protonspy/csdd` with no install
+csdd init --with-baseline             # bootstrap this repo into a csdd workspace
+```
+
+Then, **inside Claude Code**, adapt the workspace to *this* project's stack in one step:
+
+```
+/csdd-setup-init       # inspect the project → tailor steering, a specialized implementer agent, and skills
+/csdd-setup-update     # later: re-inspect and apply targeted adjustments, preserving your edits
+```
+
+Take your first feature from idea to ready-to-implement:
+
+```bash
+csdd spec init my-feature
+csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
+```
+
+### Commands at a glance
+
+| Command | What it does |
+|---|---|
+| `csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks) |
+| `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
+| `csdd spec init · generate · validate · approve · status` | the requirements → design → tasks gated lifecycle |
+| `csdd steering · skill · agent · mcp …` | author the 5 governed resources (`create · list · show · delete`, plus `validate` where applicable) |
+| `csdd update [--dry-run]` | upgrade managed artifacts, preserving your edits (`.old` backups) |
+| `csdd web` | read-only live dashboard — spec progress, task board, file viewer |
+| `/csdd-commit` | Conventional-Commit the reviewed slice, written from the diff + active spec |
+
+> New to the flow? Read on for the *why*. In a hurry? The three blocks above are the whole loop.
+
+---
+
 ## The problem
 
 AI agents write code fast. Too fast to ship without a contract.
@@ -53,9 +90,9 @@ files change on disk, and a VS Code-style file viewer (Monaco) for the whole
 workspace — specs, steering, skills, agents, MCP, hooks and commands.
 
 ```bash
-npx @protonspy/csdd web              # open the dashboard in your browser (also: … --web)
+npx @protonspy/csdd web              # serve the dashboard and print its URL
 npx @protonspy/csdd web --port 8080  # custom port
-npx @protonspy/csdd web --no-open    # print the URL instead of opening a browser
+npx @protonspy/csdd web --tunnel     # expose it publicly via a tunnel (forces auth)
 ```
 
 It is a *view*, not an author — the CLI stays the only thing that writes
@@ -242,10 +279,13 @@ Once the gate is open, the agent implements in **TDD**:
 RED (write the test) → GREEN (minimum to pass) → REFACTOR (clean under green) → widen the net (full suite + lint)
 ```
 
+Drive it with the shipped **`implementer` agent** — a language-agnostic sub-agent that takes one task, runs the `tdd-cycle`, stays inside its `design.md` boundary, runs the gate, records evidence, **marks the task done**, and reports. Specialize it per stack (e.g. a `go-developer`) via steering and skills — `/csdd-setup-init` derives one for your project.
+
 ### 🔴 Skill `tdd-cycle`
 - **One leaf task per invocation.** Takes the ID from `specs/<f>/tasks.md`; doesn't batch tasks "to save time".
 - **RED fails for the right reason.** A compile error doesn't count — it cites the failure before moving on.
 - **Never weakens a test** to make the suite pass. New behavior = new RED.
+- **Marks the task done.** Once it's green, checks the task `[x]` in `tasks.md` — so progress (and the dashboard) reflect reality.
 
 ### ✅ `verify-change` + Definition of Done
 Before reporting done: run the executable checks and produce **real evidence** — "compiles" and "looks right" are not *done*.
@@ -389,9 +429,9 @@ The workspace `csdd` writes **is** the layout Claude Code expects. `csdd init` b
 ```
 CLAUDE.md             # entry point + steering imports
 .claude/steering/*.md # @-referenced from CLAUDE.md
-.claude/agents/*.md   # sub-agents (Read, Grep…)
+.claude/agents/*.md   # sub-agents (implementer, code-reviewer, …)
 .claude/skills/<n>/   # skill bundles
-.claude/commands/     # slash commands (/csdd-commit)
+.claude/commands/     # slash commands (/csdd-setup-init, /csdd-setup-update, /csdd-commit)
 .claude/hooks/        # deterministic automation
 specs/<feature>/      # SDD contracts
 .mcp.json             # MCP servers
