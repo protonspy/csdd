@@ -1,0 +1,34 @@
+---
+description: Re-inspect this project and apply targeted adjustments to the csdd flow (steering, agents, skills) — preserving your edits, all through the csdd CLI.
+argument-hint: [optional focus, e.g. "add the e2e skill" or a new dependency]
+allowed-tools: Read, Grep, Glob, Bash(csdd:*), Bash(npx @protonspy/csdd:*), Bash(ls:*), Bash(cat:*), Bash(find:*), Edit, Write
+---
+
+## Context
+- Manifests present: !`ls package.json tsconfig.json go.mod requirements.txt pyproject.toml Cargo.toml pom.xml build.gradle composer.json Gemfile 2>/dev/null`
+- Current steering: !`csdd steering list 2>/dev/null || ls .claude/steering 2>/dev/null`
+- Current agents/skills: !`ls .claude/agents .claude/skills 2>/dev/null`
+- csdd available: !`csdd --version 2>/dev/null || npx @protonspy/csdd --version 2>/dev/null || echo "csdd not found"`
+
+## Task
+
+Keep this repository's csdd workflow current as the project evolves. This is a **targeted** update,
+not a rebuild: change only what drifted. As with `/csdd-setup-init`, drive everything through the
+`csdd` CLI and never hand-edit csdd-managed files (`CLAUDE.md` steering block, `spec.json`,
+`.mcp.json`).
+
+1. **Re-detect** the stack from the manifests and source, and compare it to the current steering,
+   agents, and skills. Note `$ARGUMENTS` if the user named a specific change. List the gaps you find
+   (a new framework with no skill, an outdated test command in `tech.md`, a missing agent, etc.).
+2. **Refresh shipped baseline** with `csdd update` so managed artifacts track the latest csdd, which
+   **preserves your edits** (conflicts are saved as `.old`, never silently overwritten). Review any
+   `.old` files it reports.
+3. **Apply targeted adjustments** through the CLI only: add a missing skill (`csdd skill create`),
+   add or refresh an agent (`csdd agent create`), or update steering (`csdd steering create`) for the
+   drift you found. Do **not** recreate artifacts that are already correct. Never add secrets to
+   steering or specs.
+4. **Validate** with `csdd steering validate` and `csdd skill validate` (confirm agents with
+   `csdd agent show` — there is no `csdd agent validate`); if `csdd` exits non-zero, stop and report
+   rather than forcing past it.
+5. **Report a diff**: what you changed, what `csdd update` refreshed (and any `.old` conflicts), and
+   what you deliberately left untouched.

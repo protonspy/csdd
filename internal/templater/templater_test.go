@@ -353,3 +353,82 @@ func TestTddCycleMarksTaskDone(t *testing.T) {
 		t.Error("tdd-cycle Completion Criteria should mark only the completed task (3.2/3.3)")
 	}
 }
+
+// TestSetupCommandsShipped covers requirements 1.1, 1.4, 5.1: both setup commands
+// ship alongside (not instead of) the existing csdd-commit command.
+func TestSetupCommandsShipped(t *testing.T) {
+	cmds, err := CommandFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"csdd-setup-init.md", "csdd-setup-update.md", "csdd-commit.md"} {
+		if _, ok := cmds[want]; !ok {
+			t.Errorf("CommandFiles is missing %q", want)
+		}
+	}
+}
+
+// TestSetupCommandsFrontmatter covers requirements 1.3, 4.1: each command has a
+// description and an allowed-tools list scoped to the csdd CLI (least privilege).
+func TestSetupCommandsFrontmatter(t *testing.T) {
+	cmds, err := CommandFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"csdd-setup-init.md", "csdd-setup-update.md"} {
+		body := cmds[name]
+		if !strings.Contains(body, "description:") {
+			t.Errorf("%s missing a description", name)
+		}
+		if !strings.Contains(body, "allowed-tools:") {
+			t.Errorf("%s missing allowed-tools", name)
+		}
+		if !strings.Contains(body, "Bash(csdd") {
+			t.Errorf("%s allowed-tools should scope Bash to the csdd CLI (least privilege)", name)
+		}
+		// Least privilege (4.1): no unscoped, blanket Bash token.
+		for _, line := range strings.Split(body, "\n") {
+			if !strings.HasPrefix(line, "allowed-tools:") {
+				continue
+			}
+			for _, tok := range strings.Split(strings.TrimPrefix(line, "allowed-tools:"), ",") {
+				if strings.TrimSpace(tok) == "Bash" {
+					t.Errorf("%s grants unscoped Bash; scope it like Bash(csdd:*)", name)
+				}
+			}
+		}
+	}
+}
+
+// TestSetupCommandsEncodeFlow covers requirements 2.x and 3.x: the command bodies
+// encode the intended flow and drive the csdd CLI.
+func TestSetupCommandsEncodeFlow(t *testing.T) {
+	cmds, err := CommandFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initBody := cmds["csdd-setup-init.md"]
+	for _, want := range []string{
+		"csdd init",     // 2.2 init if needed / 2.7 layer on top
+		"csdd steering", // 2.3 steering via CLI
+		"csdd agent",    // 2.4 derive specialized agent
+		"implementer",   // 2.4 derive from the shipped implementer
+		"review",        // 2.6 report needs-review
+	} {
+		if !strings.Contains(initBody, want) {
+			t.Errorf("csdd-setup-init should reference %q", want)
+		}
+	}
+	if !strings.Contains(strings.ToLower(initBody), "detect") {
+		t.Error("csdd-setup-init should detect the project stack (2.1)")
+	}
+	updBody := cmds["csdd-setup-update.md"]
+	for _, want := range []string{
+		"csdd update", // 3.2 preserve edits via csdd update
+		"targeted",    // 3.1 targeted adjustments, not a full rebuild
+	} {
+		if !strings.Contains(updBody, want) {
+			t.Errorf("csdd-setup-update should reference %q", want)
+		}
+	}
+}
