@@ -44,3 +44,11 @@ internal/web/frontend/node_modules/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
 dist/
+
+# csdd
+/.pinggy-token
+/.claude/
+/CLAUDE.md
+/.mcp.json
+/.githooks/
+/specs/
