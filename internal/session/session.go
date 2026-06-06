@@ -90,6 +90,7 @@ type SpecDetail struct {
 	Phases    []TaskPhase       `json:"phases"`
 	IssueList []ValidationIssue `json:"issueList"`
 	Report    *SpecReport       `json:"report"` // nil when no test-report.json exists
+	Diff      *SpecDiff         `json:"diff"`   // nil when no diff-report.json exists
 }
 
 // ValidationIssue is a JSON-friendly mirror of validator.Issue.
@@ -157,6 +158,7 @@ func LoadSpecDetail(root, feature string) (SpecDetail, error) {
 	d.Phases = orEmpty(d.Phases)
 	d.IssueList = orEmpty(d.IssueList)
 	d.Report = loadSpecReport(specDir)
+	d.Diff = loadSpecDiff(specDir)
 	return d, nil
 }
 

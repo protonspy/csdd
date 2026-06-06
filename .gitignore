@@ -43,7 +43,10 @@ go.work.sum
 internal/web/frontend/node_modules/
 internal/web/dist/*
 !internal/web/dist/.gitkeep
-dist/
+# Root-anchored so it ignores the top-level `make dist` staging dir WITHOUT
+# shadowing internal/web/dist (an unanchored `dist/` re-excludes the .gitkeep
+# above, which breaks //go:embed all:dist on a clean checkout).
+/dist/
 
 # csdd
 /.pinggy-token

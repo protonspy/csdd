@@ -62,6 +62,8 @@ func runSpec(args []string, templates embed.FS) int {
 		return specValidate(rest)
 	case "test-report":
 		return specTestReport(rest)
+	case "diff-report":
+		return specDiffReport(rest)
 	case "delete":
 		return specDelete(rest)
 	default:
