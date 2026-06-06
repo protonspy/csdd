@@ -81,10 +81,55 @@ export interface SpecReport {
   attentions?: string[]
 }
 
+export interface DiffLine {
+  type: 'context' | 'add' | 'del'
+  old?: number
+  new?: number
+  text: string
+}
+
+export interface DiffHunk {
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  header?: string
+  lines: DiffLine[]
+}
+
+export interface DiffFile {
+  path: string
+  oldPath?: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed'
+  additions: number
+  deletions: number
+  binary?: boolean
+  truncated?: boolean
+  hunks?: DiffHunk[]
+}
+
+export interface DiffSummary {
+  files: number
+  additions: number
+  deletions: number
+}
+
+export interface SpecDiff {
+  feature: string
+  updatedAt: string
+  base: string
+  baseSha?: string
+  head: string
+  summary: DiffSummary
+  files: DiffFile[]
+  truncated?: boolean
+}
+
 export interface SpecDetail extends SpecCard {
   phases: TaskPhase[]
   issueList: ValidationIssue[]
   report: SpecReport | null
+  diff: SpecDiff | null
 }
 
 export interface Overview {

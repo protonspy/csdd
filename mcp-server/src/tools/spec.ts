@@ -137,4 +137,31 @@ export const specTools: ToolDef[] = [
       ...rootArg(p),
     ],
   },
+  {
+    name: "csdd_spec_diff_report",
+    title: "Spec diff report",
+    description:
+      "Record a structured, auditable file diff for a spec into specs/<feature>/diff-report.json (surfaced by the dashboard's Changes view). It diffs the merge-base of HEAD and the base ref → the current working tree (committed-on-branch + uncommitted changes, plus untracked files), so it tracks development as it happens. base overrides the auto-detected ref (origin/main, main, origin/master, master); maxLines caps recorded lines per file (default 2000, 0 = unlimited). Requires a git repository; read-only (never touches the index or working tree).",
+    inputSchema: {
+      feature,
+      base: z
+        .string()
+        .optional()
+        .describe("Base ref to diff against (default: auto-detect origin/main, main, origin/master, master)."),
+      maxLines: z
+        .number()
+        .int()
+        .optional()
+        .describe("Per-file recorded-line cap (default 2000; 0 = unlimited)."),
+      root: rootField,
+    },
+    toArgs: (p) => [
+      "spec",
+      "diff-report",
+      p.feature,
+      ...flag("--base", p.base),
+      ...flag("--max-lines", p.maxLines),
+      ...rootArg(p),
+    ],
+  },
 ];
