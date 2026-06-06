@@ -62,6 +62,12 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
     { feature: "f", run: true, cmd: "go test ./...", junit: "junit.xml", coverage: "coverage.out", root: "/p" },
     ["spec", "test-report", "f", "--run", "--cmd", "go test ./...", "--junit", "junit.xml", "--coverage", "coverage.out", "--root", "/p"],
   ],
+  ["csdd_spec_diff_report", { feature: "f" }, ["spec", "diff-report", "f"]],
+  [
+    "csdd_spec_diff_report",
+    { feature: "f", base: "main", maxLines: 500, root: "/p" },
+    ["spec", "diff-report", "f", "--base", "main", "--max-lines", "500", "--root", "/p"],
+  ],
 
   // skill
   ["csdd_skill_create", { name: "s", description: "d" }, ["skill", "create", "s", "--description", "d"]],
