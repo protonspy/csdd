@@ -5,9 +5,9 @@ allowed-tools: Read, Grep, Glob, Bash(csdd:*), Bash(npx @protonspy/csdd:*), Bash
 ---
 
 ## Context
-- Manifests present: !`ls package.json tsconfig.json go.mod requirements.txt pyproject.toml Cargo.toml pom.xml build.gradle composer.json Gemfile 2>/dev/null`
-- Current steering: !`csdd steering list 2>/dev/null || ls .claude/steering 2>/dev/null`
-- Current agents/skills: !`ls .claude/agents .claude/skills 2>/dev/null`
+- Manifests present: !`ls package.json tsconfig.json go.mod requirements.txt pyproject.toml Cargo.toml pom.xml build.gradle composer.json Gemfile 2>/dev/null || true`
+- Current steering: !`csdd steering list 2>/dev/null || ls .claude/steering 2>/dev/null || true`
+- Current agents/skills: !`ls .claude/agents .claude/skills 2>/dev/null || true`
 - csdd available: !`csdd --version 2>/dev/null || npx @protonspy/csdd --version 2>/dev/null || echo "csdd not found"`
 
 ## Task

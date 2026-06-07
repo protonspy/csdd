@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { ResourceKind } from '../App'
 import type { Artifact, FileContent } from '../types'
+import type { ResourceKind } from '../resources'
+import { resourceLabel } from '../resources'
 import { api } from '../api'
 import { Markdown } from './Markdown'
-
-const LABEL: Record<ResourceKind, string> = {
-  agent: 'Agent',
-  skill: 'Skill',
-  steering: 'Steering',
-}
 
 // stripFrontmatter removes a leading `---\n…\n---` YAML block so the rendered
 // body doesn't show raw frontmatter (its fields are surfaced in the header).
@@ -47,7 +42,7 @@ export function ResourceView({
     <div className="resource-view">
       <div className="resource-view-header">
         <div className="resource-view-title">
-          <span className="badge muted">{LABEL[resource]}</span>
+          <span className="badge muted">{resourceLabel(resource)}</span>
           <h1>{name}</h1>
         </div>
         {artifact.description && <p className="resource-view-desc">{artifact.description}</p>}

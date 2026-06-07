@@ -9,8 +9,8 @@ import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
 import { ResourceView } from './components/ResourceView'
 import { AuthScreen } from './components/AuthScreen'
-
-export type ResourceKind = 'agent' | 'skill' | 'steering'
+import { resourceKindsHint } from './resources'
+import type { ResourceKind } from './resources'
 
 // View is the top-level workspace area chosen from the header tabs. Specs and
 // Tests are full-width pages; Resources and Files use the contextual sidebar.
@@ -147,7 +147,7 @@ export function App() {
             (selection?.kind === 'resource' ? (
               <ResourceView resource={selection.resource} artifact={selection.artifact} version={version} />
             ) : (
-              <EmptyPrompt title="Resources" hint="Pick an agent, skill, or steering file on the left." />
+              <EmptyPrompt title="Resources" hint={`Pick ${resourceKindsHint()} on the left.`} />
             ))}
 
           {view === 'files' &&

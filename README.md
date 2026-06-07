@@ -13,8 +13,7 @@
 ## Quickstart — set up csdd in your project
 
 ```bash
-npm install -g @protonspy/csdd        # or call `npx @protonspy/csdd` with no install
-csdd init --with-baseline             # bootstrap this repo into a csdd workspace
+npx @protonspy/csdd init --with-baseline   # bootstrap this repo into a csdd workspace (no install)
 ```
 
 Then, **inside Claude Code**, adapt the workspace to *this* project's stack in one step:
@@ -27,23 +26,26 @@ Then, **inside Claude Code**, adapt the workspace to *this* project's stack in o
 Take your first feature from idea to ready-to-implement:
 
 ```bash
-csdd spec init my-feature
-csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
+npx @protonspy/csdd spec init my-feature
+npx @protonspy/csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
 ```
+
+> Prefer a short command on your `PATH`? `npm install -g @protonspy/csdd`, then call `csdd …` directly.
 
 ### Commands at a glance
 
 | Command | What it does |
 |---|---|
-| `csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks) |
+| `npx @protonspy/csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks) |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
-| `csdd spec init · generate · validate · approve · status` | the requirements → design → tasks gated lifecycle |
-| `csdd steering · skill · agent · mcp …` | author the 5 governed resources (`create · list · show · delete`, plus `validate` where applicable) |
-| `csdd update [--dry-run]` | upgrade managed artifacts, preserving your edits (`.old` backups) |
-| `csdd web` | read-only live dashboard — spec progress, task board, file viewer |
+| `npx @protonspy/csdd spec init · generate · validate · approve · status` | the requirements → design → tasks gated lifecycle |
+| `npx @protonspy/csdd steering · skill · agent · mcp …` | author the 5 governed resources (`create · list · show · delete`, plus `validate` where applicable) |
+| `npx @protonspy/csdd update [--dry-run]` | upgrade managed artifacts, preserving your edits (`.old` backups) |
+| `npx @protonspy/csdd web` | read-only live dashboard — spec progress, task board, file viewer |
 | `/csdd-commit` | Conventional-Commit the reviewed slice, written from the diff + active spec |
 
 > New to the flow? Read on for the *why*. In a hurry? The three blocks above are the whole loop.
+> Examples use `npx @protonspy/csdd` (no install). Installed globally? Drop the prefix — `csdd …`.
 
 ---
 

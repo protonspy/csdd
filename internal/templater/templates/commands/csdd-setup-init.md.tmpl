@@ -5,10 +5,10 @@ allowed-tools: Read, Grep, Glob, Bash(csdd:*), Bash(npx @protonspy/csdd:*), Bash
 ---
 
 ## Context
-- Manifests present: !`ls package.json tsconfig.json go.mod requirements.txt pyproject.toml Cargo.toml pom.xml build.gradle composer.json Gemfile 2>/dev/null`
+- Manifests present: !`ls package.json tsconfig.json go.mod requirements.txt pyproject.toml Cargo.toml pom.xml build.gradle composer.json Gemfile 2>/dev/null || true`
 - csdd available: !`csdd --version 2>/dev/null || npx @protonspy/csdd --version 2>/dev/null || echo "csdd not found"`
 - Workspace initialized: !`ls .claude/steering 2>/dev/null && echo "(csdd workspace present)" || echo "(not initialized)"`
-- Existing agents/skills: !`ls .claude/agents .claude/skills 2>/dev/null`
+- Existing agents/skills: !`ls .claude/agents .claude/skills 2>/dev/null || true`
 
 ## Task
 
