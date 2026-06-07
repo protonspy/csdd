@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ResourceKind, Selection, View } from '../App'
+import type { Selection, View } from '../App'
 import type { Artifact, Overview, WorkspaceTree } from '../types'
+import type { ResourceKind } from '../resources'
+import { RESOURCES } from '../resources'
 import { api } from '../api'
 import { FileTree } from './FileTree'
 
@@ -35,13 +37,17 @@ export function Sidebar({ overview, view, selection, onSelect, version, open }: 
 
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
-      {view === 'resources' && (
-        <>
-          <ResourceSection title="Agents" resource="agent" items={overview?.agents} selectedPath={selectedResource} onOpen={openResource} defaultOpen />
-          <ResourceSection title="Skills" resource="skill" items={overview?.skills} selectedPath={selectedResource} onOpen={openResource} defaultOpen />
-          <ResourceSection title="Steering" resource="steering" items={overview?.steering} selectedPath={selectedResource} onOpen={openResource} defaultOpen />
-        </>
-      )}
+      {view === 'resources' &&
+        RESOURCES.map((r) => (
+          <ResourceSection
+            key={r.kind}
+            title={r.plural}
+            resource={r.kind}
+            items={r.items(overview)}
+            selectedPath={selectedResource}
+            onOpen={openResource}
+          />
+        ))}
 
       {view === 'files' && (
         <>
