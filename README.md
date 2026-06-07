@@ -8,19 +8,23 @@ It owns five artifact types — **steering** (project memory), **specs** (per-fe
 
 ## Install & run
 
-Install from npm and call `csdd` directly:
+**npx — zero install, always the latest.** Fetches the right prebuilt binary for your OS/arch:
 
 ```bash
-npm install -g @protonspy/csdd   # puts csdd on your PATH
-csdd --help                      # run it anywhere
-csdd                             # no args → interactive TUI
+npx @protonspy/csdd --help    # run instantly
+npx @protonspy/csdd           # no args → interactive TUI
 ```
 
-Or run it instantly with `npx`, no install:
+**Global install** — prefer a short `csdd` on your `PATH`:
 
 ```bash
-npx @protonspy/csdd --help
+npm install -g @protonspy/csdd
+csdd --help
 ```
+
+**Other ways in:** grab a prebuilt archive from the [releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on your `PATH`, or build from source with `go install github.com/protonspy/csdd@latest`.
+
+> The examples below use `npx @protonspy/csdd`. Installed globally or from source? Drop the prefix and call `csdd` directly — or alias it: `alias csdd='npx @protonspy/csdd'`.
 
 ---
 
@@ -44,8 +48,6 @@ npx @protonspy/csdd spec init my-feature
 npx @protonspy/csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
 ```
 
-> Prefer a short command on your `PATH`? `npm install -g @protonspy/csdd`, then call `csdd …` directly.
-
 ### Commands at a glance
 
 | Command | What it does |
@@ -59,7 +61,6 @@ npx @protonspy/csdd spec generate my-feature --artifact requirements   # → val
 | `/csdd-commit` | Conventional-Commit the reviewed slice, written from the diff + active spec |
 
 > New to the flow? Read on for the *why*. In a hurry? The three blocks above are the whole loop.
-> Examples use `npx @protonspy/csdd` (no install). Installed globally? Drop the prefix — `csdd …`.
 
 ---
 
@@ -119,31 +120,6 @@ dependency. Binds to `127.0.0.1` by default.
 > The prebuilt binaries (npm / releases) embed the dashboard. Building from
 > source (`go install …` or `go build`)? Run `make web-build` first to embed the
 > UI — otherwise `csdd web` serves a placeholder page (the API still works).
-
----
-
-## Install
-
-**npx** (cross-platform — fetches the right prebuilt binary for your OS/arch, no install):
-
-```bash
-npx @protonspy/csdd --help         # run instantly, no install
-npx @protonspy/csdd                # interactive TUI
-```
-
-Prefer the short `csdd` command on your `PATH`? Install it globally:
-
-```bash
-npm install -g @protonspy/csdd     # then: csdd
-```
-
-**Prebuilt binaries:** grab the archive for your platform from the
-[releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on
-your `PATH`. **From source:** `go install github.com/protonspy/csdd@latest`.
-
-> The examples below use `npx @protonspy/csdd` (no install needed). Installed
-> globally or built from source? Drop the prefix and call `csdd` directly — or
-> alias it: `alias csdd='npx @protonspy/csdd'`.
 
 ---
 
