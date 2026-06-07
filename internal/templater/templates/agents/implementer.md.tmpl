@@ -41,7 +41,9 @@ the discipline *around* one task: scope, evidence, task-marking, and reporting.
    verification and capture an evidence block.
 5. **Record evidence.** Run the suite through csdd so the spec keeps traceable proof:
    `csdd spec test-report <feature> --run --lang <lang>` (writes
-   `specs/<feature>/test-report.json`).
+   `specs/<feature>/test-report.json`), and refresh the change view with
+   `csdd spec diff-report <feature>` (writes `specs/<feature>/diff-report.json`) so the
+   dashboard's **Changes** view matches the tree. Run the two together so they never drift.
 6. **Mark the task done.** Once its test passes and the suite is green, edit
    `tasks.md` and change that task's checkbox from `- [ ]` to `- [x]` — only the task
    you completed, never another.
@@ -82,6 +84,7 @@ variants only add the stack-specific knowledge.
 - [ ] A test failed before the change (RED) and passes after (GREEN).
 - [ ] The relevant suite + gate (`verify-change`) are green.
 - [ ] `csdd spec test-report <feature> --run …` recorded the evidence.
+- [ ] `csdd spec diff-report <feature>` refreshed the Changes view for the slice.
 - [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] `## Implementation Notes` updated with any cross-task learning.
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

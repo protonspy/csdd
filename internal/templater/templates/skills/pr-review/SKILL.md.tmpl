@@ -23,6 +23,7 @@ commit before review is clean; do not push before the commit exists.
 ## Execution Workflow
 
 ### 1) Self-review the diff
+- Refresh the spec's change record first so the dashboard's **Changes** view matches what you're about to review: `csdd spec diff-report <feature>` (read-only git → `specs/<feature>/diff-report.json`).
 - Read the whole diff. Remove debug code, stray logs, commented-out blocks, TODOs without owners.
 - Confirm the change matches the approved spec and stays within its boundaries.
 
