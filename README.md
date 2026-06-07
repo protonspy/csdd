@@ -2,11 +2,25 @@
 
 **Claude Spec-Driven Development — as an executable contract.**
 
-`csdd` is a single Go binary that turns the Spec-Driven Development (SDD) workflow for [Claude Code](https://claude.com/claude-code) from "good intentions in markdown" into a contract that is validated mechanically — for humans *and* AI agents.
+`csdd` is a single Go binary that makes **Spec-Driven Development (SDD) + Test-Driven Development (TDD)** the native, *enforced* workflow inside a [Claude Code](https://claude.com/claude-code) repository. It turns the SDD lifecycle — `requirements → design → tasks → implementation` — from "good intentions in markdown" into a contract that is **validated mechanically and gated by human approval at every phase**, so neither a human nor an AI agent can skip a step, ship a requirement without a testable criterion, or mark a parallel task without declaring its boundary.
 
-| 5 | 1 | ~8.7k |
-|---|---|-------|
-| managed resources | binary, zero runtime deps | lines of Go |
+It owns five artifact types — **steering** (project memory), **specs** (per-feature contracts), **skills** (executable workflow bundles), **agents** (scoped sub-agents), and **MCP servers** — and is their only sanctioned author, so their structure stays machine-checkable instead of drifting into free-form prose. There's no server and no database: the plain Markdown/JSON files under `.claude/` and `specs/` *are* the API, reviewable in any pull request.
+
+## Install & run
+
+Install from npm and call `csdd` directly:
+
+```bash
+npm install -g @protonspy/csdd   # puts csdd on your PATH
+csdd --help                      # run it anywhere
+csdd                             # no args → interactive TUI
+```
+
+Or run it instantly with `npx`, no install:
+
+```bash
+npx @protonspy/csdd --help
+```
 
 ---
 
