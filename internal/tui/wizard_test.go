@@ -68,6 +68,7 @@ func TestNewWizardFieldsPerKind(t *testing.T) {
 		{wizSkill, "Create skill", 3},
 		{wizAgent, "Create agent", 5},
 		{wizMCP, "Add MCP server", 7},
+		{wizPreset, "Install MCP preset", 1},
 	}
 	for _, c := range cases {
 		w := newWizard(c.kind, templater.FS, t.TempDir())
@@ -294,6 +295,24 @@ func TestWizardSubmitMCPRemote(t *testing.T) {
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
 	for _, want := range []string{"linear", "\"type\": \"sse\"", "\"disabled\": true"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("mcp.json missing %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestWizardSubmitMCPPreset(t *testing.T) {
+	dir := freshTUIWorkspace(t)
+	w := wizardModel{kind: wizPreset, templates: templater.FS, root: dir, state: map[string]any{
+		"preset": "context7",
+	}}
+	msg := w.submit()()
+	rm, ok := msg.(resultMsg)
+	if !ok || rm.isErr {
+		t.Fatalf("mcp preset submit failed: %#v", msg)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	for _, want := range []string{"context7", "\"url\"", "\"type\": \"http\""} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("mcp.json missing %q:\n%s", want, data)
 		}

@@ -22,6 +22,7 @@ const (
 	wizSkill
 	wizAgent
 	wizMCP
+	wizPreset
 	wizExport
 )
 
@@ -102,6 +103,9 @@ func newWizard(kind wizardKind, templates embed.FS, root string) wizardModel {
 	case wizMCP:
 		w.title = "Add MCP server"
 		w.fields = mcpFields()
+	case wizPreset:
+		w.title = "Install MCP preset"
+		w.fields = presetFields()
 	case wizExport:
 		w.title = "Export workspace"
 		w.fields = exportFields()
@@ -415,6 +419,15 @@ func (w wizardModel) submit() tea.Cmd {
 				return resultMsg{text: err.Error(), isErr: true}
 			}
 			return resultMsg{text: "mcp server '" + opts.Name + "' added (" + transport + ")"}
+		case wizPreset:
+			name := getStr(w.state, "preset")
+			if err := cli.MCPInstallPreset(cli.MCPInstallPresetOptions{
+				Root:  w.root,
+				Names: []string{name},
+			}); err != nil {
+				return resultMsg{text: err.Error(), isErr: true}
+			}
+			return resultMsg{text: "installed mcp preset '" + name + "'"}
 		case wizExport:
 			target := getStr(w.state, "target")
 			opts := cli.ExportOptions{
@@ -621,6 +634,23 @@ func mcpFields() []*field {
 		{
 			name: "disabled", label: "Start disabled?", kind: fSelect,
 			choices: []string{"no", "yes"},
+		},
+	}
+}
+
+// presetFields offers a single select over the known MCP presets. The choices
+// are sourced from cli.MCPPresets() so the picker can never drift from the
+// registry the CLI installs from.
+func presetFields() []*field {
+	presets := cli.MCPPresets()
+	names := make([]string, 0, len(presets))
+	for _, p := range presets {
+		names = append(names, p.Name)
+	}
+	return []*field{
+		{
+			name: "preset", label: "Preset", hint: "known MCP server to quick-install",
+			kind: fSelect, required: true, choices: names,
 		},
 	}
 }

@@ -132,7 +132,7 @@ RESOURCES
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
-  mcp      {add,list,show,remove,enable,disable,validate}
+  mcp      {add,install,presets,list,show,remove,enable,disable,validate}
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
   web                         Launch a read-only web dashboard (live spec progress + file viewer).
 

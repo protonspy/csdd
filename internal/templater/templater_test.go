@@ -189,6 +189,8 @@ func TestShippedWorkflowArtifactsPresent(t *testing.T) {
 		"dev-sprint/SKILL.md",
 		"dev-sprint/assets/sprint-status-template.yaml",
 		"dev-retrospective/SKILL.md",
+		// frontend QA — Playwright e2e (shipped baseline)
+		"frontend-e2e-qa/SKILL.md",
 	}
 	for _, name := range requiredSkills {
 		if _, ok := skills[name]; !ok {

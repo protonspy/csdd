@@ -35,6 +35,13 @@ Run, in order, whichever of these the project defines:
 ### 3) Capture evidence
 Record each command and its pass/fail result. Keep output trimmed but real.
 
+### 4) Frontend e2e (only if the project has a UI)
+**Skippable.** If — and only if — the change touches a frontend the project ships
+(e.g. a web app directory), run the `frontend-e2e-qa` skill to drive the golden
+and top error flows through the Playwright MCP server. If the project has no
+frontend, or the Playwright MCP server is not connected, state that this step was
+skipped and why — do not fabricate a result.
+
 ## Gotchas
 
 - Use the project's actual commands; a wrong guessed command that "passes" is worse than none.
