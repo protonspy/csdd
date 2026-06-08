@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/protonspy/csdd/internal/frontmatter"
 	"github.com/protonspy/csdd/internal/manifest"
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/render"
@@ -22,23 +24,27 @@ import (
 // .mcp.json, settings.json, CLAUDE.md, and any custom (non-shipped) skill or
 // agent — are deliberately NOT collected here, so update can never clobber them.
 type managedFile struct {
-	Rel     string // workspace-relative, forward-slash: manifest key + display name
-	Abs     string // absolute on-disk path
-	Content string // the content this csdd version ships for the file
-	Exec    bool   // chmod 0755 after writing (hook scripts)
+	Rel                 string   // workspace-relative, forward-slash: manifest key + display name
+	Abs                 string   // absolute on-disk path
+	Content             string   // the content this csdd version ships for the file
+	Exec                bool     // chmod 0755 after writing (hook scripts)
+	PreserveFrontmatter []string // local scalar overrides update carries forward
 }
+
+var managedExecutionOverrideKeys = []string{"model", "effort"}
 
 // collectManagedFiles enumerates every pure-csdd artifact `csdd init` scaffolds
 // from the embedded template tree: generation rules, versioned templates, the
 // shipped skills/agents/commands/hooks, the canonical guide, and csdd.md.
 func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error) {
 	var out []managedFile
-	add := func(abs, content string, exec bool) {
+	add := func(abs, content string, exec bool, preserveFrontmatter []string) {
 		out = append(out, managedFile{
-			Rel:     filepath.ToSlash(workspace.Relative(root, abs)),
-			Abs:     abs,
-			Content: content,
-			Exec:    exec,
+			Rel:                 filepath.ToSlash(workspace.Relative(root, abs)),
+			Abs:                 abs,
+			Content:             content,
+			Exec:                exec,
+			PreserveFrontmatter: preserveFrontmatter,
 		})
 	}
 
@@ -47,7 +53,7 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 		return nil, err
 	}
 	for name, c := range rules {
-		add(filepath.Join(paths.Rules(root), name), c, false)
+		add(filepath.Join(paths.Rules(root), name), c, false, nil)
 	}
 
 	versioned, err := templater.WorkflowTemplateFiles(templates)
@@ -55,18 +61,19 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 		return nil, err
 	}
 	for rel, c := range versioned {
-		add(filepath.Join(paths.Templates(root), filepath.FromSlash(rel)), c, false)
+		add(filepath.Join(paths.Templates(root), filepath.FromSlash(rel)), c, false, nil)
 	}
 
 	trees := []struct {
-		base string
-		fn   func(fs.FS) (map[string]string, error)
-		exec bool
+		base                string
+		fn                  func(fs.FS) (map[string]string, error)
+		exec                bool
+		preserveFrontmatter []string
 	}{
-		{paths.Skills(root), templater.SkillFiles, false},
-		{paths.Agents(root), templater.AgentFiles, false},
-		{paths.Commands(root), templater.CommandFiles, false},
-		{paths.Hooks(root), templater.HookFiles, true},
+		{paths.Skills(root), templater.SkillFiles, false, managedExecutionOverrideKeys},
+		{paths.Agents(root), templater.AgentFiles, false, managedExecutionOverrideKeys},
+		{paths.Commands(root), templater.CommandFiles, false, nil},
+		{paths.Hooks(root), templater.HookFiles, true, nil},
 	}
 	for _, t := range trees {
 		entries, err := t.fn(templates)
@@ -74,7 +81,7 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 			return nil, err
 		}
 		for rel, c := range entries {
-			add(filepath.Join(t.base, filepath.FromSlash(rel)), c, t.exec)
+			add(filepath.Join(t.base, filepath.FromSlash(rel)), c, t.exec, t.preserveFrontmatter)
 		}
 	}
 
@@ -82,13 +89,13 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 	if err != nil {
 		return nil, err
 	}
-	add(filepath.Join(root, "docs", "guides", "claude-code-sdd.md"), guide, false)
+	add(filepath.Join(root, "docs", "guides", "claude-code-sdd.md"), guide, false, nil)
 
 	csddmd, err := templater.Static(templates, "templates/root/csdd.md.tmpl")
 	if err != nil {
 		return nil, err
 	}
-	add(filepath.Join(root, "csdd.md"), csddmd, false)
+	add(filepath.Join(root, "csdd.md"), csddmd, false, nil)
 
 	// Deterministic order so dry-run previews and reports are stable.
 	sort.Slice(out, func(i, j int) bool { return out[i].Rel < out[j].Rel })
@@ -115,7 +122,7 @@ func recordManifest(root string, templates embed.FS, now time.Time, skipped map[
 				continue
 			}
 		}
-		m.Files[f.Rel] = manifest.Hash(f.Content)
+		m.Files[f.Rel] = managedBaselineHash(f, f.Content)
 	}
 	return m.Save(paths.Manifest(root), version, now)
 }
@@ -247,12 +254,12 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 	res.firstRun = !existed
 
 	for _, f := range files {
-		shipped := manifest.Hash(f.Content)
+		shipped := managedBaselineHash(f, f.Content)
 
 		diskBytes, rerr := os.ReadFile(f.Abs)
 		if os.IsNotExist(rerr) {
 			if !opts.dryRun {
-				if err := writeManaged(f); err != nil {
+				if err := writeManaged(f, f.Content); err != nil {
 					return res, err
 				}
 			}
@@ -264,16 +271,18 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 		}
 
 		diskHash := manifest.Hash(string(diskBytes))
-		if diskHash == shipped {
+		diskBaselineHash := managedBaselineHash(f, string(diskBytes))
+		writeContent := managedWriteContent(f, string(diskBytes))
+		if diskHash == manifest.Hash(writeContent) || diskBaselineHash == shipped {
 			res.changes = append(res.changes, fileChange{rel: f.Rel, kind: kindCurrent})
 			continue
 		}
 
-		if known, ok := base.Files[f.Rel]; ok && diskHash == known {
+		if known, ok := base.Files[f.Rel]; ok && diskBaselineHash == known {
 			// Disk matches the last baseline csdd wrote: the user never edited it,
 			// so refreshing in place loses nothing.
 			if !opts.dryRun {
-				if err := writeManaged(f); err != nil {
+				if err := writeManaged(f, writeContent); err != nil {
 					return res, err
 				}
 			}
@@ -301,7 +310,7 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 			}
 		}
 		if !opts.dryRun {
-			if err := writeManaged(f); err != nil {
+			if err := writeManaged(f, writeContent); err != nil {
 				return res, err
 			}
 		}
@@ -322,19 +331,124 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 	return res, nil
 }
 
-// writeManaged writes a managed file's shipped content, creating parent dirs and
+// managedBaselineHash returns the hash used for manifest and pristine checks.
+// For managed agents and skills, model/effort are local execution overrides:
+// update must preserve them, but they should not make an otherwise-pristine
+// shipped artifact look user-edited.
+func managedBaselineHash(f managedFile, content string) string {
+	return manifest.Hash(stripFrontmatterFields(content, f.PreserveFrontmatter))
+}
+
+// managedWriteContent overlays preserved frontmatter scalar values from the
+// existing file onto this version's shipped content.
+func managedWriteContent(f managedFile, existing string) string {
+	if len(f.PreserveFrontmatter) == 0 {
+		return f.Content
+	}
+	fm := frontmatter.Parse(existing)
+	values := map[string]string{}
+	for _, key := range f.PreserveFrontmatter {
+		if value := fm.AsString(key, ""); value != "" {
+			values[key] = value
+		}
+	}
+	if len(values) == 0 {
+		return f.Content
+	}
+	return upsertFrontmatterFields(f.Content, f.PreserveFrontmatter, values)
+}
+
+// writeManaged writes a managed file's effective content, creating parent dirs and
 // restoring the executable bit for hook scripts.
-func writeManaged(f managedFile) error {
+func writeManaged(f managedFile, content string) error {
 	if err := os.MkdirAll(filepath.Dir(f.Abs), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(f.Abs, []byte(f.Content), 0o644); err != nil {
+	if err := os.WriteFile(f.Abs, []byte(content), 0o644); err != nil {
 		return err
 	}
 	if f.Exec {
 		_ = os.Chmod(f.Abs, 0o755)
 	}
 	return nil
+}
+
+func stripFrontmatterFields(content string, keys []string) string {
+	if len(keys) == 0 {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	end := frontmatterEnd(lines)
+	if end < 0 {
+		return content
+	}
+	keySet := stringSet(keys)
+	out := make([]string, 0, len(lines))
+	out = append(out, lines[0])
+	for _, line := range lines[1:end] {
+		if key, ok := frontmatterLineKey(line); ok && keySet[key] {
+			continue
+		}
+		out = append(out, line)
+	}
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+func upsertFrontmatterFields(content string, order []string, values map[string]string) string {
+	lines := strings.Split(content, "\n")
+	end := frontmatterEnd(lines)
+	if end < 0 {
+		return content
+	}
+	keySet := stringSet(order)
+	out := make([]string, 0, len(lines)+len(values))
+	out = append(out, lines[0])
+	for _, line := range lines[1:end] {
+		if key, ok := frontmatterLineKey(line); ok && keySet[key] {
+			continue
+		}
+		out = append(out, line)
+	}
+	for _, key := range order {
+		if value, ok := values[key]; ok {
+			out = append(out, key+": "+value)
+		}
+	}
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
+func frontmatterEnd(lines []string) int {
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return -1
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return i
+		}
+	}
+	return -1
+}
+
+func frontmatterLineKey(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return "", false
+	}
+	idx := strings.Index(line, ":")
+	if idx < 0 {
+		return "", false
+	}
+	return strings.TrimSpace(line[:idx]), true
+}
+
+func stringSet(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, value := range values {
+		out[value] = true
+	}
+	return out
 }
 
 // nextOldPath returns the first free <abs>-N.old (N counting up from 1), so a
