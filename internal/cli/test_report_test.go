@@ -150,9 +150,89 @@ func TestSpecTestReportRunPassing(t *testing.T) {
 	if rep.Command != cmd {
 		t.Errorf("command = %q", rep.Command)
 	}
-	if len(rep.TestPaths) == 0 {
-		t.Errorf("expected testPaths evidence, got none")
+	if len(rep.TestPaths) != 1 || rep.TestPaths[0] != "specs/demo/" {
+		t.Errorf("testPaths = %v, want [specs/demo/]", rep.TestPaths)
 	}
+	for _, p := range rep.TestPaths {
+		if strings.Contains(p, "coverage.out") || strings.Contains(p, "junit.xml") {
+			t.Errorf("testPaths leaked an artifact path: %q", p)
+		}
+	}
+}
+
+// testPaths must deterministically point at the spec folder regardless of how the
+// metrics were gathered, and must never carry a discovered artifact path.
+func TestSpecTestReportTestPathsAnchoredToSpec(t *testing.T) {
+	readPaths := func(t *testing.T, specDir string) []string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(specDir, "test-report.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rep struct {
+			TestPaths []string `json:"testPaths"`
+		}
+		if err := json.Unmarshal(data, &rep); err != nil {
+			t.Fatal(err)
+		}
+		return rep.TestPaths
+	}
+
+	t.Run("explicit counts, no run", func(t *testing.T) {
+		root := t.TempDir()
+		specDir := writeSpec(t, root)
+		if code := specTestReport([]string{"demo", "--root", root, "--total", "3", "--passed", "3"}); code != 0 {
+			t.Fatalf("exit = %d", code)
+		}
+		got := readPaths(t, specDir)
+		if len(got) != 1 || got[0] != "specs/demo/" {
+			t.Errorf("testPaths = %v, want [specs/demo/]", got)
+		}
+	})
+
+	t.Run("discover by lang and path drops artifact paths", func(t *testing.T) {
+		root := t.TempDir()
+		specDir := writeSpec(t, root)
+		testsDir := filepath.Join(root, "tests")
+		if err := os.MkdirAll(testsDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(testsDir, "coverage.out"), []byte("mode: set\ngithub.com/a/b.go:1.1,2.2 3 1\n"), 0o644)
+		os.WriteFile(filepath.Join(testsDir, "junit.xml"), []byte(`<testsuites><testsuite name="s" tests="1" failures="0"><testcase name="a"/></testsuite></testsuites>`), 0o644)
+		if code := specTestReport([]string{"demo", "--root", root, "--lang", "go", "--path", "tests"}); code != 0 {
+			t.Fatalf("exit = %d", code)
+		}
+		got := readPaths(t, specDir)
+		if len(got) != 1 || got[0] != "specs/demo/" {
+			t.Errorf("testPaths = %v, want [specs/demo/]", got)
+		}
+		for _, p := range got {
+			if strings.Contains(p, "coverage.out") || strings.Contains(p, "junit.xml") || strings.Contains(p, "tests/") {
+				t.Errorf("testPaths leaked an artifact path: %q", p)
+			}
+		}
+	})
+
+	t.Run("explicit junit and coverage files", func(t *testing.T) {
+		root := t.TempDir()
+		specDir := writeSpec(t, root)
+		junit := filepath.Join(root, "junit.xml")
+		os.WriteFile(junit, []byte(`<testsuites><testsuite name="s" tests="2" failures="0"><testcase name="a"/><testcase name="b"/></testsuite></testsuites>`), 0o644)
+		cov := filepath.Join(root, "cover.out")
+		os.WriteFile(cov, []byte("mode: set\ngithub.com/a/b.go:1.1,2.2 3 1\n"), 0o644)
+		if code := specTestReport([]string{"demo", "--root", root, "--junit", junit, "--coverage", cov}); code != 0 {
+			t.Fatalf("exit = %d", code)
+		}
+		got := readPaths(t, specDir)
+		if len(got) != 1 || got[0] != "specs/demo/" {
+			t.Errorf("testPaths = %v, want [specs/demo/]", got)
+		}
+		for _, p := range got {
+			if strings.Contains(p, "junit.xml") || strings.Contains(p, "cover.out") {
+				t.Errorf("testPaths leaked an artifact path: %q", p)
+			}
+		}
+	})
 }
 
 func TestSpecTestReportRunFailing(t *testing.T) {
