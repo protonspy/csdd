@@ -696,9 +696,6 @@ func specTestReport(args []string) int {
 	// Fold tests: parsed summary first, else explicit counts.
 	if ts != nil {
 		rep.Tests = &session.SpecTestCounts{Total: ts.Total, Passed: ts.Passed, Failed: ts.Failed, Skipped: ts.Skipped}
-		if ts.Source != "" {
-			rep.TestPaths = appendUnique(rep.TestPaths, ts.Source)
-		}
 		rep.Attentions = append(rep.Attentions, testAttentions(ts)...)
 	} else if total >= 0 || passed >= 0 || failed >= 0 || skipped >= 0 {
 		rep.Tests = &session.SpecTestCounts{Total: nz(total), Passed: nz(passed), Failed: nz(failed), Skipped: nz(skipped)}
@@ -707,9 +704,6 @@ func specTestReport(args []string) int {
 	// Fold coverage: parsed summary first, else explicit counts.
 	if cov != nil {
 		rep.Coverage = &session.SpecCovSummary{Pct: cov.Pct, Covered: cov.Covered, Lines: cov.Lines}
-		if cov.Source != "" {
-			rep.TestPaths = appendUnique(rep.TestPaths, cov.Source)
-		}
 	} else if pct >= 0 || covered >= 0 || lines >= 0 {
 		c := &session.SpecCovSummary{Covered: nz(covered), Lines: nz(lines)}
 		switch {
@@ -729,6 +723,14 @@ func specTestReport(args []string) int {
 		render.Err("nothing to record: pass --run, --junit/--coverage, --lang/--path, or explicit --total/--passed/--pct flags")
 		return 1
 	}
+
+	// testPaths is the spec's own folder — deterministic over (root, feature) and
+	// independent of where the test/coverage artifacts were found.
+	specRel := filepath.ToSlash(workspace.Relative(r, sdir))
+	if !strings.HasSuffix(specRel, "/") {
+		specRel += "/"
+	}
+	rep.TestPaths = []string{specRel}
 
 	b, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
@@ -796,16 +798,6 @@ func testAttentions(ts *session.TestSummary) []string {
 		out = append(out, fmt.Sprintf("%d test(s) skipped", ts.Skipped))
 	}
 	return out
-}
-
-// appendUnique appends s to xs unless already present.
-func appendUnique(xs []string, s string) []string {
-	for _, x := range xs {
-		if x == s {
-			return xs
-		}
-	}
-	return append(xs, s)
 }
 
 // nz clamps an "unset" (-1) flag value to 0.

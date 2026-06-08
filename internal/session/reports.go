@@ -26,7 +26,7 @@ type SpecReport struct {
 	Command    string          `json:"command,omitempty"`
 	Tests      *SpecTestCounts `json:"tests,omitempty"`
 	Coverage   *SpecCovSummary `json:"coverage,omitempty"`
-	TestPaths  []string        `json:"testPaths,omitempty"`  // report artifacts proving the run (traceable evidence)
+	TestPaths  []string        `json:"testPaths,omitempty"`  // the spec folder this evidence belongs to (deterministic: specs/<feature>/)
 	Attentions []string        `json:"attentions,omitempty"` // key unit-test signals: failures, skips, command failure
 }
 
