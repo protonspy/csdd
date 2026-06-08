@@ -19,7 +19,9 @@ func TestMCPAddStdioAndRemote(t *testing.T) {
 		t.Fatal("stdio add should succeed")
 	}
 	if code, _, _ := run(t, "mcp", "add", "linear",
-		"--url", "https://mcp.linear.app/sse", "--type", "sse", "--root", dir); code != 0 {
+		"--url", "https://mcp.linear.app/sse", "--type", "sse",
+		"--header", "Authorization=Bearer ${LINEAR_API_KEY}",
+		"--root", dir); code != 0 {
 		t.Fatal("remote add should succeed")
 	}
 	cfg, err := loadMCP(mcpJSONPath(dir))
@@ -31,7 +33,7 @@ func TestMCPAddStdioAndRemote(t *testing.T) {
 		t.Errorf("stdio server not stored correctly: %+v", fsrv)
 	}
 	lin, ok := cfg.MCPServers["linear"]
-	if !ok || lin.URL == "" || lin.Type != "sse" {
+	if !ok || lin.URL == "" || lin.Type != "sse" || lin.Headers["Authorization"] != "Bearer ${LINEAR_API_KEY}" {
 		t.Errorf("remote server not stored correctly: %+v", lin)
 	}
 	// stdio server must not carry a type, remote must not carry a command.
@@ -58,6 +60,8 @@ func TestMCPAddErrors(t *testing.T) {
 		{"mcp", "add", "x", "--root", dir},                                 // neither transport
 		{"mcp", "add", "x", "--url", "u", "--type", "ftp", "--root", dir},  // bad remote type
 		{"mcp", "add", "x", "--command", "c", "--env", "NOEQ", "--root", dir},
+		{"mcp", "add", "x", "--url", "u", "--header", "NOEQ", "--root", dir},
+		{"mcp", "add", "x", "--command", "c", "--header", "Authorization=Bearer x", "--root", dir},
 		{"mcp", "add", "Bad_Name", "--command", "c", "--root", dir}, // non-kebab
 	}
 	for _, args := range cases {
@@ -210,22 +214,24 @@ func TestParseEnvKV(t *testing.T) {
 func TestValidateMCPConfigDirect(t *testing.T) {
 	cfg := MCPConfig{MCPServers: map[string]MCPServer{
 		"good-stdio":  {Command: "c"},
-		"good-remote": {URL: "u", Type: "http"},
+		"good-remote": {URL: "u", Type: "http", Headers: map[string]string{"Authorization": "Bearer ${TOKEN}"}},
 		"empty":       {},
 		"both":        {Command: "c", URL: "u", Type: "http"},
 		"bad-type":    {URL: "u", Type: "ftp"},
 		"stdio-typed": {Command: "c", Type: "http"},
+		"stdio-head":  {Command: "c", Headers: map[string]string{"Authorization": "Bearer token"}},
+		"empty-head":  {URL: "u", Type: "http", Headers: map[string]string{"": "Bearer token"}},
 	}}
 	issues := validateMCPConfig(cfg)
-	// Expect exactly the four broken servers to be flagged.
-	if len(issues) != 4 {
-		t.Fatalf("expected 4 issues, got %d: %v", len(issues), issues)
+	// Expect exactly the six broken servers to be flagged.
+	if len(issues) != 6 {
+		t.Fatalf("expected 6 issues, got %d: %v", len(issues), issues)
 	}
 	joined := ""
 	for _, i := range issues {
 		joined += i.String() + "\n"
 	}
-	for _, want := range []string{"empty", "both", "bad-type", "stdio-typed"} {
+	for _, want := range []string{"empty", "both", "bad-type", "stdio-typed", "stdio-head", "empty-head"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("expected an issue mentioning %q:\n%s", want, joined)
 		}
