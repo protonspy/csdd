@@ -113,6 +113,105 @@ func TestUpdatePristineOutdatedUpdatesInPlace(t *testing.T) {
 	}
 }
 
+func TestUpdatePreservesManagedAgentModelEffort(t *testing.T) {
+	dir := freshWorkspace(t)
+	agent := filepath.Join(dir, ".claude", "agents", "implementer.md")
+	withOverrides := strings.Replace(
+		readFile(t, agent),
+		"tools: Read, Grep, Glob, Edit, Write, Bash\n---",
+		"tools: Read, Grep, Glob, Edit, Write, Bash\nmodel: opus\neffort: high\n---",
+		1,
+	)
+	if err := os.WriteFile(agent, []byte(withOverrides), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, _ := run(t, "update", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update failed: code=%d\n%s", code, out)
+	}
+	got := readFile(t, agent)
+	for _, want := range []string{"model: opus", "effort: high"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("update lost managed agent override %q:\n%s", want, got)
+		}
+	}
+	if olds := oldBackups(t, dir); len(olds) != 0 {
+		t.Errorf("model/effort-only changes should not create .old backups: %v", olds)
+	}
+	if !strings.Contains(out, "0 conflict(s)") {
+		t.Errorf("model/effort-only changes should not be conflicts:\n%s", out)
+	}
+}
+
+func TestUpdatePreservesManagedSkillModelEffort(t *testing.T) {
+	dir := freshWorkspace(t)
+	skill := filepath.Join(dir, ".claude", "skills", "verify-change", "SKILL.md")
+	withOverrides := strings.Replace(
+		readFile(t, skill),
+		"description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.\n---",
+		"description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.\nmodel: sonnet\neffort: high\n---",
+		1,
+	)
+	if err := os.WriteFile(skill, []byte(withOverrides), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, _ := run(t, "update", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update failed: code=%d\n%s", code, out)
+	}
+	got := readFile(t, skill)
+	for _, want := range []string{"model: sonnet", "effort: high"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("update lost managed skill override %q:\n%s", want, got)
+		}
+	}
+	if olds := oldBackups(t, dir); len(olds) != 0 {
+		t.Errorf("model/effort-only changes should not create .old backups: %v", olds)
+	}
+}
+
+func TestUpdateCarriesManagedAgentModelEffortAcrossTemplateRefresh(t *testing.T) {
+	dir := freshWorkspace(t)
+	agent := filepath.Join(dir, ".claude", "agents", "implementer.md")
+	relKey := ".claude/agents/implementer.md"
+
+	oldShipped := "---\nname: implementer\ndescription: old\ntools: Read\n---\nOLD BODY\n"
+	oldWithOverrides := "---\nname: implementer\ndescription: old\ntools: Read\nmodel: sonnet\neffort: max\n---\nOLD BODY\n"
+	if err := os.WriteFile(agent, []byte(oldWithOverrides), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := manifest.Load(paths.Manifest(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Files[relKey] = manifest.Hash(oldShipped)
+	if err := m.Save(paths.Manifest(dir), "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, _ := run(t, "update", "--root", dir)
+	if code != 0 {
+		t.Fatalf("update failed: code=%d\n%s", code, out)
+	}
+	got := readFile(t, agent)
+	for _, want := range []string{"model: sonnet", "effort: max", "You implement **one task at a time**"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("refreshed agent missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "OLD BODY") {
+		t.Errorf("pristine outdated agent should be refreshed, got:\n%s", got)
+	}
+	if _, err := os.Stat(agent + "-1.old"); !os.IsNotExist(err) {
+		t.Errorf("metadata-only overrides should update in place without .old backup (err=%v)", err)
+	}
+	if !strings.Contains(out, "1 updated") {
+		t.Errorf("template refresh should be reported as update:\n%s", out)
+	}
+}
+
 func TestUpdateForceSkipsBackup(t *testing.T) {
 	dir := freshWorkspace(t)
 	rule := filepath.Join(dir, ".claude", "rules", "ears-format.md")
