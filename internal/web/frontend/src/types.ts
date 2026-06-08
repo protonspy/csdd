@@ -19,6 +19,8 @@ export interface Artifact {
   path: string
   description?: string // agents, skills, steering(auto)
   tools?: string // agents
+  model?: string // agents, skills (optional override)
+  effort?: string // agents, skills (optional override)
   inclusion?: string // steering: always | fileMatch | manual | auto
 }
 

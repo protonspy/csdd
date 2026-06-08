@@ -112,6 +112,37 @@ func TestOverviewArtifactMetadata(t *testing.T) {
 	}
 }
 
+func TestOverviewArtifactModelEffort(t *testing.T) {
+	root := writeWorkspace(t, map[string]string{
+		".claude/agents/heavy.md":      "---\nname: heavy\ndescription: d\ntools: Read\nmodel: opus\neffort: high\n---\n# Agent\n",
+		".claude/agents/plain.md":      "---\nname: plain\ndescription: d\ntools: Read\n---\n# Agent\n",
+		".claude/skills/deep/SKILL.md": "---\nname: deep\ndescription: d\nmodel: sonnet\neffort: max\n---\n# Skill\n",
+		".claude/skills/lite/SKILL.md": "---\nname: lite\ndescription: d\n---\n# Skill\n",
+	})
+	ov := LoadOverview(root)
+
+	// Agents sorted: heavy then plain.
+	if len(ov.Agents) != 2 {
+		t.Fatalf("agents = %+v", ov.Agents)
+	}
+	if ov.Agents[0].Model != "opus" || ov.Agents[0].Effort != "high" {
+		t.Errorf("heavy agent model/effort = %q/%q, want opus/high", ov.Agents[0].Model, ov.Agents[0].Effort)
+	}
+	if ov.Agents[1].Model != "" || ov.Agents[1].Effort != "" {
+		t.Errorf("plain agent should omit model/effort, got %q/%q", ov.Agents[1].Model, ov.Agents[1].Effort)
+	}
+	// Skills sorted: deep then lite.
+	if len(ov.Skills) != 2 {
+		t.Fatalf("skills = %+v", ov.Skills)
+	}
+	if ov.Skills[0].Model != "sonnet" || ov.Skills[0].Effort != "max" {
+		t.Errorf("deep skill model/effort = %q/%q, want sonnet/max", ov.Skills[0].Model, ov.Skills[0].Effort)
+	}
+	if ov.Skills[1].Model != "" || ov.Skills[1].Effort != "" {
+		t.Errorf("lite skill should omit model/effort, got %q/%q", ov.Skills[1].Model, ov.Skills[1].Effort)
+	}
+}
+
 func TestOverviewEmptyWorkspace(t *testing.T) {
 	root := t.TempDir()
 	ov := LoadOverview(root) // no specs/, no .claude/
