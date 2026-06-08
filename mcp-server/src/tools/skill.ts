@@ -27,6 +27,8 @@ export const skillTools: ToolDef[] = [
       name: skillName,
       description: z.string().describe("One-sentence activation trigger for the skill."),
       title: z.string().optional().describe("Document title (defaults to Title Case of name)."),
+      model: z.string().optional().describe("Model override (e.g. sonnet, opus, haiku). Omit to inherit the session config."),
+      effort: z.string().optional().describe("Effort level: low|medium|high|xhigh|max. Omit to inherit the session config."),
       root: rootField,
     },
     toArgs: (p) => [
@@ -34,6 +36,8 @@ export const skillTools: ToolDef[] = [
       "create",
       p.name,
       ...flag("--description", p.description),
+      ...flag("--model", p.model),
+      ...flag("--effort", p.effort),
       ...flag("--title", p.title),
       ...rootArg(p),
     ],

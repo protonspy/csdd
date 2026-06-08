@@ -31,6 +31,10 @@ Work in this order, and **drive every change through the `csdd` CLI**:
    --tools Grep --tools Glob --tools Edit --tools Write --tools Bash`, then fill its body from the
    generic `implementer` plus this stack's test command, idioms, and gate. Add the skills the stack
    needs (e.g. a framework or `<lang>` test skill) with `csdd skill create` when one is missing.
+   When you scaffold a sub-agent or skill, choose its `--model` and `--effort` by the task's
+   complexity: a lower/cheaper model and lower effort for mechanical, well-bounded work; a stronger
+   model and higher effort for genuinely complex reasoning. When neither a specific model nor a
+   specific effort is warranted, omit both flags so the agent/skill inherits the session configuration.
 5. **Validate.** Run `csdd steering validate` and `csdd skill validate` (and `csdd spec validate` /
    `status` if a spec exists); confirm the new agent with `csdd agent show <name>` (there is no
    `csdd agent validate`). Fix anything the validators report; if `csdd` exits non-zero, stop and

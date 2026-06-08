@@ -72,6 +72,11 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
   // skill
   ["csdd_skill_create", { name: "s", description: "d" }, ["skill", "create", "s", "--description", "d"]],
   ["csdd_skill_create", { name: "s", description: "d", title: "S", root: "/p" }, ["skill", "create", "s", "--description", "d", "--title", "S", "--root", "/p"]],
+  [
+    "csdd_skill_create",
+    { name: "s", description: "d", model: "opus", effort: "low" },
+    ["skill", "create", "s", "--description", "d", "--model", "opus", "--effort", "low"],
+  ],
   ["csdd_skill_list", {}, ["skill", "list"]],
   ["csdd_skill_show", { name: "s" }, ["skill", "show", "s"]],
   ["csdd_skill_add_reference", { skill: "s", file: "r.md" }, ["skill", "add-reference", "s", "r.md"]],
@@ -86,6 +91,16 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
     "csdd_agent_create",
     { name: "rev", description: "d", tools: ["Read", "Grep"], model: "opus", title: "Rev", force: true, root: "/p" },
     ["agent", "create", "rev", "--description", "d", "--tools", "Read", "--tools", "Grep", "--model", "opus", "--title", "Rev", "--force", "--root", "/p"],
+  ],
+  [
+    "csdd_agent_create",
+    { name: "rev", description: "d", effort: "high" },
+    ["agent", "create", "rev", "--description", "d", "--effort", "high"],
+  ],
+  [
+    "csdd_agent_create",
+    { name: "rev", description: "d", model: "opus", effort: "max" },
+    ["agent", "create", "rev", "--description", "d", "--model", "opus", "--effort", "max"],
   ],
   ["csdd_agent_list", {}, ["agent", "list"]],
   ["csdd_agent_show", { name: "rev" }, ["agent", "show", "rev"]],

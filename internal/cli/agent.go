@@ -45,6 +45,7 @@ type AgentCreateOptions struct {
 	Description string
 	Tools       []string
 	Model       string
+	Effort      string // optional; empty = omit (inherit session config)
 	Title       string
 	Force       bool
 }
@@ -57,6 +58,7 @@ func agentCreate(args []string, templates embed.FS) int {
 	fs.StringVar(&opts.Description, "description", "", "When the orchestrator should pick this agent.")
 	fs.Var(&tools, "tools", "Tool name (repeatable). Default: Read, Grep.")
 	fs.StringVar(&opts.Model, "model", "", "Optional model override (e.g., sonnet, opus, haiku).")
+	fs.StringVar(&opts.Effort, "effort", "", "Optional effort: low|medium|high|xhigh|max.")
 	fs.StringVar(&opts.Title, "title", "", "Document title (default: derived from name).")
 	addForce(fs, &opts.Force)
 	positionals, err := parseFlags(fs, args)
@@ -84,6 +86,10 @@ func AgentCreate(templates embed.FS, opts AgentCreateOptions) error {
 	if err := workspace.KebabCheck(opts.Name, "agent"); err != nil {
 		return err
 	}
+	// Validate effort before writing any file, so an invalid value creates nothing.
+	if err := validateEffort(opts.Effort); err != nil {
+		return err
+	}
 	r, err := workspace.Resolve(opts.Root)
 	if err != nil {
 		return err
@@ -107,6 +113,7 @@ func AgentCreate(templates embed.FS, opts AgentCreateOptions) error {
 		"Description": opts.Description,
 		"Tools":       toolsStr,
 		"Model":       opts.Model,
+		"Effort":      opts.Effort,
 		"Title":       title,
 	})
 	if err != nil {

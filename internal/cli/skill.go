@@ -53,6 +53,8 @@ type SkillCreateOptions struct {
 	Name        string
 	Description string
 	Title       string
+	Model       string // optional; empty = omit (inherit session config)
+	Effort      string // optional; empty = omit (inherit session config)
 }
 
 func skillCreate(args []string, templates embed.FS) int {
@@ -61,6 +63,8 @@ func skillCreate(args []string, templates embed.FS) int {
 	addRoot(fs, &opts.Root)
 	fs.StringVar(&opts.Description, "description", "", "One-sentence activation trigger.")
 	fs.StringVar(&opts.Title, "title", "", "Document title (default: derived from name).")
+	fs.StringVar(&opts.Model, "model", "", "Optional model override (e.g., sonnet, opus, haiku).")
+	fs.StringVar(&opts.Effort, "effort", "", "Optional effort: low|medium|high|xhigh|max.")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -85,6 +89,11 @@ func SkillCreate(templates embed.FS, opts SkillCreateOptions) error {
 	if err := workspace.KebabCheck(opts.Name, "skill"); err != nil {
 		return err
 	}
+	// Validate effort before creating any directory or file, so an invalid value
+	// leaves no partial artifact behind.
+	if err := validateEffort(opts.Effort); err != nil {
+		return err
+	}
 	r, err := workspace.Resolve(opts.Root)
 	if err != nil {
 		return err
@@ -107,6 +116,8 @@ func SkillCreate(templates embed.FS, opts SkillCreateOptions) error {
 		"Name":        opts.Name,
 		"Description": opts.Description,
 		"Title":       title,
+		"Model":       opts.Model,
+		"Effort":      opts.Effort,
 	})
 	if err != nil {
 		return err
