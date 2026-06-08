@@ -25,6 +25,7 @@ export const agentTools: ToolDef[] = [
         .optional()
         .describe("Tool names to grant (e.g. Read, Grep, Bash, Edit). Repeatable."),
       model: z.string().optional().describe("Model override (e.g. sonnet, opus, haiku)."),
+      effort: z.string().optional().describe("Effort level: low|medium|high|xhigh|max. Omit to inherit the session config."),
       title: z.string().optional().describe("Document title (defaults to Title Case of name)."),
       force: forceField,
       root: rootField,
@@ -36,6 +37,7 @@ export const agentTools: ToolDef[] = [
       ...flag("--description", p.description),
       ...multi("--tools", p.tools),
       ...flag("--model", p.model),
+      ...flag("--effort", p.effort),
       ...flag("--title", p.title),
       ...bool("--force", p.force),
       ...rootArg(p),

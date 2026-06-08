@@ -26,7 +26,9 @@ not a rebuild: change only what drifted. As with `/csdd-setup-init`, drive every
 3. **Apply targeted adjustments** through the CLI only: add a missing skill (`csdd skill create`),
    add or refresh an agent (`csdd agent create`), or update steering (`csdd steering create`) for the
    drift you found. Do **not** recreate artifacts that are already correct. Never add secrets to
-   steering or specs.
+   steering or specs. When you create or refresh a sub-agent or skill, choose its `--model` and
+   `--effort` by the task's complexity (lower/cheaper for mechanical work, stronger/higher for complex
+   reasoning), and omit both flags when neither is warranted so it inherits the session configuration.
 4. **Validate** with `csdd steering validate` and `csdd skill validate` (confirm agents with
    `csdd agent show` — there is no `csdd agent validate`); if `csdd` exits non-zero, stop and report
    rather than forcing past it.

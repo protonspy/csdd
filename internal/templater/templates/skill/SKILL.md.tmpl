@@ -1,6 +1,12 @@
 ---
 name: {{.Name}}
 description: {{.Description}}
+{{- if .Model}}
+model: {{.Model}}
+{{- end}}
+{{- if .Effort}}
+effort: {{.Effort}}
+{{- end}}
 ---
 
 # {{.Title}}
