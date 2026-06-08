@@ -57,6 +57,16 @@ export function ResourceView({
               tools: <b>{artifact.tools}</b>
             </span>
           )}
+          {artifact.model && (
+            <span className="meta-tag">
+              model: <b>{artifact.model}</b>
+            </span>
+          )}
+          {artifact.effort && (
+            <span className="meta-tag">
+              effort: <b>{artifact.effort}</b>
+            </span>
+          )}
           <span className="meta-tag muted">{artifact.path}</span>
         </div>
       </div>

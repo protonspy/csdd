@@ -60,6 +60,8 @@ type Artifact struct {
 	Path        string `json:"path"`
 	Description string `json:"description,omitempty"` // agents, skills, steering(auto)
 	Tools       string `json:"tools,omitempty"`       // agents
+	Model       string `json:"model,omitempty"`       // agents, skills (optional override)
+	Effort      string `json:"effort,omitempty"`      // agents, skills (optional override)
 	Inclusion   string `json:"inclusion,omitempty"`   // steering: always|fileMatch|manual|auto
 }
 
@@ -289,6 +291,8 @@ func listAgents(dir, root string) []Artifact {
 		fm := readFrontmatter(filepath.Join(dir, out[i].Name))
 		out[i].Description = fm.AsString("description", "")
 		out[i].Tools = fm.AsString("tools", "")
+		out[i].Model = fm.AsString("model", "")
+		out[i].Effort = fm.AsString("effort", "")
 	}
 	return out
 }
@@ -311,6 +315,8 @@ func listSkills(dir, root string) []Artifact {
 	for i := range out {
 		fm := readFrontmatter(filepath.Join(dir, out[i].Name, "SKILL.md"))
 		out[i].Description = fm.AsString("description", "")
+		out[i].Model = fm.AsString("model", "")
+		out[i].Effort = fm.AsString("effort", "")
 	}
 	return out
 }
