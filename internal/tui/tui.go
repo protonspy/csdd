@@ -35,6 +35,7 @@ const (
 	screenSkill
 	screenAgent
 	screenMCP
+	screenPreset
 	screenExport
 	screenBrowser
 	screenResult
@@ -85,6 +86,8 @@ func (a *App) switchToWizard(kind wizardKind) {
 		a.screen = screenAgent
 	case wizMCP:
 		a.screen = screenMCP
+	case wizPreset:
+		a.screen = screenPreset
 	case wizExport:
 		a.screen = screenExport
 	}
@@ -128,7 +131,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch a.screen {
 	case screenMenu:
 		a.menu, cmd = a.menu.Update(msg)
-	case screenSteering, screenSpec, screenSkill, screenAgent, screenMCP, screenExport:
+	case screenSteering, screenSpec, screenSkill, screenAgent, screenMCP, screenPreset, screenExport:
 		a.wiz, cmd = a.wiz.Update(msg)
 	case screenBrowser:
 		a.browse, cmd = a.browse.Update(msg)
@@ -152,7 +155,7 @@ func (a *App) View() string {
 	switch a.screen {
 	case screenMenu:
 		body = a.menu.View()
-	case screenSteering, screenSpec, screenSkill, screenAgent, screenMCP, screenExport:
+	case screenSteering, screenSpec, screenSkill, screenAgent, screenMCP, screenPreset, screenExport:
 		body = a.wiz.View()
 	case screenBrowser:
 		body = a.browse.View(a.width, a.height)

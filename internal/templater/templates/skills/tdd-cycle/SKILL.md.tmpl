@@ -18,6 +18,9 @@ test, not production code.
 - Which task? (a single leaf task ID from `specs/<feature>/tasks.md`)
 - What is the expected, observable behavior? (state it in one sentence before editing)
 - Where do existing tests for this area live, and what is the test command?
+- If the behavior calls a library/framework API, confirm that API against its
+  **current** docs with the Context7 MCP tools (if connected) before writing the
+  test — so RED fails for the right reason and GREEN targets the real signature.
 
 ## Execution Workflow
 

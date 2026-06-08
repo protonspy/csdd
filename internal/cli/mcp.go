@@ -46,6 +46,10 @@ func runMCP(args []string) int {
 	switch action {
 	case "add":
 		return mcpAdd(rest)
+	case "install":
+		return mcpInstall(rest)
+	case "presets":
+		return mcpPresets(rest)
 	case "list":
 		return mcpList(rest)
 	case "show":

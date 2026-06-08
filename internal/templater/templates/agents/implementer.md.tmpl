@@ -26,6 +26,9 @@ the discipline *around* one task: scope, evidence, task-marking, and reporting.
 - Which single task? (one leaf ID from `tasks.md`, with its `_Requirements:_` / `_Boundary:_`).
 - What observable behavior does it add? State it in one sentence before editing.
 - Which `design.md` boundary owns it, and what is the project's test command?
+- Will it call a library/framework API? If so, confirm the signature against current
+  docs with the Context7 MCP tools (if connected) before writing the test — don't
+  code against a remembered API that may have changed.
 
 ## Workflow
 
