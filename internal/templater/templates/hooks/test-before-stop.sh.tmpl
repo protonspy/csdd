@@ -10,6 +10,21 @@ set -euo pipefail
 
 echo "Before reporting done, run the verify-change skill: tests, lint, typecheck, build — and paste the real output." >&2
 
+# Spec-boundary context hygiene: when the spec you're working on has all its
+# tasks checked, nudge the operator to /clear before the next feature so context
+# does not accumulate across specs. Claude cannot run /clear itself — this is a
+# reminder to the human. Keyed off the most recently modified specs/*/tasks.md.
+specs_dir="${CLAUDE_PROJECT_DIR:-$PWD}/specs"
+latest_tasks=$(ls -t "$specs_dir"/*/tasks.md 2>/dev/null | head -n1 || true)
+if [ -n "$latest_tasks" ]; then
+  total=$(grep -cE '^[[:space:]]*- \[[ xX]\]' "$latest_tasks" 2>/dev/null || true)
+  open=$(grep -cE '^[[:space:]]*- \[ \]' "$latest_tasks" 2>/dev/null || true)
+  if [ "${total:-0}" -gt 0 ] && [ "${open:-0}" -eq 0 ]; then
+    feature=$(basename "$(dirname "$latest_tasks")")
+    echo "Spec '$feature' has all tasks checked — once its PR ships, run /clear to reset context before the next feature." >&2
+  fi
+fi
+
 # --- Hard gate (opt-in): uncomment and adapt to your project ---------------
 # if [ -f Makefile ] && grep -qE '^(test|verify):' Makefile; then
 #   make verify || make test || { echo "verification failed — not done yet" >&2; exit 2; }

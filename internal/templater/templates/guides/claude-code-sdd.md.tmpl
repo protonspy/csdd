@@ -1241,6 +1241,7 @@ move to next task
 
 **Rules:**
 
+- Branch before the first task — create the spec's branch `<type>/<feature>` in kebab-case (`feat/` feature, `fix/` bugfix, `chore/` small adjustment; also `refactor/` `docs/` `test/` `perf/`); never implement on the default branch.
 - 1 task per iteration — context hygiene.
 - Each role gets a fresh context — no accumulated bias.
 - The implementer always starts from a failing test; it MUST NOT write production code before a red test exists.
@@ -1270,7 +1271,7 @@ Claude Code maps the autonomy/review concepts of SDD onto **permission modes** a
 Context management:
 
 - Reference files explicitly with `@path` (e.g., `@src/api/albums.ts`, `@specs/photo-albums/design.md`) instead of describing them.
-- Use `/clear` to reset context between unrelated tasks — the per-task hygiene that keeps sub-agents unbiased.
+- Use `/clear` to reset context between unrelated tasks, and at every feature/spec boundary — run it before `spec init` to start a feature on a clean context, and again once the feature's PR ships, so context does not accumulate across specs. Claude cannot run `/clear` itself; the Stop hook reminds the operator when a spec's tasks are all checked.
 - Ask for a plan (plan mode) before a large change; separate analysis, implementation, and validation into distinct prompts.
 - Do not mix many goals in a single request.
 
