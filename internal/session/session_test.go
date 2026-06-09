@@ -56,7 +56,7 @@ func TestOverview(t *testing.T) {
 	if len(ov.Specs) != 2 {
 		t.Fatalf("specs = %d, want 2", len(ov.Specs))
 	}
-	// Sorted alphabetically: photo-albums then zebra.
+	// Ordered newest-created first: photo-albums (dated) before zebra (no created_at).
 	pa := ov.Specs[0]
 	if pa.Feature != "photo-albums" {
 		t.Fatalf("first spec = %q, want photo-albums", pa.Feature)
@@ -191,6 +191,54 @@ func TestOverviewMalformedSpecJSON(t *testing.T) {
 	}
 	if ov.Specs[0].Phase != "(unreadable)" {
 		t.Errorf("phase = %q, want (unreadable)", ov.Specs[0].Phase)
+	}
+}
+
+func TestOverviewSpecsSortedByCreatedAtDesc(t *testing.T) {
+	// Three readable specs whose creation dates differ from alphabetical order,
+	// so the assertion distinguishes created-at ordering from name ordering.
+	spec := func(name, createdAt string) string {
+		return `{"feature_name":"` + name + `","phase":"requirements-generated","approvals":{},"created_at":"` + createdAt + `"}`
+	}
+	root := writeWorkspace(t, map[string]string{
+		"specs/alpha/spec.json": spec("alpha", "2025-01-01T00:00:00Z"),
+		"specs/beta/spec.json":  spec("beta", "2025-06-01T00:00:00Z"),
+		"specs/gamma/spec.json": spec("gamma", "2025-03-01T00:00:00Z"),
+	})
+
+	ov := LoadOverview(root)
+
+	var got []string
+	for _, s := range ov.Specs {
+		got = append(got, s.Feature)
+	}
+	// Newest created_at first: beta (Jun) → gamma (Mar) → alpha (Jan).
+	want := []string{"beta", "gamma", "alpha"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("spec order = %v, want %v", got, want)
+	}
+}
+
+func TestOverviewSpecsCreatedAtTieBreaksByName(t *testing.T) {
+	// Equal created_at (and the empty-created_at unreadable case) must fall back
+	// to a deterministic name-ascending order.
+	root := writeWorkspace(t, map[string]string{
+		"specs/bravo/spec.json": `{"feature_name":"bravo","approvals":{},"created_at":"2025-01-01T00:00:00Z"}`,
+		"specs/alpha/spec.json": `{"feature_name":"alpha","approvals":{},"created_at":"2025-01-01T00:00:00Z"}`,
+		"specs/zulu/spec.json":  `{ broken`,
+		"specs/yank/spec.json":  `{ broken`,
+	})
+
+	ov := LoadOverview(root)
+
+	var got []string
+	for _, s := range ov.Specs {
+		got = append(got, s.Feature)
+	}
+	// Dated pair (tie) name-ascending first, then empty-created_at pair name-ascending.
+	want := []string{"alpha", "bravo", "yank", "zulu"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("spec order = %v, want %v", got, want)
 	}
 }
 

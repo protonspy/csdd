@@ -115,10 +115,20 @@ func LoadOverview(root string) Overview {
 				names = append(names, e.Name())
 			}
 		}
-		sort.Strings(names)
 		for _, n := range names {
 			ov.Specs = append(ov.Specs, buildCard(specsDir, n))
 		}
+		// Newest spec first, by spec.json created_at (an RFC3339 UTC string, so a
+		// lexical compare is chronological). Ties — and unreadable specs, whose
+		// CreatedAt is empty — fall back to feature name ascending for a stable
+		// order.
+		sort.Slice(ov.Specs, func(i, j int) bool {
+			a, b := ov.Specs[i], ov.Specs[j]
+			if a.CreatedAt != b.CreatedAt {
+				return a.CreatedAt > b.CreatedAt
+			}
+			return a.Feature < b.Feature
+		})
 	}
 	ov.Steering = listSteering(paths.Steering(root), root)
 	ov.Skills = listSkills(paths.Skills(root), root)
