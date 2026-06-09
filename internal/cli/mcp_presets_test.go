@@ -63,6 +63,9 @@ func TestMCPInstallGithub(t *testing.T) {
 	if srv.URL != "https://api.githubcopilot.com/mcp/" || srv.Type != "http" {
 		t.Errorf("github remote config wrong: %+v", srv)
 	}
+	if srv.Headers["Authorization"] != "Bearer ${GITHUB_PAT}" {
+		t.Errorf("github preset must include Authorization header with env placeholder, got: %+v", srv.Headers)
+	}
 	if srv.Command != "" || len(srv.Env) != 0 {
 		t.Errorf("github preset must store no command and no secret env: %+v", srv)
 	}
@@ -179,7 +182,8 @@ func TestMCPInstallGithubEmitsAuthNote(t *testing.T) {
 	if code != 0 {
 		t.Fatal("install github should succeed")
 	}
-	if !strings.Contains(strings.ToLower(out), "auth") {
+	lower := strings.ToLower(out)
+	if !strings.Contains(lower, "auth") || !strings.Contains(out, "GITHUB_PAT") {
 		t.Errorf("github install should surface an auth note:\n%s", out)
 	}
 }

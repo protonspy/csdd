@@ -21,6 +21,7 @@ type Preset struct {
 	Args      []string // stdio only
 	URL       string   // remote only
 	Type      string   // remote only: "sse" | "http"
+	Headers   []string // remote only: static header K=V pairs; keep secret-free
 	Note      string   // optional hint emitted after install (e.g. auth caveat)
 }
 
@@ -47,7 +48,8 @@ var mcpPresetRegistry = map[string]Preset{
 		Transport: "http",
 		URL:       "https://api.githubcopilot.com/mcp/",
 		Type:      "http",
-		Note:      "Requires GitHub auth — authenticate via your client's OAuth on first use (or add a PAT). No token is stored by csdd.",
+		Headers:   []string{"Authorization=Bearer ${GITHUB_PAT}"},
+		Note:      "Requires GitHub auth — set GITHUB_PAT to a PAT with the required scopes before connecting. No token is stored by csdd.",
 	},
 }
 
@@ -100,6 +102,7 @@ func MCPInstallPreset(opts MCPInstallPresetOptions) error {
 			Name:    p.Name,
 			Command: p.Command,
 			Args:    p.Args,
+			Headers: p.Headers,
 			URL:     p.URL,
 			Type:    p.Type,
 			Force:   opts.Force,

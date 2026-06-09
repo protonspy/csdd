@@ -30,6 +30,7 @@ type MCPServer struct {
 	Env         map[string]string `json:"env,omitempty"`
 	URL         string            `json:"url,omitempty"`
 	Type        string            `json:"type,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
 	Disabled    bool              `json:"disabled,omitempty"`
 	AutoApprove []string          `json:"autoApprove,omitempty"`
 }
@@ -117,6 +118,7 @@ type MCPAddOptions struct {
 	Command     string
 	Args        []string
 	Env         []string // raw "K=V" pairs; parsed in MCPAdd
+	Headers     []string // raw "K=V" pairs; parsed in MCPAdd
 	URL         string
 	Type        string
 	Disabled    bool
@@ -127,11 +129,12 @@ type MCPAddOptions struct {
 func mcpAdd(args []string) int {
 	fs := flag.NewFlagSet("mcp add", flag.ContinueOnError)
 	var opts MCPAddOptions
-	var argv, env, auto stringSliceFlag
+	var argv, env, headers, auto stringSliceFlag
 	addRoot(fs, &opts.Root)
 	fs.StringVar(&opts.Command, "command", "", "Executable for a stdio server.")
 	fs.Var(&argv, "arg", "Argument for the command (repeatable).")
 	fs.Var(&env, "env", "Environment variable K=V (repeatable).")
+	fs.Var(&headers, "header", "HTTP header K=V for a remote server (repeatable).")
 	fs.StringVar(&opts.URL, "url", "", "Endpoint for a remote server.")
 	fs.StringVar(&opts.Type, "type", "", "Remote transport: sse|http (default http when --url is set).")
 	fs.BoolVar(&opts.Disabled, "disabled", false, "Add the server in a disabled state.")
@@ -142,12 +145,13 @@ func mcpAdd(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " mcp add NAME (--command CMD [--arg A]... | --url URL [--type sse|http]) [--env K=V]... [--disabled] [--force]")
+		render.Err("usage: " + prog() + " mcp add NAME (--command CMD [--arg A]... | --url URL [--type sse|http] [--header K=V]...) [--env K=V]... [--disabled] [--force]")
 		return 1
 	}
 	opts.Name = positionals[0]
 	opts.Args = argv.values
 	opts.Env = env.values
+	opts.Headers = headers.values
 	opts.AutoApprove = auto.values
 	if err := MCPAdd(opts); err != nil {
 		render.Err(err.Error())
@@ -207,6 +211,10 @@ func buildMCPServer(opts MCPAddOptions) (MCPServer, error) {
 	if err != nil {
 		return srv, err
 	}
+	headers, err := parseKV("--header", opts.Headers)
+	if err != nil {
+		return srv, err
+	}
 	if hasURL {
 		t := opts.Type
 		if t == "" {
@@ -217,9 +225,13 @@ func buildMCPServer(opts MCPAddOptions) (MCPServer, error) {
 		}
 		srv.URL = opts.URL
 		srv.Type = t
+		srv.Headers = headers
 	} else {
 		if opts.Type != "" && opts.Type != "stdio" {
 			return srv, fmt.Errorf("--type %q is only valid with --url; stdio servers omit it", opts.Type)
+		}
+		if len(headers) > 0 {
+			return srv, fmt.Errorf("--header is only valid with --url remote servers")
 		}
 		srv.Command = opts.Command
 		srv.Args = opts.Args
@@ -231,6 +243,10 @@ func buildMCPServer(opts MCPAddOptions) (MCPServer, error) {
 }
 
 func parseEnvKV(pairs []string) (map[string]string, error) {
+	return parseKV("--env", pairs)
+}
+
+func parseKV(flagName string, pairs []string) (map[string]string, error) {
 	if len(pairs) == 0 {
 		return nil, nil
 	}
@@ -238,11 +254,11 @@ func parseEnvKV(pairs []string) (map[string]string, error) {
 	for _, p := range pairs {
 		i := strings.Index(p, "=")
 		if i <= 0 {
-			return nil, fmt.Errorf("--env must be in K=V form: got %q", p)
+			return nil, fmt.Errorf("%s must be in K=V form: got %q", flagName, p)
 		}
 		key := strings.TrimSpace(p[:i])
 		if key == "" {
-			return nil, fmt.Errorf("--env key is empty in %q", p)
+			return nil, fmt.Errorf("%s key is empty in %q", flagName, p)
 		}
 		out[key] = p[i+1:]
 	}
@@ -448,6 +464,14 @@ func validateMCPConfig(cfg MCPConfig) []validator.Issue {
 			if strings.TrimSpace(k) == "" {
 				issues = append(issues, validator.Issue{File: "mcp.json", Msg: fmt.Sprintf("server '%s' has an empty env key", name)})
 			}
+		}
+		for k := range s.Headers {
+			if strings.TrimSpace(k) == "" {
+				issues = append(issues, validator.Issue{File: "mcp.json", Msg: fmt.Sprintf("server '%s' has an empty header key", name)})
+			}
+		}
+		if hasCmd && len(s.Headers) > 0 {
+			issues = append(issues, validator.Issue{File: "mcp.json", Msg: fmt.Sprintf("server '%s' is stdio but sets headers", name)})
 		}
 	}
 	return issues
