@@ -40,18 +40,23 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 
 ## Operating procedure
 
-1. **Confirm the entry gate.** Run `csdd spec status <feature>`. Do not start
-   architecture unless the requirements phase is approved. If it is not, send the
-   user back to `wf:product/discovery` → `discovery-handoff`.
+1. **Confirm the entry gate on a clean context.** Run `/clear` before starting a
+   new feature, then `csdd spec status <feature>`. Do not start architecture
+   unless the requirements phase is approved. If it is not, send the user back to
+   `wf:product/discovery` → `discovery-handoff`.
 2. **Run phases in order, gating each.** Architecture must be approved before
    stories; stories before readiness; readiness must be PASS before the first
    `tdd-cycle`. State the gate result before advancing.
-3. **Drive implementation through `tdd-cycle`**, one task at a time, updating
-   `sprint-status.yaml` as tasks move. Never batch tasks "to save time".
+3. **Branch, then drive implementation through `tdd-cycle`.** Before the first
+   task, create the feature's branch — `git switch -c <type>/<feature>` in
+   kebab-case (`feat/` feature, `fix/` bugfix, `chore/` small adjustment; also
+   `refactor/` `docs/` `test/` `perf/`). Then run `tdd-cycle` one task at a time,
+   updating `sprint-status.yaml` as tasks move. Never batch tasks "to save time".
 4. **Review every slice** with `code-reviewer` (and `security-reviewer` when auth
    / secrets / input handling is touched). Resolve blockers before the next task.
 5. **Close the epic** with `dev-retrospective` and feed durable lessons back into
-   steering.
+   steering. Once the feature's PR ships, run `/clear` before the next feature so
+   context does not accumulate across specs.
 
 ## Gotchas
 

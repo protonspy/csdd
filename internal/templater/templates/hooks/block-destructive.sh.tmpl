@@ -42,4 +42,19 @@ for pat in "${deny[@]}"; do
   fi
 done
 
+# Branch-first guard: keep spec work off the default branch. Block `git commit`
+# / `git push` while on main/master so each spec lands on its own branch, named
+# <type>/<feature> in kebab-case:
+#   <type> ∈ feat | fix | chore | refactor | docs | test | perf   e.g. feat/photo-albums
+if printf '%s' "$cmd" | grep -Eq '(^|[^[:alnum:]_])git[[:space:]]+(commit|push)([[:space:]]|$)'; then
+  branch="$(git branch --show-current 2>/dev/null || true)"
+  if printf '%s' "$branch" | grep -Eq '^(main|master)$'; then
+    echo "blocked by .claude/hooks/block-destructive.sh: on the default branch '$branch' — branch first." >&2
+    echo "Create the spec's branch, then commit: git switch -c <type>/<feature>  (kebab-case)" >&2
+    echo "  <type> ∈ feat | fix | chore | refactor | docs | test | perf   e.g. feat/photo-albums" >&2
+    echo "If committing on the default branch is intentional, run it yourself outside the agent." >&2
+    exit 2
+  fi
+fi
+
 exit 0
