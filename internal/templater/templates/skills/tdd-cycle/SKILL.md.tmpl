@@ -1,12 +1,20 @@
 ---
 name: tdd-cycle
-description: Execute one small red→green→refactor cycle for a single task from specs/*/tasks.md. Use when implementing a behavior task that needs test-first development.
+description: Execute one small red→green→refactor cycle for a single task from specs/*/tasks.md. Use for behavior tasks under the test-first flows (development_flow tdd or tdd-e2e); under the unit flow the implementer covers behavior with a same-task test instead of this RED-first cycle.
 ---
 
 # TDD Cycle
 
 Use this skill for **exactly one task at a time**, driving it through
 red → green → refactor.
+
+## When this applies
+
+This is the **test-first** cycle for specs whose `development_flow` is `tdd` or
+`tdd-e2e`. Under the `unit` flow there is no RED-first step — the implementer writes
+the code and covers the behavior with a unit test in the same task; skip this skill
+for those tasks. In every flow, write **one test per observable behavior, not one per
+code branch** — keep the test count proportional to behavior.
 
 ## Default Operation Mode
 

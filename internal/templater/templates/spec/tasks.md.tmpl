@@ -7,10 +7,14 @@ Annotation rules (see .claude/rules/tasks-generation.md):
 - _Depends: 3.1, 4.2_ — cross-boundary dependencies only; sequential order is implicit.
 - (P) — parallel-capable, runs alongside other (P) tasks in different boundaries.
 
-Test-first (TDD): every behavior is a RED test sub-task immediately followed by
-the minimal GREEN implementation sub-task. Write the failing test, confirm it
-fails for the expected reason, then write the least code to pass; refactor under
-green. Sub-tasks: 1-3 hours of focused work.
+Task structure follows the spec's development_flow (see spec.json; absent ⇒ tdd):
+- tdd / tdd-e2e: every behavior is a RED test sub-task immediately followed by the
+  minimal GREEN implementation sub-task (write the failing test, confirm it fails for the
+  expected reason, then the least code to pass; refactor under green); tdd-e2e also adds
+  an end-to-end task in Phase 4.
+- unit: write the implementation, then cover the behavior with a unit test in the same
+  task — no preceding RED sub-task, but every behavior still carries a test.
+One test per observable behavior, not per branch. Sub-tasks: 1-3 hours of focused work.
 -->
 
 ## Phase 1: Foundation

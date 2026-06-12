@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/protonspy/csdd/internal/frontmatter"
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/render"
 	"github.com/protonspy/csdd/internal/session"
@@ -28,9 +29,70 @@ type SpecJSON struct {
 	FeatureName            string                  `json:"feature_name"`
 	Language               string                  `json:"language"`
 	Phase                  string                  `json:"phase"`
+	DevelopmentFlow        string                  `json:"development_flow,omitempty"`
 	Approvals              map[string]ApprovalFlag `json:"approvals"`
 	ReadyForImplementation bool                    `json:"ready_for_implementation"`
 	CreatedAt              string                  `json:"created_at"`
+}
+
+// defaultDevelopmentFlow is the flow assumed when none is selected and steering
+// declares no default. It keeps csdd's test-first posture as the default.
+const defaultDevelopmentFlow = "tdd"
+
+// developmentFlows is the closed set of selectable development flows:
+//   - unit:    tests written after the code (no RED-first ritual)
+//   - tdd:     test-first RED→GREEN (the default)
+//   - tdd-e2e: TDD plus end-to-end coverage of golden and error flows
+var developmentFlows = []string{"unit", "tdd", "tdd-e2e"}
+
+// validDevelopmentFlow reports whether f is one of the selectable flows.
+func validDevelopmentFlow(f string) bool {
+	for _, v := range developmentFlows {
+		if v == f {
+			return true
+		}
+	}
+	return false
+}
+
+// effectiveFlow coerces a stored (possibly empty, e.g. legacy spec.json) flow to
+// the value callers should act on. Absent ⇒ defaultDevelopmentFlow.
+func effectiveFlow(f string) string {
+	if f == "" {
+		return defaultDevelopmentFlow
+	}
+	return f
+}
+
+// resolveDefaultFlow returns the workspace default development flow declared in
+// steering frontmatter (key default_development_flow). Steering files are scanned
+// in name order; the first valid declared value wins. Absent or invalid ⇒
+// defaultDevelopmentFlow (an invalid value is separately flagged by the steering
+// validator, so init stays robust rather than writing a bad flow).
+func resolveDefaultFlow(root string) string {
+	dir := paths.Steering(root)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return defaultDevelopmentFlow
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		data, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			continue
+		}
+		fm := frontmatter.Parse(string(data))
+		if v := fm.AsString("default_development_flow", ""); validDevelopmentFlow(v) {
+			return v
+		}
+	}
+	return defaultDevelopmentFlow
 }
 
 // ApprovalFlag tracks generation + approval state for a phase.
@@ -72,11 +134,71 @@ func runSpec(args []string, templates embed.FS) int {
 	}
 }
 
+// SpecInitOptions is the headless input shared by the CLI action and the TUI
+// wizard. Flow "" resolves the steering default, then defaultDevelopmentFlow.
+type SpecInitOptions struct {
+	Root     string
+	Feature  string
+	Language string
+	Flow     string
+}
+
+// SpecInit creates specs/<feature>/spec.json with the resolved development flow.
+// It is the single source of truth for spec creation; the CLI action and the TUI
+// wizard both fill SpecInitOptions and call it. An explicit invalid Flow is
+// rejected before any write (the caller maps the error to exit 1).
+func SpecInit(templates embed.FS, opts SpecInitOptions) error {
+	if opts.Flow != "" && !validDevelopmentFlow(opts.Flow) {
+		return fmt.Errorf("invalid development flow %q: must be one of %s", opts.Flow, strings.Join(developmentFlows, "|"))
+	}
+	r, err := workspace.Resolve(opts.Root)
+	if err != nil {
+		return err
+	}
+	if _, err := workspace.SpecsDir(r); err != nil {
+		return err
+	}
+	if err := workspace.KebabCheck(opts.Feature, "feature"); err != nil {
+		return err
+	}
+	target := filepath.Join(paths.Specs(r), opts.Feature)
+	if pathExists(target) {
+		return errors.New("spec already exists: " + workspace.Relative(r, target))
+	}
+	flow := opts.Flow
+	if flow == "" {
+		flow = resolveDefaultFlow(r)
+	}
+	language := opts.Language
+	if language == "" {
+		language = "en"
+	}
+	if err := mkdirAll(target); err != nil {
+		return err
+	}
+	content, err := templater.Render(templates, "templates/spec/spec.json.tmpl", map[string]string{
+		"Feature":         opts.Feature,
+		"Language":        language,
+		"DevelopmentFlow": flow,
+		"CreatedAt":       time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	})
+	if err != nil {
+		return err
+	}
+	if err := workspace.WriteFile(filepath.Join(target, "spec.json"), content, false); err != nil {
+		return err
+	}
+	render.OK("created " + workspace.Relative(r, target) + "/ (flow: " + flow + ")")
+	render.Info(fmt.Sprintf("next: `%s spec generate <feature> --artifact requirements`", prog()))
+	return nil
+}
+
 func specInit(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("spec init", flag.ContinueOnError)
-	var root, language string
-	addRoot(fs, &root)
-	fs.StringVar(&language, "language", "en", "Spec language (default: en).")
+	var opts SpecInitOptions
+	addRoot(fs, &opts.Root)
+	fs.StringVar(&opts.Language, "language", "en", "Spec language (default: en).")
+	fs.StringVar(&opts.Flow, "flow", "", "Development flow: unit|tdd|tdd-e2e (default: steering default, else tdd).")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -85,44 +207,11 @@ func specInit(args []string, templates embed.FS) int {
 		render.Err("usage: " + prog() + " spec init FEATURE")
 		return 1
 	}
-	r, err := workspace.Resolve(root)
-	if err != nil {
+	opts.Feature = positionals[0]
+	if err := SpecInit(templates, opts); err != nil {
 		render.Err(err.Error())
 		return 1
 	}
-	if _, err := workspace.SpecsDir(r); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	feature := positionals[0]
-	if err := workspace.KebabCheck(feature, "feature"); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	target := filepath.Join(paths.Specs(r), feature)
-	if pathExists(target) {
-		render.Err("spec already exists: " + workspace.Relative(r, target))
-		return 1
-	}
-	if err := mkdirAll(target); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	content, err := templater.Render(templates, "templates/spec/spec.json.tmpl", map[string]string{
-		"Feature":   feature,
-		"Language":  language,
-		"CreatedAt": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-	})
-	if err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	if err := workspace.WriteFile(filepath.Join(target, "spec.json"), content, false); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	render.OK("created " + workspace.Relative(r, target) + "/")
-	render.Info(fmt.Sprintf("next: `%s spec generate <feature> --artifact requirements`", prog()))
 	return 0
 }
 
@@ -223,6 +312,7 @@ func specShow(args []string) int {
 	fmt.Println(render.Bold("feature: " + data.FeatureName))
 	fmt.Println("phase:    " + data.Phase)
 	fmt.Println("language: " + data.Language)
+	fmt.Println("flow:     " + effectiveFlow(data.DevelopmentFlow))
 	fmt.Println("created:  " + data.CreatedAt)
 	fmt.Printf("ready:    %v\n", data.ReadyForImplementation)
 	fmt.Println("approvals:")

@@ -8,6 +8,23 @@ import (
 	"testing"
 )
 
+// specMirrorFixture exercises the session specJSON mirror's development_flow
+// field. The cli package asserts the same field independently (spec_flow_test.go);
+// the two mirror structs are kept tag-for-tag in sync by review discipline.
+const specMirrorFixture = `{"feature_name":"x","language":"en","phase":"initialized","development_flow":"tdd-e2e","approvals":{},"ready_for_implementation":false,"created_at":"2026-01-01T00:00:00Z"}`
+
+// TestSpecJSONMirrorParsesFlow asserts the read-only mirror parses the
+// development_flow field (kept in sync with cli.SpecJSON).
+func TestSpecJSONMirrorParsesFlow(t *testing.T) {
+	var s specJSON
+	if err := json.Unmarshal([]byte(specMirrorFixture), &s); err != nil {
+		t.Fatal(err)
+	}
+	if s.DevelopmentFlow != "tdd-e2e" {
+		t.Errorf("mirror DevelopmentFlow = %q, want tdd-e2e", s.DevelopmentFlow)
+	}
+}
+
 // writeWorkspace materializes a temp workspace from a path→content map and
 // returns the root. Paths are slash-separated and relative to the root.
 func writeWorkspace(t *testing.T, files map[string]string) string {

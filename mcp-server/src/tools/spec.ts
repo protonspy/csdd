@@ -8,13 +8,24 @@ export const specTools: ToolDef[] = [
     name: "csdd_spec_init",
     title: "Spec init",
     description:
-      "Create specs/<feature>/spec.json (phase=initial, no approvals, not ready for implementation).",
+      "Create specs/<feature>/spec.json (phase=initialized, no approvals, not ready for implementation).",
     inputSchema: {
       feature,
       language: z.string().optional().describe("Spec language (default: en)."),
+      flow: z
+        .enum(["unit", "tdd", "tdd-e2e"])
+        .optional()
+        .describe("Development flow: unit (tests after code) | tdd (test-first, default) | tdd-e2e (TDD + e2e). Default: steering default, else tdd."),
       root: rootField,
     },
-    toArgs: (p) => ["spec", "init", p.feature, ...flag("--language", p.language), ...rootArg(p)],
+    toArgs: (p) => [
+      "spec",
+      "init",
+      p.feature,
+      ...flag("--language", p.language),
+      ...flag("--flow", p.flow),
+      ...rootArg(p),
+    ],
   },
   {
     name: "csdd_spec_list",

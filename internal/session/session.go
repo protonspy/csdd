@@ -26,6 +26,7 @@ type specJSON struct {
 	FeatureName            string                  `json:"feature_name"`
 	Language               string                  `json:"language"`
 	Phase                  string                  `json:"phase"`
+	DevelopmentFlow        string                  `json:"development_flow,omitempty"`
 	Approvals              map[string]approvalFlag `json:"approvals"`
 	ReadyForImplementation bool                    `json:"ready_for_implementation"`
 	CreatedAt              string                  `json:"created_at"`

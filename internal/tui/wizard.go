@@ -345,12 +345,13 @@ func (w wizardModel) submit() tea.Cmd {
 				if err := workspace.KebabCheck(feature, "feature"); err != nil {
 					return resultMsg{text: err.Error(), isErr: true}
 				}
-				// Use the CLI Run path to avoid duplicating logic for spec init.
-				code := cli.Run([]string{"spec", "init", feature}, w.templates)
-				if code != 0 {
-					return resultMsg{text: "spec init failed (exit " + fmt.Sprint(code) + ")", isErr: true}
+				flow := getStr(w.state, "flow")
+				if err := cli.SpecInit(w.templates, cli.SpecInitOptions{
+					Root: w.root, Feature: feature, Flow: flow,
+				}); err != nil {
+					return resultMsg{text: err.Error(), isErr: true}
 				}
-				return resultMsg{text: "spec '" + feature + "' initialized"}
+				return resultMsg{text: "spec '" + feature + "' initialized (flow: " + flow + ")"}
 			case "generate":
 				artifact := getStr(w.state, "artifact")
 				if err := cli.SpecGenerate(w.templates, cli.SpecGenerateOptions{
@@ -534,6 +535,11 @@ func specFields() []*field {
 			name: "feature", label: "Feature name", hint: "kebab-case",
 			kind: fText, required: true, input: newTextInput("photo-albums"),
 			validate: validateKebab,
+		},
+		{
+			name: "flow", label: "Development flow", kind: fSelect, required: true,
+			choices: []string{"tdd", "unit", "tdd-e2e"},
+			skipIf:  func(s map[string]any) bool { return getStr(s, "operation") != "init" },
 		},
 		{
 			name: "artifact", label: "Artifact", kind: fSelect, required: true,
