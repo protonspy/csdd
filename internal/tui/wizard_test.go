@@ -64,7 +64,7 @@ func TestNewWizardFieldsPerKind(t *testing.T) {
 		n     int
 	}{
 		{wizSteering, "Create steering", 5},
-		{wizSpec, "Spec wizard", 4},
+		{wizSpec, "Spec wizard", 5},
 		{wizSkill, "Create skill", 3},
 		{wizAgent, "Create agent", 5},
 		{wizMCP, "Add MCP server", 7},
@@ -185,6 +185,29 @@ func TestWizardSubmitSkill(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".claude/skills/spec-tasks/SKILL.md")); err != nil {
 		t.Errorf("SKILL.md not created: %v", err)
+	}
+}
+
+// TestWizardSubmitSpecInitFlow asserts the wizard's spec-init submit carries the
+// selected development flow into the shared SpecInit op (Req 1.4).
+func TestWizardSubmitSpecInitFlow(t *testing.T) {
+	dir := freshTUIWorkspace(t)
+	w := wizardModel{kind: wizSpec, templates: templater.FS, root: dir, state: map[string]any{
+		"operation": "init",
+		"feature":   "wizard-flow",
+		"flow":      "unit",
+	}}
+	msg := w.submit()()
+	rm, ok := msg.(resultMsg)
+	if !ok || rm.isErr {
+		t.Fatalf("spec init submit failed: %#v", msg)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "specs", "wizard-flow", "spec.json"))
+	if err != nil {
+		t.Fatalf("spec.json not created: %v", err)
+	}
+	if !strings.Contains(string(b), `"development_flow": "unit"`) {
+		t.Errorf("wizard did not persist flow=unit:\n%s", b)
 	}
 }
 

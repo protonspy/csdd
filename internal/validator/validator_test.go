@@ -424,6 +424,32 @@ func TestValidateSteering(t *testing.T) {
 	}
 }
 
+// Req 2.3 / 3.2: an invalid default_development_flow is flagged; a valid or
+// absent one is not.
+func TestValidateSteeringFlowDefault(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"valid-flow.md":   "---\ninclusion: always\ndefault_development_flow: tdd-e2e\n---\n",
+		"absent-flow.md":  "---\ninclusion: always\n---\n",
+		"invalid-flow.md": "---\ninclusion: always\ndefault_development_flow: bogus\n---\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	issues, err := ValidateSteering(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue, got %d: %v", len(issues), issues)
+	}
+	if issues[0].File != "invalid-flow.md" || !strings.Contains(issues[0].Msg, "default_development_flow") {
+		t.Errorf("unexpected issue: %+v", issues[0])
+	}
+}
+
 func TestValidateSteeringByName(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "missing.md"), []byte(""), 0o644)

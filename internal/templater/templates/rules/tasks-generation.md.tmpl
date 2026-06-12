@@ -11,24 +11,38 @@
 - `_Depends: 3.1, 4.2_` — cross-boundary dependencies only; sequential order is implicit.
 - `(P)` — parallel-capable, runs alongside other (P) tasks in different boundaries.
 
-## Test-First (TDD)
-- Every behavior is delivered as a **RED test sub-task immediately followed by a GREEN
-  implementation sub-task**. The test is written first and must fail for the expected
-  reason before the implementation exists.
-- Name the pair explicitly: `2.1 RED — write the failing test for X`, `2.2 GREEN — minimal
-  implementation to pass 2.1`.
-- The GREEN sub-task depends on its RED sub-task being in place; refactor only under green.
-- Pure scaffolding (migrations, type skeletons, config) needs no RED test — but any task
-  that adds observable behavior does.
-- Phase 4 (Validation) holds end-to-end tests, not the unit tests — those live with their behavior in Phases 2–3.
-- Run unit tests through the csdd CLI so the spec keeps traceable evidence:
+## Development flow (read `development_flow` from spec.json first)
+
+The spec's `development_flow` decides how behavior tasks are shaped. Resolve it
+before generating tasks (absent ⇒ `tdd`):
+
+- **`tdd`** (default) and **`tdd-e2e`** — every behavior is delivered as a **RED test
+  sub-task immediately followed by a GREEN implementation sub-task**. The test is written
+  first and must fail for the expected reason before the implementation exists. Name the
+  pair explicitly: `2.1 RED — write the failing test for X`, `2.2 GREEN — minimal
+  implementation to pass 2.1`. The GREEN sub-task depends on its RED sub-task; refactor
+  only under green.
+- **`unit`** — write the implementation, then cover it with unit tests in the **same**
+  task. No preceding RED sub-task is required, but **every behavior task still carries a
+  test sub-task** covering that behavior — `unit` skips the RED-first ritual, not the test.
+- **`tdd-e2e`** — in addition to the per-behavior RED/GREEN pairs, **Phase 4 (Validation)
+  includes an end-to-end task** covering the golden flow and the top error flows.
+
+Common to every flow:
+- One test per **observable behavior**, not one per code branch — keep the test count
+  proportional to behavior, not to internal control flow.
+- Pure scaffolding (migrations, type skeletons, config) needs no test sub-task.
+- Phase 4 (Validation) holds end-to-end tests, not the unit tests — those live with their
+  behavior in Phases 2–3.
+- Run unit tests through the csdd CLI so the spec keeps traceable evidence (**all flows**):
   `csdd spec test-report <feature> --run --lang <lang>` writes `specs/<feature>/test-report.json`.
   Phase 4 SHOULD include a task that records this evidence (tests green, coverage captured).
 
 ## Avoid
 - Generic tasks like "implement the backend".
 - File-level instructions like "edit albums.ts".
-- An implementation sub-task for a behavior with no preceding test sub-task.
+- A behavior with no test sub-task at all (under `tdd`/`tdd-e2e`, no *preceding* test).
+- A test per branch instead of per observable behavior (test bloat).
 
 ## Prefer
 - Capabilities and outcomes:
@@ -41,4 +55,6 @@
 - [ ] Every `(P)` task carries `_Boundary:_`.
 - [ ] Every `_Depends:_` references a task ID that exists in this file.
 - [ ] No two `(P)` tasks share the same boundary.
-- [ ] Every behavior implementation (GREEN) sub-task is preceded by a test (RED) sub-task for the same behavior.
+- [ ] Under `tdd`/`tdd-e2e`: every behavior implementation (GREEN) sub-task is preceded by a test (RED) sub-task for the same behavior.
+- [ ] Under `unit`: every behavior task carries a test sub-task (no preceding RED required).
+- [ ] Under `tdd-e2e`: Phase 4 includes an end-to-end task for the golden + top error flows.

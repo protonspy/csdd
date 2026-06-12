@@ -454,6 +454,16 @@ func sortedJoin(in []string) string {
 	return strings.Join(cp, ", ")
 }
 
+// validDevelopmentFlow reports whether f is one of the selectable development
+// flows. Mirrors cli.developmentFlows (validator must not import cli).
+func validDevelopmentFlow(f string) bool {
+	switch f {
+	case "unit", "tdd", "tdd-e2e":
+		return true
+	}
+	return false
+}
+
 // ValidateSteering inspects every (or one) steering file's frontmatter and
 // reports inclusion-mode errors. Pass empty name to validate every file.
 func ValidateSteering(steeringDir, name string) ([]Issue, error) {
@@ -480,6 +490,9 @@ func ValidateSteering(steeringDir, name string) ([]Issue, error) {
 			continue
 		}
 		fm := frontmatter.Parse(string(data))
+		if df := fm.AsString("default_development_flow", ""); df != "" && !validDevelopmentFlow(df) {
+			issues = append(issues, Issue{File: fname, Msg: "default_development_flow must be one of unit|tdd|tdd-e2e (got '" + df + "')"})
+		}
 		inc := fm.AsString("inclusion", "")
 		valid := false
 		for _, m := range []string{"always", "fileMatch", "manual", "auto"} {
