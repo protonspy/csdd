@@ -1,12 +1,24 @@
 ---
 name: safe-refactor
-description: Restructure code without changing its observable behavior, under a green test suite. Use when improving structure/naming/duplication separately from feature work.
+description: Use when improving structure, naming, or duplication separately from feature work — restructuring code without changing its observable behavior, under a green test suite.
 ---
 
 # Safe Refactor
 
+## Goal
+
 Refactoring changes structure, never behavior. The test suite is the contract;
 it must stay green at every step.
+
+## The Iron Law
+
+> **A refactor changes structure, never observable behavior. The suite is green before the
+> first step and after every step; any behavior diff is a failure, not progress.**
+
+No exceptions:
+- No behavior change sneaks in under "refactor" — if you must change behavior, stop and open a separate task/spec.
+- Red after a step means revert that step, not fix-forward.
+- If it needs a new test for new behavior, it isn't a refactor.
 
 ## Default Operation Mode
 
@@ -31,6 +43,27 @@ Direct, incremental. Small steps, each verified.
 ### 3) Confirm no behavior change
 - Run the full relevant suite. Behavior outputs must be identical to before.
 - The public API/contract must be unchanged unless the task explicitly authorizes it.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of
+the rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "While I'm in here, I'll fix this bug too." | That's a behavior change. Stop and open a separate task. |
+| "The test went red but my change is better, I'll fix forward." | Red means you changed behavior. Revert the step. |
+| "This needs a new test for the new behavior." | Then it isn't a refactor. New behavior = new spec/task. |
+| "Coverage is thin but I know it's safe." | Without a safety net you can't prove parity. Add characterization tests first. |
+
+## Red Flags — STOP
+
+- You're editing behavior under the banner of "refactor".
+- You're fixing forward after a step went red.
+- You're adding tests for new behavior.
+- You're touching unrelated code you happened to pass through.
+
+If any fire, stop and return to the workflow above.
 
 ## Gotchas
 

@@ -1,12 +1,24 @@
 ---
 name: verify-change
-description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.
+description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.
 ---
 
 # Verify Change
 
+## Goal
+
 Turn "I think it works" into evidence a reviewer can trust. This skill runs the
 project's own checks and reports their real output.
+
+## The Iron Law
+
+> **No "done", "it works", or "tests pass" claim without fresh output from the project's
+> real commands, read and confirmed in this session.**
+
+No exceptions:
+- A prior run doesn't count — edits since then may have broken it.
+- "Should pass" is a prediction, not evidence.
+- A skipped or failing check appears in the report. Never hide it.
 
 ## Default Operation Mode
 
@@ -41,6 +53,28 @@ Record each command and its pass/fail result. Keep output trimmed but real.
 and top error flows through the Playwright MCP server. If the project has no
 frontend, or the Playwright MCP server is not connected, state that this step was
 skipped and why — do not fabricate a result.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of
+the rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "It should pass now." | "Should" is a prediction, not evidence. Run it. |
+| "It compiled, so it works." | Compiling is not passing. Different checks catch different failures. |
+| "The linter passed, the build's fine." | Linter ≠ compiler ≠ tests. Run each one. |
+| "I ran it a few edits ago." | Edits since then may have broken it. Fresh run only. |
+| "I'm confident it's right." | Confidence is not output. Paste the output. |
+
+## Red Flags — STOP
+
+- You're reaching for "should", "probably", or "seems to".
+- You feel satisfaction before running anything ("Done!", "Perfect!").
+- You're about to open a PR without a fresh run.
+- You're trusting a previous run, or an agent's "success", instead of output you just saw.
+
+If any fire, stop and run the real command.
 
 ## Gotchas
 

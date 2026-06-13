@@ -1,13 +1,25 @@
 ---
 name: pr-review
-description: Review the current diff, commit it once review is clean, and push (tests run at push time). Use when a task slice is complete and ready to commit and raise/update a PR.
+description: Use when a task slice is complete and ready to be committed and raised (or updated) as a PR. Takes a reviewed slice from clean to pushed, with evidence.
 ---
 
 # PR Review
 
+## Goal
+
 Take a completed slice from "reviewed" to "pushed", with evidence. The
 adversarial review happens first; the commit is written only after review is
 clean; tests run at the moment of pushing via the git `pre-push` hook.
+
+## The Iron Law
+
+> **The order is fixed and unskippable: review clean → commit → push (gate runs) → PR. No
+> commit with an open Blocker; no `git push --no-verify`, ever.**
+
+No exceptions:
+- The reviewer sub-agents are read-only — you apply fixes, then re-review until clean.
+- A red pre-push gate is fixed, not bypassed.
+- A PR without spec links and verification evidence is incomplete.
 
 ## Default Operation Mode
 
@@ -47,6 +59,27 @@ commit before review is clean; do not push before the commit exists.
 - Fill: summary, spec links, tasks completed, the real verification output, risks.
 - When a GitHub MCP server is connected, prefer its tools for reading PR/issue/Actions
   state (status, review threads, CI results) over shelling to `gh` — same data, typed.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of
+the rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "The change is trivial, skip the reviewer." | Trivial changes carry the bugs you stopped looking for. Run code-reviewer. |
+| "I'll fix the Blocker in a follow-up." | A Blocker blocks the commit. Resolve it first. |
+| "The pre-push gate is flaky, I'll `--no-verify`." | Bypassing the gate pushes red. Read the failure and fix it. |
+| "I'll write the PR body later." | A PR without spec links + evidence is incomplete. Fill it now. |
+
+## Red Flags — STOP
+
+- You're about to commit before review is clean.
+- A Blocker is still open.
+- You're reaching for `git push --no-verify`.
+- Your PR body has no spec/task links or no verification output.
+
+If any fire, stop and return to the fixed order above.
 
 ## Gotchas
 

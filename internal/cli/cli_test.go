@@ -746,7 +746,10 @@ func TestShippedWorkflowSkillsValidate(t *testing.T) {
 		"dev-architecture", "dev-epics-stories", "dev-readiness-check",
 		"dev-sprint", "dev-retrospective",
 	}
-	for _, name := range workflowSkills {
+	// The shipped discipline skills (test-first, verification, review, refactor) must
+	// validate too — a regression guard for their required headings (e.g. ## Goal).
+	disciplineSkills := []string{"tdd-cycle", "verify-change", "pr-review", "safe-refactor"}
+	for _, name := range append(workflowSkills, disciplineSkills...) {
 		code, out, errOut := run(t, "skill", "validate", name, "--root", dir)
 		if code != 0 {
 			t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", name, code, out, errOut)

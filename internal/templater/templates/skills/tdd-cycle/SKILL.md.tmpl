@@ -1,12 +1,26 @@
 ---
 name: tdd-cycle
-description: Execute one small red→green→refactor cycle for a single task from specs/*/tasks.md. Use for behavior tasks under the test-first flows (development_flow tdd or tdd-e2e); under the unit flow the implementer covers behavior with a same-task test instead of this RED-first cycle.
+description: Use for a single behavior task under the test-first flows (development_flow tdd or tdd-e2e), when driving one task from specs/*/tasks.md to done. Not for the unit flow — there the implementer covers behavior with a same-task test, not this RED-first cycle.
 ---
 
 # TDD Cycle
 
+## Goal
+
 Use this skill for **exactly one task at a time**, driving it through
 red → green → refactor.
+
+## The Iron Law
+
+> **Under `tdd`/`tdd-e2e`, production code does not exist until a test has failed for the
+> expected reason. The first artifact you produce is a failing test — and no task is marked
+> `[x]` until `csdd spec test-report` has recorded it green.**
+
+No exceptions:
+- Don't write the implementation "just to see if it works" and back-fill the test.
+- Don't keep untested code "as a reference" while you write the test — delete it and start test-first.
+- Don't mark the task done now and record the evidence later.
+- One task per cycle — don't batch.
 
 ## When this applies
 
@@ -79,6 +93,29 @@ test, not production code.
   `specs/<feature>/tasks.md` and change this task's checkbox from `- [ ]` to `- [x]`.
 - Mark **only** the task you just completed — never another task. Leave blocked or
   unfinished tasks unchecked so `tasks.md` (and the dashboard) reflect reality.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of
+the rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "It's a one-line change, I'll add the test after." | A test written after the code passes immediately and proves nothing. Writing it first takes 30 seconds. |
+| "I already manually checked it works." | Manual checks are ad-hoc and vanish; the recorded test is the contract that survives. |
+| "Writing the test first is slower." | Slower than typing the code, faster than debugging untested code later. |
+| "The test passed on the first run." | Then it tests existing behavior, not your change. Make it fail first. |
+| "I'll batch these three tasks to save time." | Batching hides which test covers which behavior. One task per cycle. |
+
+## Red Flags — STOP
+
+- You're about to write implementation before a failing test exists.
+- The test passed on its very first run.
+- You can't quote the failure message from the RED step.
+- You're thinking "I'll record the csdd evidence later."
+- You're about to mark more than one task `[x]`.
+
+If any fire, stop and return to the workflow above.
 
 ## Gotchas
 
