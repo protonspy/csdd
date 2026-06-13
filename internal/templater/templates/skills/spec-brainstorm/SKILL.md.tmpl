@@ -1,0 +1,150 @@
+---
+name: spec-brainstorm
+description: Use at the start of a new csdd feature, when an idea needs a spec but the requirements are not yet written. Not for product-level discovery (use discovery-*) or when an approved requirements.md already exists.
+---
+
+# Spec Brainstorm
+
+## Goal
+
+Turn a raw feature idea into an approved `requirements.md` through a short, structured
+dialogue — explore context, ask the questions a spec needs, propose a few approaches, then
+generate the requirements **from the recorded answers** and hand into csdd's normal gates.
+This replaces the failure mode where an agent jumps from a one-line idea straight to
+inventing requirements.
+
+## The Iron Law
+
+> **Every requirement is generated from a recorded answer or an explicit `[ASSUMPTION]` —
+> never from an unverified guess. No spec artifact is written before the user picks an
+> approach, and no implementation, design, or tasks happen before the requirements are
+> human-approved.**
+
+No exceptions:
+- "The idea is obvious" still gets the questions — the obvious reading is where unexamined assumptions hide.
+- Don't pre-write `requirements.md` "to save a step" before an approach is chosen.
+- Don't auto-approve the requirements phase; approval is the human's.
+- A gap in the answers becomes a labeled `[ASSUMPTION]`, never silent invented detail.
+
+## Default Operation Mode
+
+Plan-first, coached. You interview the user with batched multiple-choice questions, propose
+approaches, and only then generate the spec. The first deliverable is answers and a chosen
+approach — not requirements handed over cold.
+
+## When to Use
+
+- **Use** when you have a feature idea for *this* product and need to create its csdd spec.
+- **Not** for product-level discovery (vision, PRD, market) — that is the `discovery-*`
+  skills feeding `discovery-handoff`.
+- **Not** when an approved `requirements.md` already exists — go straight to the design gate.
+
+## Collect Inputs First
+
+- The one-line feature idea, in the user's words.
+- The steering files (`product.md`, `tech.md`, `structure.md`) and the most recent specs.
+- Any existing code or spec that already covers part of the area.
+
+## Execution Workflow
+
+### 1) Explore context
+Read the steering files and recent specs before asking anything. Skim the code the feature
+would touch. Do not ask the user for facts already recorded in steering or an existing spec;
+follow established patterns rather than proposing unrelated changes.
+
+### 2) Scope / decomposition check
+If the idea spans multiple independent subsystems, stop and propose a decomposition into
+separate specs **before** asking detailed questions. Let the user choose, then brainstorm
+only the first sub-spec through this flow. If it is appropriately scoped for one spec,
+proceed.
+
+### 3) Ask the question set (batched multiple-choice)
+Cover, at minimum, these dimensions — prefer multiple-choice options via the harness
+question tool, batching related questions together:
+
+- **Problem / goal** — what outcome, stated without a solution.
+- **Target user** — who has this problem; who is explicitly *not* the audience.
+- **Success criteria** — what makes v1 a clear success vs. failure.
+- **Constraints** — technical, compatibility, performance limits.
+- **Error / edge cases** — what must happen when things go wrong.
+- **Non-goals** — what this feature explicitly will not do.
+- **Integration points** — what existing components/commands it touches.
+
+When an option set can't capture an answer, fall back to a focused free-text or
+one-at-a-time question. Apply **YAGNI** when interpreting answers — drop speculative
+capability rather than spec it.
+
+### 4) Propose approaches
+Propose 2-3 approaches with trade-offs. Lead with your recommendation and say why. The user
+must choose an approach before you generate anything.
+
+### 5) Generate requirements from the answers
+Only after an approach is chosen:
+
+```bash
+csdd spec init <feature> --flow <unit|tdd|tdd-e2e>
+```
+
+Author `requirements.md` in EARS (see `.claude/rules/ears-format.md`). Every acceptance
+criterion traces to a recorded answer; mark any gap `[ASSUMPTION]` rather than inventing it.
+Then validate and fix until clean:
+
+```bash
+csdd spec validate <feature>
+```
+
+### 6) Hand off to the approval gate
+Present the generated requirements for the user's review. Do **not** approve the phase
+yourself, generate design/tasks, or write implementation code. The phase order
+(requirements → design → tasks → implementation) is unchanged; this skill only fills the
+first artifact.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of the
+rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "The idea is obvious, I'll just write the requirements." | The obvious reading is exactly where unexamined assumptions cause wasted work. Ask the questions. |
+| "Asking questions is slower than just drafting." | A wrong spec drafted fast is slower than a right spec drafted from answers. |
+| "I'll write requirements now and confirm with questions later." | Then the questions only rationalize what you already wrote. Questions first. |
+| "I don't need the user to pick an approach." | The first approach is rarely the best. Propose 2-3 and let them choose. |
+| "I couldn't get that detail, I'll fill in something reasonable." | Invented detail reads as decided. Mark it `[ASSUMPTION]` and surface it. |
+
+## Red Flags — STOP
+
+- You're about to write `requirements.md` before asking any question.
+- You're generating a spec artifact before the user has chosen an approach.
+- You're filling an unanswered detail with a plausible guess instead of `[ASSUMPTION]`.
+- You're about to approve the requirements phase yourself, or jump to design/tasks/code.
+
+If any fire, stop and return to the workflow above.
+
+## Gotchas
+
+- This skill stops at `requirements.md`. Design and tasks are separate human gates — do not
+  pull them forward.
+- It is feature-level, not product-level. If the user is still deciding *what the product
+  is*, route to the `discovery-*` skills instead.
+- The decomposition check comes *before* detailed questions — don't spend questions refining
+  a project that needs to be split first.
+- Use the harness question tool for the question set; don't bury seven questions in one prose
+  message.
+
+## Verification Before Reporting
+
+- Run: `csdd spec validate <feature>` after generating requirements.
+- Check: every criterion is EARS and traces to a recorded answer or a labeled `[ASSUMPTION]`;
+  an approach was chosen before generation; the requirements phase is left unapproved for the
+  human.
+- If blocked: if the user cannot articulate the core problem, stop and say so — do not paper
+  over it with invented requirements.
+
+## Completion Criteria
+- [ ] Context (steering + recent specs) was read before questioning.
+- [ ] The question set covered problem, user, success, constraints, errors, non-goals, integrations.
+- [ ] 2-3 approaches were proposed and the user chose one before any artifact was generated.
+- [ ] `requirements.md` was generated from the answers, every criterion EARS, gaps marked `[ASSUMPTION]`.
+- [ ] `csdd spec validate <feature>` passed.
+- [ ] The requirements phase is handed to the human for approval — not auto-approved, no design/tasks/code started.
