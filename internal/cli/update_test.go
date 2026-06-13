@@ -149,8 +149,8 @@ func TestUpdatePreservesManagedSkillModelEffort(t *testing.T) {
 	skill := filepath.Join(dir, ".claude", "skills", "verify-change", "SKILL.md")
 	withOverrides := strings.Replace(
 		readFile(t, skill),
-		"description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.\n---",
-		"description: Run the project's executable checks (tests, lint, typecheck, build) and produce evidence. Use before reporting a task complete or before opening a PR.\nmodel: sonnet\neffort: high\n---",
+		"description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.\n---",
+		"description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.\nmodel: sonnet\neffort: high\n---",
 		1,
 	)
 	if err := os.WriteFile(skill, []byte(withOverrides), 0o644); err != nil {
