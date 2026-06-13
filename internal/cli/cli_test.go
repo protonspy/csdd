@@ -737,7 +737,8 @@ func TestSkillListIncludesShippedDefaults(t *testing.T) {
 // TestShippedWorkflowSkillsValidate proves the two BMAD-style workflows shipped
 // by `csdd init` (wf:product/discovery upstream, wf:development downstream) pass
 // csdd's own skill validator — required headings, line/token budget, reference
-// triggers. This is the mechanical contract the workflows promise users.
+// triggers. This is the mechanical contract the workflows promise users. It also
+// guards the spec-brainstorm on-ramp shipped alongside them.
 func TestShippedWorkflowSkillsValidate(t *testing.T) {
 	dir := freshWorkspace(t)
 	workflowSkills := []string{
@@ -751,6 +752,11 @@ func TestShippedWorkflowSkillsValidate(t *testing.T) {
 		if code != 0 {
 			t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", name, code, out, errOut)
 		}
+	}
+	// The spec-brainstorm on-ramp (the question-driven front-end to `csdd spec`) must
+	// validate too — a regression guard for its required headings.
+	if code, out, errOut := run(t, "skill", "validate", "spec-brainstorm", "--root", dir); code != 0 {
+		t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", "spec-brainstorm", code, out, errOut)
 	}
 	// Both orchestrator agents must scaffold as shown-able artifacts.
 	for _, name := range []string{"wf-product-discovery", "wf-development"} {
