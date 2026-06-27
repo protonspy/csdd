@@ -48,6 +48,8 @@ func Run(args []string, templates embed.FS) int {
 		return runUpdate(rest, templates)
 	case "clean":
 		return runClean(rest, templates)
+	case "destroy", "uninstall":
+		return runDestroy(rest, templates)
 	case "steering":
 		return runSteering(rest, templates)
 	case "spec":
@@ -128,6 +130,7 @@ RESOURCES
   init                        Bootstrap a Claude Code workspace.
   update                      Refresh csdd-managed artifacts to this version (confirms before overriding your edits; keeps them as .old).
   clean                       Remove the *-N.old backups update left under the workspace.
+  destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, csdd.md, guide, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
@@ -146,6 +149,8 @@ EXAMPLES
   %[1]s init --with-baseline
   %[1]s update --dry-run                                     # preview what a new csdd version would change
   %[1]s update                                               # apply; your edits are kept as <file>-N.old
+  %[1]s destroy --dry-run                                    # preview exactly what removing the workspace would delete
+  %[1]s destroy --force                                      # remove the workspace for a fresh re-install (keeps specs/)
   %[1]s steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
   %[1]s steering create observability \
