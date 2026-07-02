@@ -256,7 +256,7 @@ func skillAddArtifact(args []string, subdir string) int {
 	}
 	var placeholder string
 	if subdir == "scripts" {
-		placeholder = "#!/usr/bin/env bash\n# Deterministic, tested logic the agent invokes\n"
+		placeholder = "#!/bin/bash\n# Deterministic, tested logic the agent invokes\n"
 	} else {
 		single := subdir
 		if len(single) > 0 {
