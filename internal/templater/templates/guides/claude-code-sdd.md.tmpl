@@ -1424,7 +1424,7 @@ Scripts live in `.claude/hooks/*.sh`. This example formats on every edit, runs t
 Example `.claude/hooks/test-gate.sh` (run the focused-then-fuller TDD gate):
 
 ```bash
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 npm run lint
 npm run typecheck
@@ -1434,7 +1434,7 @@ npm test
 Example `.claude/hooks/block-destructive.sh` (a `PreToolUse` hook on `Bash` reads the tool input from stdin and blocks risky patterns by exiting non-zero):
 
 ```bash
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 input="$(cat)"
 cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty')"
