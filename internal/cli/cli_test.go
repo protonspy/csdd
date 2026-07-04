@@ -151,16 +151,89 @@ func TestInitCreatesLayout(t *testing.T) {
 		".claude/skills",
 		".claude/agents",
 		"CLAUDE.md",
-		"csdd.md",
-		"docs/guides/claude-code-sdd.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Errorf("init missing %s: %v", p, err)
 		}
 	}
+	// csdd.md and the standalone guide are no longer scaffolded — CLAUDE.md is the
+	// single, self-contained entry point.
+	for _, p := range []string{"csdd.md", "docs/guides/claude-code-sdd.md"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("init should no longer create %s", p)
+		}
+	}
 	// AGENTS.md is intentionally no longer scaffolded — CLAUDE.md is the sole entry point.
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err == nil {
 		t.Error("init should not create AGENTS.md anymore")
+	}
+}
+
+// TestInitExcludeAgentsSkills verifies --exclude skips exactly the named
+// component trees while still scaffolding everything else.
+func TestInitExcludeAgentsSkills(t *testing.T) {
+	dir := t.TempDir()
+	code, out, errOut := run(t, "init", "--root", dir, "--exclude", "agents,skills")
+	if code != 0 {
+		t.Fatalf("init --exclude failed (code=%d): %s", code, errOut)
+	}
+	if !strings.Contains(out, "excluded: agents, skills") {
+		t.Errorf("expected an excluded summary, got:\n%s", out)
+	}
+	// Excluded: only the two named trees.
+	for _, p := range []string{".claude/agents", ".claude/skills"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("--exclude should have skipped %s", p)
+		}
+	}
+	// Still present: the rest of the full workspace.
+	for _, p := range []string{
+		"CLAUDE.md",
+		".mcp.json",
+		".claude/settings.json",
+		".claude/rules/ears-format.md",
+		".claude/templates/specs/requirements.md",
+		".claude/commands",
+		".claude/hooks",
+		".githooks/pre-push",
+		"specs",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("--exclude agents,skills should still create %s: %v", p, err)
+		}
+	}
+}
+
+// TestInitExcludeRepeatableFlag confirms --exclude accepts repetition as well as
+// comma lists, and that both forms compose.
+func TestInitExcludeRepeatableFlag(t *testing.T) {
+	dir := t.TempDir()
+	if code, _, errOut := run(t, "init", "--root", dir, "--exclude", "agents", "--exclude", "hooks,commands"); code != 0 {
+		t.Fatalf("init failed (code=%d): %s", code, errOut)
+	}
+	for _, p := range []string{".claude/agents", ".claude/hooks", ".claude/commands"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("repeated/comma --exclude should have skipped %s", p)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude/skills")); err != nil {
+		t.Errorf("skills was not excluded, it should exist: %v", err)
+	}
+}
+
+// TestInitExcludeUnknownComponent rejects a typo instead of silently ignoring it.
+func TestInitExcludeUnknownComponent(t *testing.T) {
+	dir := t.TempDir()
+	code, _, errOut := run(t, "init", "--root", dir, "--exclude", "agent")
+	if code != 1 {
+		t.Fatalf("unknown --exclude value should exit 1, got %d", code)
+	}
+	if !strings.Contains(errOut, "unknown --exclude component") {
+		t.Errorf("expected an unknown-component error, got:\n%s", errOut)
+	}
+	// Nothing should have been scaffolded on the failed parse.
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); err == nil {
+		t.Error("init should not scaffold when --exclude parsing fails")
 	}
 }
 

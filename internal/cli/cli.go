@@ -130,7 +130,7 @@ RESOURCES
   init                        Bootstrap a Claude Code workspace.
   update                      Refresh csdd-managed artifacts to this version (confirms before overriding your edits; keeps them as .old).
   clean                       Remove the *-N.old backups update left under the workspace.
-  destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, csdd.md, guide, pre-push); keeps specs/. Asks to confirm; --force to skip.
+  destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}

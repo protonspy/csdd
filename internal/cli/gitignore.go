@@ -11,12 +11,12 @@ import (
 const pinggyTokenFile = ".pinggy-token"
 
 // gitignoreTargets lists the root-level csdd artifacts that should not be
-// committed — the compiled binary, the operational CLI guide, and the pinggy
-// token secret. The binary/guide are added only when present; the token file is
-// always ignored because `csdd web --pinggy-token` may create it later.
+// committed — the compiled binary and the pinggy token secret. The binary is
+// added only when present; the token file is always ignored because
+// `csdd web --pinggy-token` may create it later.
 func gitignoreTargets(root string) []string {
 	targets := []string{pinggyTokenFile}
-	for _, name := range []string{"csdd", "csdd.exe", "csdd.md"} {
+	for _, name := range []string{"csdd", "csdd.exe"} {
 		if pathExists(filepath.Join(root, name)) {
 			targets = append(targets, name)
 		}

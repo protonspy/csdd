@@ -3,6 +3,7 @@ package cli
 import (
 	"embed"
 	"flag"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,14 +19,21 @@ import (
 func runInit(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	var root string
-	var withBaseline bool
-	var noMCP bool
+	var withBaseline, noMCP bool
+	var exclude stringSliceFlag
 	fs.StringVar(&root, "root", "", "Target directory (default: cwd).")
 	fs.BoolVar(&withBaseline, "with-baseline", false, "Also scaffold product.md, tech.md, structure.md.")
+	fs.Var(&exclude, "exclude", "Scaffold components to skip (comma-separated, repeatable), e.g. --exclude agents,skills. Valid: "+strings.Join(excludableKeys(), ", ")+".")
 	fs.BoolVar(&noMCP, "no-mcp", false, "Do not register the csdd MCP server in .mcp.json.")
 	if err := fs.Parse(args); err != nil {
 		return failOnFlagParse(err)
 	}
+	exSet, err := parseExclusions(exclude.values)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	opts := initOptions{withBaseline: withBaseline, exclude: exSet}
 	if root == "" {
 		var err error
 		root, err = filepath.Abs(".")
@@ -42,7 +50,7 @@ func runInit(args []string, templates embed.FS) int {
 		root = abs
 	}
 
-	created, err := initWorkspace(root, withBaseline, templates)
+	created, err := initWorkspace(root, opts, templates)
 	if err != nil {
 		render.Err(err.Error())
 		return 1
@@ -50,7 +58,13 @@ func runInit(args []string, templates embed.FS) int {
 	render.OK("Initialized Claude Code workspace at " + root)
 	render.Info("directories created: " + intStr(created.dirs))
 	render.Info("files created: " + intStr(created.files))
-	if !noMCP {
+	if len(exSet) > 0 {
+		render.Info("excluded: " + strings.Join(excludedList(exSet), ", "))
+	}
+	// Post-scaffold chores only fire for the components that were actually laid
+	// down, so `--exclude mcp` / `--exclude pre-push` don't advertise things that
+	// aren't there.
+	if !noMCP && !opts.skip("mcp") {
 		if added, err := ensureCsddMCPServer(root); err != nil {
 			render.Warn("could not register csdd MCP server: " + err.Error())
 		} else if added {
@@ -58,17 +72,19 @@ func runInit(args []string, templates embed.FS) int {
 		}
 	}
 	offerGitignore(root)
-	render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
-	if !withBaseline {
+	if !opts.skip("pre-push") {
+		render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
+	}
+	if !opts.withBaseline && !opts.skip("steering") {
 		render.Info("Run `" + prog() + " steering init` to scaffold standard steering files.")
 	}
 	return 0
 }
 
-// offerGitignore asks whether to add the root-level csdd artifacts (the binary
-// and csdd.md) to .gitignore, then appends the ones the user accepts. It is a
-// no-op when none of those files exist or when running non-interactively, so it
-// never blocks headless/agent-driven `csdd init`.
+// offerGitignore asks whether to add the root-level csdd artifacts (the compiled
+// binary and the pinggy token secret) to .gitignore, then appends the ones the
+// user accepts. It is a no-op when none of those files exist or when running
+// non-interactively, so it never blocks headless/agent-driven `csdd init`.
 func offerGitignore(root string) {
 	targets := gitignoreTargets(root)
 	if len(targets) == 0 {
@@ -120,101 +136,196 @@ type initCounts struct {
 	dirs, files int
 }
 
+// excludable is the ordered set of scaffold components `csdd init --exclude` can
+// skip. The order is used for deterministic help text and summary output.
+var excludable = []struct{ key, desc string }{
+	{"claude-md", "CLAUDE.md entry point"},
+	{"mcp", ".mcp.json + csdd MCP server registration"},
+	{"settings", ".claude/settings.json"},
+	{"pr-template", ".github/pull_request_template.md"},
+	{"pre-push", ".githooks/pre-push test gate"},
+	{"rules", ".claude/rules/"},
+	{"templates", ".claude/templates/"},
+	{"steering", ".claude/steering/"},
+	{"agents", ".claude/agents/"},
+	{"skills", ".claude/skills/"},
+	{"commands", ".claude/commands/"},
+	{"hooks", ".claude/hooks/"},
+	{"specs", "specs/"},
+}
+
+// excludableKeys returns the valid --exclude component keys in canonical order.
+func excludableKeys() []string {
+	keys := make([]string, len(excludable))
+	for i, comp := range excludable {
+		keys[i] = comp.key
+	}
+	return keys
+}
+
+// parseExclusions flattens the (repeatable, comma-separated) --exclude values
+// into a validated set of component keys. Unknown keys are rejected so a typo
+// like "agent" fails loudly instead of silently scaffolding the component.
+func parseExclusions(raw []string) (map[string]bool, error) {
+	valid := map[string]bool{}
+	for _, k := range excludableKeys() {
+		valid[k] = true
+	}
+	set := map[string]bool{}
+	for _, chunk := range raw {
+		for _, part := range strings.Split(chunk, ",") {
+			key := strings.ToLower(strings.TrimSpace(part))
+			if key == "" {
+				continue
+			}
+			if !valid[key] {
+				return nil, fmt.Errorf("unknown --exclude component %q; valid: %s", key, strings.Join(excludableKeys(), ", "))
+			}
+			set[key] = true
+		}
+	}
+	return set, nil
+}
+
+// excludedList returns the excluded keys present in set, in canonical order.
+func excludedList(set map[string]bool) []string {
+	var out []string
+	for _, k := range excludableKeys() {
+		if set[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// initOptions controls what `csdd init` scaffolds.
+type initOptions struct {
+	// withBaseline also writes the standard steering files (product/tech/…) and
+	// imports them into CLAUDE.md.
+	withBaseline bool
+	// exclude is the set of scaffold components (see excludable) to skip, so csdd
+	// can be dropped into a project that already has parts of a Claude Code setup.
+	exclude map[string]bool
+}
+
+// skip reports whether the given scaffold component was excluded.
+func (o initOptions) skip(component string) bool { return o.exclude[component] }
+
 // initWorkspace is exported semantically so the TUI can call the same logic.
-// It creates the standard Claude Code layout idempotently and returns counts.
-func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCounts, error) {
+// It creates the standard Claude Code layout idempotently, honoring opts.exclude,
+// and returns the counts of directories and files it created.
+func initWorkspace(root string, opts initOptions, templates embed.FS) (initCounts, error) {
 	var c initCounts
 	templatesDir := paths.Templates(root)
-	layout := []string{
-		paths.Steering(root),
-		paths.Specs(root),
-		paths.Rules(root),
-		filepath.Join(templatesDir, "specs"),
-		filepath.Join(templatesDir, "steering"),
-		filepath.Join(templatesDir, "steering-custom"),
-		paths.Skills(root),
-		paths.Agents(root),
-		paths.Commands(root),
-		paths.Hooks(root),
-		filepath.Join(root, "docs", "guides"),
+
+	// Directories, each owned by the component that may exclude it. SafeWrite and
+	// manifest.Save mkdir parents on demand, so only the genuinely-empty dirs
+	// (steering, specs) strictly need this; creating the rest keeps the dir count
+	// and on-disk layout stable.
+	dirs := []struct{ comp, path string }{
+		{"steering", paths.Steering(root)},
+		{"rules", paths.Rules(root)},
+		{"templates", filepath.Join(templatesDir, "specs")},
+		{"templates", filepath.Join(templatesDir, "steering")},
+		{"templates", filepath.Join(templatesDir, "steering-custom")},
+		{"specs", paths.Specs(root)},
+		{"skills", paths.Skills(root)},
+		{"agents", paths.Agents(root)},
+		{"commands", paths.Commands(root)},
+		{"hooks", paths.Hooks(root)},
 	}
-	for _, d := range layout {
-		if !pathExists(d) {
-			if err := mkdirAll(d); err != nil {
+	for _, d := range dirs {
+		if opts.skip(d.comp) || pathExists(d.path) {
+			continue
+		}
+		if err := mkdirAll(d.path); err != nil {
+			return c, err
+		}
+		c.dirs++
+	}
+
+	// Shared entry files at the repo root (plus .github/.githooks). CLAUDE.md is
+	// the single, self-contained entry point; the rest are the automation surface.
+	rootFiles := []struct {
+		comp, path, tpl string
+		exec            bool
+	}{
+		{"claude-md", paths.Entry(root), "templates/root/CLAUDE.md.tmpl", false},
+		{"mcp", paths.MCP(root), "templates/root/mcp.json.tmpl", false},
+		{"settings", paths.Settings(root), "templates/root/settings.json.tmpl", false},
+		{"pre-push", filepath.Join(root, ".githooks", "pre-push"), "templates/root/pre-push.tmpl", true},
+		{"pr-template", filepath.Join(root, ".github", "pull_request_template.md"), "templates/root/pull-request.md.tmpl", false},
+	}
+	for _, rf := range rootFiles {
+		if opts.skip(rf.comp) {
+			continue
+		}
+		content, err := templater.Static(templates, rf.tpl)
+		if err != nil {
+			return c, err
+		}
+		created, err := workspace.SafeWrite(rf.path, content)
+		if err != nil {
+			return c, err
+		}
+		if created {
+			c.files++
+		}
+		// The git pre-push hook must be executable to run as a hook.
+		if rf.exec {
+			_ = os.Chmod(rf.path, 0o755)
+		}
+	}
+
+	// Generation rules.
+	if !opts.skip("rules") {
+		rules, err := templater.RuleFiles(templates)
+		if err != nil {
+			return c, err
+		}
+		for name, content := range rules {
+			created, err := workspace.SafeWrite(filepath.Join(paths.Rules(root), name), content)
+			if err != nil {
 				return c, err
 			}
-			c.dirs++
+			if created {
+				c.files++
+			}
 		}
 	}
-	// CLAUDE.md is the single repository entry point for agents; it imports the
-	// steering files via @-references. docs/guides/claude-code-sdd.md is the
-	// self-contained canonical spec — the only guide an agent needs to consult.
-	prePushPath := filepath.Join(root, ".githooks", "pre-push")
-	files := map[string]string{
-		paths.Entry(root):              "templates/root/CLAUDE.md.tmpl",
-		filepath.Join(root, "csdd.md"): "templates/root/csdd.md.tmpl",
-		paths.MCP(root):                "templates/root/mcp.json.tmpl",
-		paths.Settings(root):           "templates/root/settings.json.tmpl",
-		prePushPath:                    "templates/root/pre-push.tmpl",
-		filepath.Join(root, ".github", "pull_request_template.md"):  "templates/root/pull-request.md.tmpl",
-		filepath.Join(root, "docs", "guides", "claude-code-sdd.md"): "templates/guides/claude-code-sdd.md.tmpl",
-	}
-	for path, tplPath := range files {
-		content, err := templater.Static(templates, tplPath)
+
+	// Versioned templates (spec + steering + steering-custom references).
+	if !opts.skip("templates") {
+		versioned, err := templater.WorkflowTemplateFiles(templates)
 		if err != nil {
 			return c, err
 		}
-		created, err := workspace.SafeWrite(path, content)
-		if err != nil {
-			return c, err
-		}
-		if created {
-			c.files++
-		}
-	}
-	// The git pre-push hook must be executable to run as a hook.
-	_ = os.Chmod(prePushPath, 0o755)
-	// Rules
-	rules, err := templater.RuleFiles(templates)
-	if err != nil {
-		return c, err
-	}
-	for name, content := range rules {
-		path := filepath.Join(paths.Rules(root), name)
-		created, err := workspace.SafeWrite(path, content)
-		if err != nil {
-			return c, err
-		}
-		if created {
-			c.files++
+		for rel, content := range versioned {
+			created, err := workspace.SafeWrite(filepath.Join(paths.Templates(root), filepath.FromSlash(rel)), content)
+			if err != nil {
+				return c, err
+			}
+			if created {
+				c.files++
+			}
 		}
 	}
-	versionedTemplates, err := templater.WorkflowTemplateFiles(templates)
-	if err != nil {
-		return c, err
-	}
-	for rel, content := range versionedTemplates {
-		path := filepath.Join(paths.Templates(root), filepath.FromSlash(rel))
-		created, err := workspace.SafeWrite(path, content)
-		if err != nil {
-			return c, err
-		}
-		if created {
-			c.files++
-		}
-	}
-	// Shipped sub-agents (least-privilege reviewers), workflow skills, and hooks.
-	treeWrites := []struct {
-		base  string
-		files func(fs.FS) (map[string]string, error)
-		exec  bool // chmod 0755 (hook scripts)
+
+	// Shipped sub-agents, workflow skills, commands, and hooks — each excludable.
+	trees := []struct {
+		comp, base string
+		files      func(fs.FS) (map[string]string, error)
+		exec       bool // chmod 0755 (hook scripts)
 	}{
-		{paths.Agents(root), templater.AgentFiles, false},
-		{paths.Skills(root), templater.SkillFiles, false},
-		{paths.Commands(root), templater.CommandFiles, false},
-		{paths.Hooks(root), templater.HookFiles, true},
+		{"agents", paths.Agents(root), templater.AgentFiles, false},
+		{"skills", paths.Skills(root), templater.SkillFiles, false},
+		{"commands", paths.Commands(root), templater.CommandFiles, false},
+		{"hooks", paths.Hooks(root), templater.HookFiles, true},
 	}
-	for _, tw := range treeWrites {
+	for _, tw := range trees {
+		if opts.skip(tw.comp) {
+			continue
+		}
 		entries, err := tw.files(templates)
 		if err != nil {
 			return c, err
@@ -233,15 +344,16 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			}
 		}
 	}
-	if withBaseline {
+
+	// Baseline steering files, imported into CLAUDE.md as always-on memory.
+	if opts.withBaseline && !opts.skip("steering") {
 		var names []string
 		for name, tplPath := range standardSteeringTemplates() {
 			content, err := templater.Static(templates, tplPath)
 			if err != nil {
 				return c, err
 			}
-			path := filepath.Join(paths.Steering(root), name)
-			created, err := workspace.SafeWrite(path, content)
+			created, err := workspace.SafeWrite(filepath.Join(paths.Steering(root), name), content)
 			if err != nil {
 				return c, err
 			}
@@ -250,11 +362,12 @@ func initWorkspace(root string, withBaseline bool, templates embed.FS) (initCoun
 			}
 			names = append(names, name)
 		}
-		// Import the baseline steering files into CLAUDE.md as always-on memory.
+		// A no-op when CLAUDE.md was excluded (there is nothing to wire into).
 		if _, err := ensureSteeringImports(root, names...); err != nil {
 			return c, err
 		}
 	}
+
 	// Record the manifest of csdd-managed artifacts so a later `csdd update` can
 	// tell pristine shipped files from ones the user has since edited.
 	if err := recordManifest(root, templates, time.Now(), nil); err != nil {
