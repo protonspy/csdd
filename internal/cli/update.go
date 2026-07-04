@@ -34,8 +34,8 @@ type managedFile struct {
 var managedExecutionOverrideKeys = []string{"model", "effort"}
 
 // collectManagedFiles enumerates every pure-csdd artifact `csdd init` scaffolds
-// from the embedded template tree: generation rules, versioned templates, the
-// shipped skills/agents/commands/hooks, the canonical guide, and csdd.md.
+// from the embedded template tree: generation rules, versioned templates, and
+// the shipped skills/agents/commands/hooks.
 func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error) {
 	var out []managedFile
 	add := func(abs, content string, exec bool, preserveFrontmatter []string) {
@@ -84,18 +84,6 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 			add(filepath.Join(t.base, filepath.FromSlash(rel)), c, t.exec, t.preserveFrontmatter)
 		}
 	}
-
-	guide, err := templater.Static(templates, "templates/guides/claude-code-sdd.md.tmpl")
-	if err != nil {
-		return nil, err
-	}
-	add(filepath.Join(root, "docs", "guides", "claude-code-sdd.md"), guide, false, nil)
-
-	csddmd, err := templater.Static(templates, "templates/root/csdd.md.tmpl")
-	if err != nil {
-		return nil, err
-	}
-	add(filepath.Join(root, "csdd.md"), csddmd, false, nil)
 
 	// Deterministic order so dry-run previews and reports are stable.
 	sort.Slice(out, func(i, j int) bool { return out[i].Rel < out[j].Rel })

@@ -144,43 +144,6 @@ func TestSpecGenerateAuxiliaryDoesNotClobberPhase(t *testing.T) {
 	}
 }
 
-func TestInitScaffoldsSelfContainedGuide(t *testing.T) {
-	dir := t.TempDir()
-	if code, _, _ := run(t, "init", "--root", dir); code != 0 {
-		t.Fatalf("init failed: %d", code)
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "docs/guides/claude-code-sdd.md"))
-	if err != nil {
-		t.Fatalf("guide not scaffolded: %v", err)
-	}
-	text := string(data)
-	// It must be the full guide, not a stub.
-	if len(text) < 50_000 {
-		t.Errorf("guide looks truncated (%d bytes)", len(text))
-	}
-	for _, want := range []string{
-		"# Claude Code Spec-Driven Development",
-		"## 22. Provenance and reference implementation",
-		"self-contained",
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("guide missing expected content %q", want)
-		}
-	}
-	// Self-contained: it must not tell the reader to go open one of the source
-	// docs (those names only appear in the provenance mapping, never after "see").
-	for _, src := range []string{
-		"agentic_sdlc_adoption_guide-en.md",
-		"team_best_practices-en.md",
-		"skill_creation_best_practices-en.md",
-		"spec_driven_development_comparison-en.md",
-	} {
-		if strings.Contains(text, "see `"+src) || strings.Contains(text, "see "+src) {
-			t.Errorf("guide still points the reader out to %q instead of being self-contained", src)
-		}
-	}
-}
-
 func TestSteeringInitOnMissingWorkspace(t *testing.T) {
 	// steering init creates .claude/steering even when .claude doesn't exist yet.
 	dir := t.TempDir()

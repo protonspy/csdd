@@ -13,8 +13,6 @@ var destroyTargetRels = []string{
 	".claude",
 	"CLAUDE.md",
 	".mcp.json",
-	"csdd.md",
-	filepath.Join("docs", "guides", "claude-code-sdd.md"),
 	filepath.Join(".githooks", "pre-push"),
 }
 

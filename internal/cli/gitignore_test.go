@@ -29,8 +29,8 @@ func readGitignore(t *testing.T, root string) string {
 	return string(data)
 }
 
-// TestInitAddsArtifactsToGitignoreOnYes covers the happy path: csdd.md (always
-// created by init) and a present binary are both offered and appended on "y".
+// TestInitAddsArtifactsToGitignoreOnYes covers the happy path: a present binary
+// and the always-ignored pinggy token are offered and appended on "y".
 func TestInitAddsArtifactsToGitignoreOnYes(t *testing.T) {
 	dir := t.TempDir()
 	// Drop a fake binary at root so gitignoreTargets picks it up.
@@ -43,10 +43,14 @@ func TestInitAddsArtifactsToGitignoreOnYes(t *testing.T) {
 		}
 	})
 	got := readGitignore(t, dir)
-	for _, want := range []string{"/csdd", "/csdd.md"} {
+	for _, want := range []string{"/csdd", "/.pinggy-token"} {
 		if !strings.Contains(got, want) {
 			t.Errorf(".gitignore missing %q; got:\n%s", want, got)
 		}
+	}
+	// csdd.md is no longer a scaffolded artifact, so it is never offered.
+	if strings.Contains(got, "csdd.md") {
+		t.Errorf(".gitignore should not mention csdd.md; got:\n%s", got)
 	}
 }
 
@@ -79,7 +83,7 @@ func TestInitNonInteractiveSkipsGitignore(t *testing.T) {
 // nothing — neither anchored nor bare duplicates.
 func TestEnsureGitignoreIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	added, err := ensureGitignore(dir, []string{"csdd", "csdd.md"})
+	added, err := ensureGitignore(dir, []string{"csdd", "csdd.exe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +92,7 @@ func TestEnsureGitignoreIsIdempotent(t *testing.T) {
 	}
 	first := readGitignore(t, dir)
 
-	added, err = ensureGitignore(dir, []string{"csdd", "csdd.md"})
+	added, err = ensureGitignore(dir, []string{"csdd", "csdd.exe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +112,12 @@ func TestEnsureGitignoreRespectsExistingBareEntry(t *testing.T) {
 	if err := os.WriteFile(path, []byte("csdd\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	added, err := ensureGitignore(dir, []string{"csdd", "csdd.md"})
+	added, err := ensureGitignore(dir, []string{"csdd", "csdd.exe"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 1 || added[0] != "/csdd.md" {
-		t.Fatalf("expected only /csdd.md added, got %v", added)
+	if len(added) != 1 || added[0] != "/csdd.exe" {
+		t.Fatalf("expected only /csdd.exe added, got %v", added)
 	}
 	if got := readGitignore(t, dir); strings.Contains(got, "/csdd\n") {
 		t.Errorf("bare csdd entry was duplicated as /csdd:\n%s", got)
@@ -128,11 +132,11 @@ func TestGitignoreTargetsOnlyExisting(t *testing.T) {
 	if got := gitignoreTargets(dir); len(got) != 1 || got[0] != ".pinggy-token" {
 		t.Errorf("empty dir should yield [.pinggy-token], got %v", got)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "csdd.md"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "csdd"), []byte("ELF"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	got := gitignoreTargets(dir)
-	if len(got) != 2 || got[0] != ".pinggy-token" || got[1] != "csdd.md" {
-		t.Errorf("expected [.pinggy-token csdd.md], got %v", got)
+	if len(got) != 2 || got[0] != ".pinggy-token" || got[1] != "csdd" {
+		t.Errorf("expected [.pinggy-token csdd], got %v", got)
 	}
 }

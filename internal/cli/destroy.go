@@ -13,10 +13,10 @@ import (
 )
 
 // runDestroy tears the csdd workspace back down to a clean slate — the inverse
-// of `csdd init`. It removes the entire .claude/ tree plus the root-level csdd
-// artifacts (csdd.md, the shipped guide, the pre-push hook) and, by explicit
-// design choice, the shared entry files CLAUDE.md and .mcp.json in full. It
-// deliberately PRESERVES specs/, which holds the user's real specification work.
+// of `csdd init`. It removes the entire .claude/ tree plus the pre-push hook
+// and, by explicit design choice, the shared entry files CLAUDE.md and
+// .mcp.json in full. It deliberately PRESERVES specs/, which holds the user's
+// real specification work.
 //
 // Because the deletion is irreversible — and CLAUDE.md/.mcp.json may carry
 // content beyond csdd's own — it always prints a destructive-action alert and
@@ -94,8 +94,6 @@ func runDestroy(args []string, _ embed.FS) int {
 	}
 	// Sweep up dirs that only existed to hold a csdd file, but leave any the user
 	// has put their own content into (removeIfEmpty is a no-op on non-empty dirs).
-	removeIfEmpty(filepath.Join(r, "docs", "guides"))
-	removeIfEmpty(filepath.Join(r, "docs"))
 	removeIfEmpty(filepath.Join(r, ".githooks"))
 
 	render.OK(fmt.Sprintf("Destroyed csdd workspace: %d item(s) removed. specs/ preserved. Run `%s init` to scaffold again.", removed, prog()))
@@ -111,8 +109,6 @@ func destroyTargets(root string) []string {
 		paths.Claude(root), // entire .claude/ tree
 		paths.Entry(root),  // CLAUDE.md (root) — deleted in full
 		paths.MCP(root),    // .mcp.json (root) — deleted in full
-		filepath.Join(root, "csdd.md"),
-		filepath.Join(root, "docs", "guides", "claude-code-sdd.md"),
 		filepath.Join(root, ".githooks", "pre-push"),
 	}
 }

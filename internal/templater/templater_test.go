@@ -1,30 +1,10 @@
 package templater
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
-
-// TestEmbeddedGuideMatchesSource guards against drift between the human-edited
-// source guide (docs/claude-code-sdd.md) and the embedded copy that `csdd init`
-// scaffolds. It skips gracefully when the repo source isn't reachable (e.g.
-// when the package is built from the module cache rather than the repo tree).
-func TestEmbeddedGuideMatchesSource(t *testing.T) {
-	const sourcePath = "../../docs/claude-code-sdd.md"
-	source, err := os.ReadFile(sourcePath)
-	if err != nil {
-		t.Skipf("source guide not reachable (%v); skipping parity check", err)
-	}
-	embedded, err := Static(FS, "templates/guides/claude-code-sdd.md.tmpl")
-	if err != nil {
-		t.Fatalf("embedded guide missing: %v", err)
-	}
-	if string(source) != embedded {
-		t.Error("docs/claude-code-sdd.md and the embedded guide have drifted — re-copy the source into internal/templater/templates/guides/claude-code-sdd.md.tmpl")
-	}
-}
 
 func TestStatic(t *testing.T) {
 	out, err := Static(FS, "templates/root/CLAUDE.md.tmpl")
