@@ -48,6 +48,8 @@ func Run(args []string, templates embed.FS) int {
 		return runUpdate(rest, templates)
 	case "clean":
 		return runClean(rest, templates)
+	case "copy":
+		return runCopy(rest, templates)
 	case "destroy", "uninstall":
 		return runDestroy(rest, templates)
 	case "steering":
@@ -130,6 +132,7 @@ RESOURCES
   init                        Bootstrap a Claude Code workspace.
   update                      Refresh csdd-managed artifacts to this version (confirms before overriding your edits; keeps them as .old).
   clean                       Remove the *-N.old backups update left under the workspace.
+  copy <kind>/<name>          Copy one shipped artifact into the workspace (rules, skills, agents, commands, hooks, templates, steering); pairs with 'init --exclude'. Bare 'copy' or 'copy <kind>' lists what's available.
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
