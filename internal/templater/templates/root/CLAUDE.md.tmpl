@@ -79,6 +79,9 @@ the CLI rejects anything else. Global flags on every command: `--root PATH`
 # bootstrap (one time per repo)
 npx @protonspy/csdd init [--with-baseline] [--exclude agents,skills,…] [--no-mcp]
 
+# copy one shipped artifact into the workspace (pairs with init --exclude)
+npx @protonspy/csdd copy skills/dev-architecture      # or agents/…, rules/…, commands/…, hooks/…, templates/…, steering/…
+
 # steering (project memory)
 npx @protonspy/csdd steering init
 npx @protonspy/csdd steering create NAME --inclusion {always|fileMatch|manual|auto} \
