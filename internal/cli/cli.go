@@ -52,8 +52,6 @@ func Run(args []string, templates embed.FS) int {
 		return runCopy(rest, templates)
 	case "destroy", "uninstall":
 		return runDestroy(rest, templates)
-	case "copy":
-		return runCopy(rest, templates)
 	case "steering":
 		return runSteering(rest, templates)
 	case "spec":
@@ -136,7 +134,6 @@ RESOURCES
   clean                       Remove the *-N.old backups update left under the workspace.
   copy <kind>/<name>          Copy one shipped artifact into the workspace (rules, skills, agents, commands, hooks, templates, steering); pairs with 'init --exclude'. Bare 'copy' or 'copy <kind>' lists what's available.
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
-  copy     <kind>/<name>      Cherry-pick one shipped artifact into the workspace (rules, skills, agents, commands, hooks, templates, steering). Bare copy lists everything.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}

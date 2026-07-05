@@ -104,7 +104,6 @@ the CLI rejects anything else. Global flags on every command: `--root PATH`
 ```bash
 # bootstrap (one time per repo)
 npx @protonspy/csdd init [--with-baseline] [--exclude agents,skills,…] [--no-mcp]
-npx @protonspy/csdd copy KIND/NAME                      # add back one shipped artifact init skipped (e.g. skills/tdd-cycle); bare `copy` lists all
 
 # copy one shipped artifact into the workspace (pairs with init --exclude)
 npx @protonspy/csdd copy skills/dev-architecture      # or agents/…, rules/…, commands/…, hooks/…, templates/…, steering/…
