@@ -834,6 +834,10 @@ func TestShippedWorkflowSkillsValidate(t *testing.T) {
 	if code, out, errOut := run(t, "skill", "validate", "spec-brainstorm", "--root", dir); code != 0 {
 		t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", "spec-brainstorm", code, out, errOut)
 	}
+	// The quick-prd on-ramp (lightweight single-feature PRD) must validate too.
+	if code, out, errOut := run(t, "skill", "validate", "quick-prd", "--root", dir); code != 0 {
+		t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", "quick-prd", code, out, errOut)
+	}
 	// Both orchestrator agents must scaffold as shown-able artifacts.
 	for _, name := range []string{"wf-product-discovery", "wf-development"} {
 		if code, showOut, _ := run(t, "agent", "show", name, "--root", dir); code != 0 || !strings.Contains(showOut, "name: "+name) {

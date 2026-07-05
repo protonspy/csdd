@@ -1,0 +1,142 @@
+---
+name: quick-prd
+description: Turn a rough feature idea into a lightweight, decision-ready PRD in one pass — batched multiple-choice clarifying questions, then a single docs/product/prd-<feature>.md with user stories and testable, EARS-shaped functional requirements. A fast on-ramp for one feature; use discovery-* for full product discovery, or spec-brainstorm to jump straight to a spec.
+---
+
+# Quick PRD
+
+## Goal
+
+Turn a one-line feature idea into a short, decision-ready PRD — problem, user
+stories with verifiable acceptance criteria, numbered functional requirements,
+and explicit non-goals — written from **recorded answers**, not guesses. This is
+the fast, single-feature on-ramp: lighter than the full `discovery-*` workflow,
+and it stops at a readable PRD (`docs/product/prd-<feature>.md`) that
+`spec-brainstorm` or `discovery-handoff` then turns into a gated csdd spec.
+
+## The Iron Law
+
+> **Every requirement traces to a recorded answer or a labeled `[ASSUMPTION]`. Ask
+> the clarifying questions before writing a single PRD section, and never start
+> design, tasks, or code from this skill.**
+
+No exceptions:
+- "The idea is obvious" still gets the questions — the obvious reading is where unexamined assumptions hide.
+- Don't pre-write PRD sections "to save a step" before the answers are in.
+- A gap in the answers becomes a labeled `[ASSUMPTION]`, never silent invented detail.
+- This skill produces a PRD only. Requirements, design, tasks, and code are downstream gates.
+
+## Default Operation Mode
+
+Plan-first, coached. You interview the user with batched multiple-choice
+questions, then generate the PRD from the answers. The first deliverable is
+answers — not a PRD handed over cold.
+
+## When to Use
+
+- **Use** for a single feature you can roughly describe, when you want a crisp PRD
+  artifact (stories, non-goals, metrics) before speccing.
+- **Not** for product-level discovery (vision, market, PRFAQ, UX) — that is the
+  `discovery-*` skills feeding `discovery-handoff`, whose PRD is the canonical
+  `docs/product/prd.md`.
+- **Not** when you want to skip the PRD and go straight to an EARS
+  `requirements.md` — use `spec-brainstorm`.
+
+## Collect Inputs First
+
+- The one-line feature idea, in the user's words.
+- Steering (`product.md`, `tech.md`, `structure.md`) and the most recent
+  specs/PRDs — source facts from them; do not re-ask what is already recorded.
+- Any existing PRD (`docs/product/prd.md`) this feature must stay consistent with.
+
+## Execution Workflow
+
+### 1) Explore context
+Read the steering files and any existing PRD/specs the feature touches before
+asking anything. Do not ask for facts already captured. Derive the kebab-case
+`<feature>` slug from the idea.
+
+### 2) Ask the clarifying questions (batched multiple-choice)
+Ask only the questions the PRD actually needs, as **batched multiple-choice** via
+the harness question tool, so the user can answer fast (e.g. "1A, 2C, 3B"). Cover
+at minimum:
+- **Problem / goal** — the outcome, stated without a solution.
+- **Primary user** — who has this problem; who is explicitly *not* the audience.
+- **Core capability** — the one thing v1 must do.
+- **Scope boundary** — what is in vs. out for v1.
+- **Success criteria** — what makes v1 a clear success.
+
+When an option set can't capture an answer, fall back to a focused free-text
+question. Apply **YAGNI** — drop speculative capability rather than spec it.
+
+### 3) Draft the PRD from the answers
+Load `assets/prd-template.md` and fill it top to bottom, from the recorded
+answers. Follow the section rules in **PRD Structure** below. Mark every gap
+`[ASSUMPTION]`.
+
+### 4) Write the file
+Write `docs/product/prd-<feature>.md` (kebab-case). One PRD per feature; never
+clobber the canonical `docs/product/prd.md`.
+
+### 5) Self-check, then hand off
+Walk the **Completion Criteria** checklist. Then point the user to the next step:
+`spec-brainstorm` (idea → EARS requirements for this feature) or
+`discovery-handoff` (land it into steering + a spec). Do not generate the spec,
+approve anything, or write code.
+
+## PRD Structure
+
+Fill these sections; keep language explicit enough for a junior developer or an
+implementing agent.
+
+- **Introduction** — one-paragraph problem statement and what the feature is.
+- **Goals** — measurable, bulleted objectives.
+- **User Stories** — each: a title, `As a <user>, I want <capability> so that
+  <benefit>`, and **verifiable** acceptance criteria as checkboxes. Size each
+  story for one focused work session. For UI-only stories, add a "verify in the
+  running app (see the `verify` / `frontend-e2e-qa` skill)" criterion.
+- **Functional Requirements** — numbered `FR-N: WHEN <trigger> the system SHALL
+  <observable behavior>` (EARS-shaped, so `discovery-handoff` can translate them
+  1:1). Explicit and unambiguous.
+- **Non-Goals** — what this feature explicitly will not do. Mandatory and non-empty.
+- **Design Considerations** *(optional)* — UI/UX notes, component reuse, mockup links.
+- **Technical Considerations** *(optional)* — constraints, dependencies, performance targets.
+- **Success Metrics** — quantified targets; each references the `FR-N`(s) it measures.
+- **Open Questions** — unresolved clarifications and every `[ASSUMPTION]`.
+
+Acceptance criteria and FRs must be verifiable: "shows a confirmation dialog
+before deleting" is acceptable; "works correctly" is not.
+
+## Gotchas
+
+- This skill stops at the PRD. `requirements.md`, design, and tasks are separate
+  human gates — do not pull them forward.
+- It is feature-level. If the user is still deciding *what the product is*, route
+  to `discovery-*` instead.
+- Keep FRs behavioral and EARS-shaped ("WHEN X the system SHALL Y") — "be fast" is
+  a success metric, not an FR.
+- Write to `docs/product/prd-<feature>.md`, not `docs/product/prd.md` — the latter
+  is the canonical discovery PRD and must not be overwritten.
+- Use the harness question tool for the questions; don't bury five questions in
+  one prose message.
+
+## Verification Before Reporting
+
+- Run: re-read the written `docs/product/prd-<feature>.md`.
+- Check: every FR is numbered and EARS-shaped; every user story has verifiable
+  acceptance criteria; Non-Goals is non-empty; each success metric references an
+  `FR-N`; every gap is a labeled `[ASSUMPTION]` in Open Questions.
+- If blocked: if the user cannot state the core problem in one sentence, stop and
+  say so — do not paper over it with invented requirements.
+
+## Completion Criteria
+- [ ] Context (steering + existing PRD/specs) was read before questioning.
+- [ ] Clarifying questions covered problem, user, core capability, scope boundary, success — asked as batched multiple-choice.
+- [ ] `docs/product/prd-<feature>.md` was written from the recorded answers, not guesses.
+- [ ] Every functional requirement is numbered and EARS-shaped; every user story has verifiable acceptance criteria.
+- [ ] Non-Goals, Success Metrics, and Open Questions (with every `[ASSUMPTION]`) are present.
+- [ ] The user is pointed to `spec-brainstorm` or `discovery-handoff` as next — no spec/design/tasks/code started here.
+
+## References
+
+- Use `assets/prd-template.md` for the PRD document skeleton.
