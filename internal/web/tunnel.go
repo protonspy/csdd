@@ -116,7 +116,7 @@ func requestTunnel(ctx context.Context, subdomain string) (tunnelInfo, error) {
 	if err != nil {
 		return info, fmt.Errorf("contact localtunnel: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return info, fmt.Errorf("localtunnel returned %s", resp.Status)
 	}
@@ -189,7 +189,7 @@ func tunnelPassword(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}

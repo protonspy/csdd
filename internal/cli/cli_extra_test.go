@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -367,6 +368,9 @@ func TestSteeringListAuthorTruncation(t *testing.T) {
 // It works by chmod'ing the workspace tree read-only after init, so any
 // subsequent write attempt fails at the syscall layer. Skipped under root.
 func TestWriteOperationsAgainstReadOnlyRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -419,6 +423,9 @@ func TestWriteOperationsAgainstReadOnlyRoot(t *testing.T) {
 // TestSteeringInitWriteFailure forces steeringInit down its SafeWrite error
 // branch by deleting the baseline files and then locking the directory.
 func TestSteeringInitWriteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -439,6 +446,9 @@ func TestSteeringInitWriteFailure(t *testing.T) {
 // TestSpecGenerateAndApproveWriteFailures cover SpecGenerate's WriteFile
 // branch and SpecApprove's saveSpecJSON branch by locking the spec dir.
 func TestSpecGenerateAndApproveWriteFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -530,6 +540,9 @@ func TestSpecDeleteFailure(t *testing.T) {
 // (`skill list` is intentionally excluded: a missing/unreadable skills dir is a
 // valid "no skills found" result, not an error — SkillRoot no longer creates it.)
 func TestSkillRootFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -557,6 +570,9 @@ func TestSkillRootFailures(t *testing.T) {
 
 // TestAgentRootFailures mirrors TestSkillRootFailures for the agent commands.
 func TestAgentRootFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -733,7 +749,7 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 	}
 	for _, exe := range []string{".claude/hooks/block-destructive.sh", ".githooks/pre-push"} {
 		info, err := os.Stat(filepath.Join(dir, exe))
-		if err != nil || info.Mode()&0o111 == 0 {
+		if err != nil || (runtime.GOOS != "windows" && info.Mode()&0o111 == 0) {
 			t.Errorf("%s must be executable: err=%v mode=%v", exe, err, info.Mode())
 		}
 	}

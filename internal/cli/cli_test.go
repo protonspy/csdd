@@ -504,7 +504,7 @@ func TestSpecInitAndShow(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("spec init: %d", code)
 	}
-	if !strings.Contains(out, "specs/photo-albums/") {
+	if !strings.Contains(filepath.ToSlash(out), "specs/photo-albums/") {
 		t.Errorf("expected path in output: %s", out)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "specs/photo-albums/spec.json")); err != nil {
