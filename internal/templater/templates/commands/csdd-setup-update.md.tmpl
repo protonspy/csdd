@@ -20,17 +20,17 @@ not a rebuild: change only what drifted. As with `/csdd-setup-init`, drive every
 1. **Re-detect** the stack from the manifests and source, and compare it to the current steering,
    agents, and skills. Note `$ARGUMENTS` if the user named a specific change. List the gaps you find
    (a new framework with no skill, an outdated test command in `tech.md`, a missing agent, etc.).
-2. **Refresh shipped baseline** with `csdd update` so managed artifacts track the latest csdd, which
+2. **Refresh shipped baseline** with `npx @protonspy/csdd update` so managed artifacts track the latest csdd, which
    **preserves your edits** (conflicts are saved as `.old`, never silently overwritten). Review any
    `.old` files it reports.
-3. **Apply targeted adjustments** through the CLI only: add a missing skill (`csdd skill create`),
-   add or refresh an agent (`csdd agent create`), or update steering (`csdd steering create`) for the
+3. **Apply targeted adjustments** through the CLI only: add a missing skill (`npx @protonspy/csdd skill create`),
+   add or refresh an agent (`npx @protonspy/csdd agent create`), or update steering (`npx @protonspy/csdd steering create`) for the
    drift you found. Do **not** recreate artifacts that are already correct. Never add secrets to
    steering or specs. When you create or refresh a sub-agent or skill, choose its `--model` and
    `--effort` by the task's complexity (lower/cheaper for mechanical work, stronger/higher for complex
    reasoning), and omit both flags when neither is warranted so it inherits the session configuration.
-4. **Validate** with `csdd steering validate` and `csdd skill validate` (confirm agents with
-   `csdd agent show` — there is no `csdd agent validate`); if `csdd` exits non-zero, stop and report
+4. **Validate** with `npx @protonspy/csdd steering validate` and `npx @protonspy/csdd skill validate` (confirm agents with
+   `npx @protonspy/csdd agent show` — there is no `npx @protonspy/csdd agent validate`); if `csdd` exits non-zero, stop and report
    rather than forcing past it.
-5. **Report a diff**: what you changed, what `csdd update` refreshed (and any `.old` conflicts), and
+5. **Report a diff**: what you changed, what `npx @protonspy/csdd update` refreshed (and any `.old` conflicts), and
    what you deliberately left untouched.

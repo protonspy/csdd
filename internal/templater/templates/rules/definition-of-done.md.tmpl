@@ -14,7 +14,7 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 - [ ] **Under `tdd-e2e`:** the end-to-end coverage for the affected golden/error flow runs green.
 - [ ] The relevant suite, lint, and typecheck pass for the touched scope.
 - [ ] Unit tests were run **through the csdd CLI** so the spec carries the evidence (**every flow**):
-      `csdd spec test-report <feature> --run --lang <lang>` wrote `specs/<feature>/test-report.json`
+      `npx @protonspy/csdd spec test-report <feature> --run --lang <lang>` wrote `specs/<feature>/test-report.json`
       (tests green, coverage recorded, no open attentions). Missing this evidence is a blocked item.
 - [ ] Scope was respected — no opportunistic refactors or unrelated changes.
 - [ ] `## Implementation Notes` in tasks.md updated with any cross-task learning.
@@ -33,7 +33,7 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 
 ```
 ## Verification
-- csdd spec test-report <feature> --run --lang <lang>   ✅  (tests + coverage evidence)
+- npx @protonspy/csdd spec test-report <feature> --run --lang <lang>   ✅  (tests + coverage evidence)
 - <lint command>      ✅
 - <typecheck command> ✅
 - <build command>     ✅

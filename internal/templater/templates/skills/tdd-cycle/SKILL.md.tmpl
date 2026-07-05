@@ -14,7 +14,7 @@ red → green → refactor.
 
 > **Under `tdd`/`tdd-e2e`, production code does not exist until a test has failed for the
 > expected reason. The first artifact you produce is a failing test — and no task is marked
-> `[x]` until `csdd spec test-report` has recorded it green.**
+> `[x]` until `npx -y @protonspy/csdd spec test-report` has recorded it green.**
 
 No exceptions:
 - Don't write the implementation "just to see if it works" and back-fill the test.
@@ -68,7 +68,7 @@ test, not production code.
   traceable evidence file (`specs/<feature>/test-report.json`):
 
   ```bash
-  csdd spec test-report <feature> --run --lang <python|typescript|java|go|rust> --path <tests-dir>
+  npx -y @protonspy/csdd spec test-report <feature> --run --lang <python|typescript|java|go|rust> --path <tests-dir>
   ```
 
   - `--run` executes the language's default test command (or your `--cmd "..."`),
@@ -76,12 +76,12 @@ test, not production code.
   - A custom `--cmd` is validated against the language's expected tooling
     (e.g. Python → `pytest`, Java → `mvn`/`jacoco`); a mismatch is recorded as an attention.
   - The command exits non-zero when tests fail, so it gates the task.
-- The dashboard (`csdd web`) surfaces these per-spec metrics, paths, and attentions.
+- The dashboard (`npx -y @protonspy/csdd web`) surfaces these per-spec metrics, paths, and attentions.
 - Refresh the diff in the **same step** so the dashboard's **Changes** view reflects
   exactly the work in the tree:
 
   ```bash
-  csdd spec diff-report <feature>
+  npx -y @protonspy/csdd spec diff-report <feature>
   ```
 
   Read-only git (base → working tree, untracked work included); writes
@@ -127,8 +127,8 @@ If any fire, stop and return to the workflow above.
 ## Verification Before Reporting
 
 - Run: the focused test (RED then GREEN), then the relevant suite.
-- Record: the run via `csdd spec test-report <feature> --run --lang <lang>` and
-  `csdd spec diff-report <feature>` so the spec carries up-to-date test/coverage evidence
+- Record: the run via `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>` and
+  `npx -y @protonspy/csdd spec diff-report <feature>` so the spec carries up-to-date test/coverage evidence
   and the Changes view matches the tree.
 - Check: the new behavior is exercised and the suite is green.
 - If blocked: report the blocked step explicitly; do not mark the task done.
@@ -137,7 +137,7 @@ If any fire, stop and return to the workflow above.
 - [ ] A test existed that failed before the change (or documented why not).
 - [ ] The test passes after the minimal implementation.
 - [ ] The relevant suite + lint/typecheck pass.
-- [ ] `csdd spec test-report <feature> --run …` recorded the evidence (tests green, coverage updated).
-- [ ] `csdd spec diff-report <feature>` refreshed the Changes view for this slice.
+- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run …` recorded the evidence (tests green, coverage updated).
+- [ ] `npx -y @protonspy/csdd spec diff-report <feature>` refreshed the Changes view for this slice.
 - [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

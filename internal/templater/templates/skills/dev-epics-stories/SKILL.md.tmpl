@@ -23,7 +23,7 @@ generating tasks. The deliverable is a validated `tasks.md`, not code.
 
 ## Collect Inputs First
 
-- Is the design phase approved? `csdd spec status <feature>` — if not, run
+- Is the design phase approved? `npx -y @protonspy/csdd spec status <feature>` — if not, run
   `dev-architecture` first.
 - What are the Boundary Map component names from `design.md`? (tasks reference
   them verbatim as `_Boundary:_`.)
@@ -42,7 +42,7 @@ acceptance criteria (mapped to requirement IDs), and the boundary it touches.
 Each story must be implementable in a focused sitting.
 
 ### 3) Fold into csdd tasks.md
-- `csdd spec generate <feature> --artifact tasks`.
+- `npx -y @protonspy/csdd spec generate <feature> --artifact tasks`.
 - Translate stories into tasks following `.claude/rules/tasks-generation.md`:
   - Every parent task carries `_Boundary: <Component>_` (matching `design.md`).
   - Each behavior is a **RED** sub-task immediately followed by a **GREEN** one.
@@ -50,10 +50,10 @@ Each story must be implementable in a focused sitting.
   - Mark parallel-safe tasks `(P)`; no two `(P)` tasks may share a boundary.
 
 ### 4) Gate it
-- `csdd spec validate <feature>` (checks every leaf has `_Requirements:_`, every
+- `npx -y @protonspy/csdd spec validate <feature>` (checks every leaf has `_Requirements:_`, every
   `(P)` has a `_Boundary:_`, `_Depends:_` IDs exist, no two `(P)` share a
   boundary). Fix every issue.
-- `csdd spec approve <feature> --phase tasks`.
+- `npx -y @protonspy/csdd spec approve <feature> --phase tasks`.
 
 ## Gotchas
 
@@ -67,7 +67,7 @@ Each story must be implementable in a focused sitting.
 
 ## Verification Before Reporting
 
-- Run: `csdd spec validate <feature>`.
+- Run: `npx -y @protonspy/csdd spec validate <feature>`.
 - Check: it exits 0; every story maps to ≥1 task; every behavior has a RED+GREEN
   pair; tasks phase is approved.
 - If blocked: if a requirement has no implementable story, the design is
@@ -77,7 +77,7 @@ Each story must be implementable in a focused sitting.
 - [ ] `specs/<feature>/epics.md` lists epics and implementation-ready stories.
 - [ ] `tasks.md` is filled with correct `_Boundary:_`, `_Requirements:_`,
       `_Depends:_`, `(P)`, and RED→GREEN sub-tasks.
-- [ ] `csdd spec validate <feature>` exits 0 and the tasks phase is approved.
+- [ ] `npx -y @protonspy/csdd spec validate <feature>` exits 0 and the tasks phase is approved.
 - [ ] Every story traces to a requirement; every requirement is covered by tasks.
 
 ## References

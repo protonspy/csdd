@@ -50,6 +50,8 @@ func Run(args []string, templates embed.FS) int {
 		return runClean(rest, templates)
 	case "destroy", "uninstall":
 		return runDestroy(rest, templates)
+	case "copy":
+		return runCopy(rest, templates)
 	case "steering":
 		return runSteering(rest, templates)
 	case "spec":
@@ -131,6 +133,7 @@ RESOURCES
   update                      Refresh csdd-managed artifacts to this version (confirms before overriding your edits; keeps them as .old).
   clean                       Remove the *-N.old backups update left under the workspace.
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
+  copy     <kind>/<name>      Cherry-pick one shipped artifact into the workspace (rules, skills, agents, commands, hooks, templates, steering). Bare copy lists everything.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
@@ -151,6 +154,9 @@ EXAMPLES
   %[1]s update                                               # apply; your edits are kept as <file>-N.old
   %[1]s destroy --dry-run                                    # preview exactly what removing the workspace would delete
   %[1]s destroy --force                                      # remove the workspace for a fresh re-install (keeps specs/)
+  %[1]s copy                                                 # list every shipped artifact you can cherry-pick
+  %[1]s copy skills/dev-architecture                         # drop one skill into .claude/skills/
+  %[1]s copy steering/product.md                             # add a single baseline steering file
   %[1]s steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
   %[1]s steering create observability \

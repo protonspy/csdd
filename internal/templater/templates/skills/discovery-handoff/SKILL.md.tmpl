@@ -13,34 +13,34 @@ architecture with full, mechanically-checked context.
 ## Goal
 
 Translate `docs/product/prd.md` into csdd steering updates and a spec seeded with
-EARS-formatted requirements that pass `csdd spec validate`, so the downstream
+EARS-formatted requirements that pass `npx -y @protonspy/csdd spec validate`, so the downstream
 workflow inherits a clean, gated starting point.
 
 ## Default Operation Mode
 
 Direct execution, driven by the `csdd` CLI. You never hand-edit `spec.json`,
 frontmatter, or task annotations — every artifact is created via `csdd` and only
-its prose body is filled in. The deliverable is a passing `csdd spec validate`.
+its prose body is filled in. The deliverable is a passing `npx -y @protonspy/csdd spec validate`.
 
 ## Collect Inputs First
 
 - Is `docs/product/prd.md` complete and checklist-passing? (run `discovery-prd`
   validate first if unsure)
 - What is the feature slug for this work? (kebab-case, e.g. `photo-albums`)
-- Does the workspace have baseline steering yet? (`csdd steering list`)
+- Does the workspace have baseline steering yet? (`npx -y @protonspy/csdd steering list`)
 
 ## Execution Workflow
 
 ### 1) Update steering (always-on memory)
-- If no baseline exists, run `csdd steering init` (or `csdd init --with-baseline`).
+- If no baseline exists, run `npx -y @protonspy/csdd steering init` (or `npx -y @protonspy/csdd init --with-baseline`).
 - Fill `product.md` from the PRD's Vision, Target User, and Success Metrics.
 - If `discovery-research` produced technical findings, fold the durable
   constraints into `tech.md`. Only capture decisions, not the whole research.
-- Run `csdd steering validate`.
+- Run `npx -y @protonspy/csdd steering validate`.
 
 ### 2) Initialize the spec
-- `csdd spec init <feature>` — creates `specs/<feature>/spec.json`.
-- `csdd spec generate <feature> --artifact requirements` — scaffolds
+- `npx -y @protonspy/csdd spec init <feature>` — creates `specs/<feature>/spec.json`.
+- `npx -y @protonspy/csdd spec generate <feature> --artifact requirements` — scaffolds
   `requirements.md` from the template.
 
 ### 3) Translate PRD → EARS requirements
@@ -52,9 +52,9 @@ its prose body is filled in. The deliverable is a passing `csdd spec validate`.
 - Never use "should" — EARS uses SHALL. One requirement per behavior.
 
 ### 4) Gate it
-- `csdd spec validate <feature>` — fix every reported issue (it checks EARS
+- `npx -y @protonspy/csdd spec validate <feature>` — fix every reported issue (it checks EARS
   syntax, unique headers, no "should").
-- `csdd spec approve <feature> --phase requirements` once validation is clean.
+- `npx -y @protonspy/csdd spec approve <feature> --phase requirements` once validation is clean.
 
 ### 5) Announce the handoff
 - Report the spec name and confirm requirements are approved. Point the user at
@@ -73,16 +73,16 @@ its prose body is filled in. The deliverable is a passing `csdd spec validate`.
 
 ## Verification Before Reporting
 
-- Run: `csdd steering validate`, then `csdd spec validate <feature>`.
+- Run: `npx -y @protonspy/csdd steering validate`, then `npx -y @protonspy/csdd spec validate <feature>`.
 - Check: both exit 0; every PRD `FR-N` is represented; requirements phase is
-  approved (`csdd spec status <feature>`).
+  approved (`npx -y @protonspy/csdd spec status <feature>`).
 - If blocked: if a PRD requirement cannot be expressed as testable EARS, it was
   not testable in the PRD — send it back to `discovery-prd`, do not invent.
 
 ## Completion Criteria
-- [ ] `product.md` (and `tech.md` if relevant) reflect the PRD; `csdd steering validate` passes.
+- [ ] `product.md` (and `tech.md` if relevant) reflect the PRD; `npx -y @protonspy/csdd steering validate` passes.
 - [ ] `specs/<feature>/` exists with requirements generated and filled in EARS.
-- [ ] `csdd spec validate <feature>` exits 0 and the requirements phase is approved.
+- [ ] `npx -y @protonspy/csdd spec validate <feature>` exits 0 and the requirements phase is approved.
 - [ ] Every PRD `FR-N` traces to at least one EARS requirement.
 - [ ] The user is pointed to `wf:development` / `dev-architecture` as next.
 

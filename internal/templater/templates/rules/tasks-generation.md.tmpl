@@ -35,7 +35,7 @@ Common to every flow:
 - Phase 4 (Validation) holds end-to-end tests, not the unit tests — those live with their
   behavior in Phases 2–3.
 - Run unit tests through the csdd CLI so the spec keeps traceable evidence (**all flows**):
-  `csdd spec test-report <feature> --run --lang <lang>` writes `specs/<feature>/test-report.json`.
+  `npx @protonspy/csdd spec test-report <feature> --run --lang <lang>` writes `specs/<feature>/test-report.json`.
   Phase 4 SHOULD include a task that records this evidence (tests green, coverage captured).
 
 ## Avoid

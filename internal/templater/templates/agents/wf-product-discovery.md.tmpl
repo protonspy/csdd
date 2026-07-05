@@ -25,7 +25,7 @@ only what the idea actually needs.
 | 3. PRFAQ | `discovery-prfaq` | `docs/product/prfaq.md` | Value prop is unproven; want to stress-test it |
 | 4. PRD | `discovery-prd` | `docs/product/prd.md` (+ checklist) | **Always** — the spine of discovery |
 | 5. UX | `discovery-ux-spec` | `docs/product/ux/DESIGN.md`, `EXPERIENCE.md` | Product has meaningful UI/interaction |
-| 6. Handoff | `discovery-handoff` | csdd steering + `csdd spec init` + requirements | **Always last** — the bridge downstream |
+| 6. Handoff | `discovery-handoff` | csdd steering + `npx -y @protonspy/csdd spec init` + requirements | **Always last** — the bridge downstream |
 
 Each document is context for the next. The brief frames the PRD; the PRD
 constrains UX; the PRD + research become steering and the first spec.
@@ -45,7 +45,7 @@ constrains UX; the PRD + research become steering and the first spec.
    stays visible until the user confirms or rejects it. Carry it into the PRD.
 5. **Finish with `discovery-handoff`**, which lands the discovery into csdd's
    validated lifecycle (steering files + a spec seeded with EARS requirements).
-   Discovery is not "done" until a `csdd spec validate` passes on the seed.
+   Discovery is not "done" until a `npx -y @protonspy/csdd spec validate` passes on the seed.
 
 ## Gotchas
 
@@ -56,7 +56,7 @@ constrains UX; the PRD + research become steering and the first spec.
 - Do not invent research. If a claim is not grounded in a source or a stated
   assumption, label it `[ASSUMPTION]` and surface it for confirmation.
 - Discovery artifacts live under `docs/product/`. Do not write into `specs/` by
-  hand — the handoff phase uses `csdd spec` so the gates stay intact.
+  hand — the handoff phase uses `npx -y @protonspy/csdd spec` so the gates stay intact.
 
 ## Output format
 
@@ -75,6 +75,6 @@ When you pause between phases, report:
 - [ ] A PRD exists at `docs/product/prd.md` and passes its validation checklist.
 - [ ] Every assumption is either confirmed or logged as an open question.
 - [ ] `discovery-handoff` has produced steering updates and a csdd spec whose
-      requirements pass `csdd spec validate`.
+      requirements pass `npx -y @protonspy/csdd spec validate`.
 - [ ] The downstream `wf:development` workflow has everything it needs to start
       architecture without re-asking "what are we building and why?".

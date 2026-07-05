@@ -22,7 +22,7 @@ every gate depends on:
 2. **Never hand-edit `spec.json`.** It records phase approvals and
    `ready_for_implementation`. Writing to it directly — even to "unblock"
    yourself — bypasses the human gate and is a process violation. Phases are
-   crossed *only* with `csdd spec approve <feature> --phase <phase>`, which a
+   crossed *only* with `npx @protonspy/csdd spec approve <feature> --phase <phase>`, which a
    human authorizes.
 3. **Never hand-edit frontmatter, task annotations, or `.mcp.json`.** If a
    generated file is wrong, regenerate it from the template and edit the *body*,
@@ -36,7 +36,7 @@ every gate depends on:
 
 ## Driving csdd — prefer the MCP tools for the dev flow
 
-`csdd init` registers a **`csdd` MCP server** in `.mcp.json`. When it is
+`npx @protonspy/csdd init` registers a **`csdd` MCP server** in `.mcp.json`. When it is
 connected, drive the development flow with its **`csdd_*` tools** instead of
 shelling out:
 
@@ -51,7 +51,7 @@ Typed parameters (the `artifact`, `phase`, and `inclusion` enums, required
 fields) stop you from passing invalid values, and the server builds the exact
 argv. The **phase gates, validators, and exit codes are identical** either way.
 Use the **CLI** when the MCP server isn't connected, and always for **setup and
-management** — `init`, `mcp`, and `export` are intentionally *not* tools.
+management** — `init`, `copy`, `mcp`, and `export` are intentionally *not* tools.
 
 ## Mental model — read this first
 
@@ -78,6 +78,7 @@ the CLI rejects anything else. Global flags on every command: `--root PATH`
 ```bash
 # bootstrap (one time per repo)
 npx @protonspy/csdd init [--with-baseline] [--exclude agents,skills,…] [--no-mcp]
+npx @protonspy/csdd copy KIND/NAME                      # add back one shipped artifact init skipped (e.g. skills/tdd-cycle); bare `copy` lists all
 
 # steering (project memory)
 npx @protonspy/csdd steering init
@@ -114,7 +115,7 @@ requirements ──approve──▶ design ──approve──▶ tasks ──ap
    (human)                (human)              (human)         ready_for_implementation: true
 ```
 
-1. **Start each feature on a clean context:** `/clear`, then `csdd spec init <feature>`.
+1. **Start each feature on a clean context:** `/clear`, then `npx @protonspy/csdd spec init <feature>`.
 2. **Generate → review → approve, one phase at a time:** `spec generate --artifact requirements` → human reviews → `spec approve --phase requirements`; then `design`, then `tasks`. The gate refuses the next `generate` until the current phase is approved.
 3. `ready_for_implementation` flips to `true` only after all three phases are approved — and only csdd flips it. Do not set it yourself.
 4. **Branch before the first task:** `git switch -c <type>/<feature>` in kebab-case (`feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, `perf/`). The PreToolUse hook blocks commits on the default branch.
@@ -167,7 +168,7 @@ Sizing: major tasks 3–10 sub-tasks; leaves 1–3 hours. Phase order:
 - **Steering** (`.claude/steering/*.md`) is always-on project memory, imported into the managed block below. `inclusion:` (`always|fileMatch|manual|auto`) documents intended scope. Put organizational patterns and the *why* here; **never** secrets, file dumps, or details derivable from code. Golden rule: *if new code follows existing patterns, steering should not need updating.*
 - **Skills** (`.claude/skills/<name>/`) are executable capability bundles: `SKILL.md` (≤ 500 lines / ~5k tokens) + `references/` + `assets/` + `scripts/`. Required sections: `## Goal`, `## Execution Workflow`, `## Gotchas`, `## Verification Before Reporting`, `## Completion Criteria`. Every `references/` file must be cited by name with a load trigger. Build skills from real expertise, never generic LLM output.
 - **Sub-agents** (`.claude/agents/<name>.md`) default to `Read, Grep` (least privilege). The more powerful the agent, the smaller its scope and the larger the human review must be.
-- **MCP servers** (`.mcp.json`) are managed only with `csdd mcp`. Each server sets exactly one transport — `command` (stdio) **or** `url` (remote), never both. Scope narrowly, avoid `--auto-approve`, pass secrets via `--env`, never inline them.
+- **MCP servers** (`.mcp.json`) are managed only with `npx @protonspy/csdd mcp`. Each server sets exactly one transport — `command` (stdio) **or** `url` (remote), never both. Scope narrowly, avoid `--auto-approve`, pass secrets via `--env`, never inline them.
 
 ## Validation — what the gates catch
 
@@ -181,7 +182,7 @@ continuing):
 - **skill** — `name` matches the dir; `description` non-empty; body ≤ 500 lines / ~5k tokens; required headings present; every `references/` file cited.
 - **mcp** — well-formed JSON; exactly one transport per server; remote `type` is `sse`/`http`; no empty env keys.
 
-Run `csdd spec status <feature>` between every step.
+Run `npx @protonspy/csdd spec status <feature>` between every step.
 
 ## Anti-patterns — refuse to do these
 

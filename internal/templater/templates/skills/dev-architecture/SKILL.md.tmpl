@@ -24,7 +24,7 @@ code — `tdd-cycle` writes code later.
 
 ## Collect Inputs First
 
-- Is the requirements phase approved? Run `csdd spec status <feature>` — if not,
+- Is the requirements phase approved? Run `npx -y @protonspy/csdd spec status <feature>` — if not,
   stop; this workflow starts from an approved spec.
 - What exists already? Read `.claude/steering/tech.md` and `structure.md` and the
   relevant codebase. Reuse beats green-field.
@@ -45,15 +45,15 @@ decision, consequences. Append them to `specs/<feature>/architecture.md` (use
 `assets/architecture-template.md` for the surrounding context).
 
 ### 3) Fold into csdd design.md
-- `csdd spec generate <feature> --artifact design`.
+- `npx -y @protonspy/csdd spec generate <feature> --artifact design`.
 - Fill the **Architecture Pattern & Boundary Map**, **Technology Stack**, **File
   Structure Plan**, **System Flows**, and **Requirements Traceability** from the
   architecture. Every requirement ID must appear in the traceability table.
 
 ### 4) Gate it
-- `csdd spec validate <feature>` (checks Boundary Map present, File Structure
+- `npx -y @protonspy/csdd spec validate <feature>` (checks Boundary Map present, File Structure
   Plan present, all requirement IDs traced, ≤1000 lines). Fix every issue.
-- `csdd spec approve <feature> --phase design`.
+- `npx -y @protonspy/csdd spec approve <feature> --phase design`.
 
 ## Gotchas
 
@@ -67,9 +67,9 @@ decision, consequences. Append them to `specs/<feature>/architecture.md` (use
 
 ## Verification Before Reporting
 
-- Run: `csdd spec validate <feature>`.
+- Run: `npx -y @protonspy/csdd spec validate <feature>`.
 - Check: it exits 0; every requirement ID is in the traceability table; design
-  phase is approved (`csdd spec status`).
+  phase is approved (`npx -y @protonspy/csdd spec status`).
 - If blocked: if a requirement cannot be satisfied by any feasible design, that
   is a discovery problem — escalate, do not quietly drop it.
 
@@ -77,7 +77,7 @@ decision, consequences. Append them to `specs/<feature>/architecture.md` (use
 - [ ] `specs/<feature>/architecture.md` records each key decision as an ADR.
 - [ ] `design.md` has Boundary Map, Tech Stack, File Structure Plan, and full
       Requirements Traceability.
-- [ ] `csdd spec validate <feature>` exits 0 and the design phase is approved.
+- [ ] `npx -y @protonspy/csdd spec validate <feature>` exits 0 and the design phase is approved.
 - [ ] Boundary component names are final — stories will reference them verbatim.
 
 ## References

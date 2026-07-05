@@ -17,7 +17,7 @@ running UI — not unit tests, not a substitute for the `verify-change` gate.
   and serves (e.g. a web app the project builds and runs). If the project has no
   frontend, this skill does not apply — say so and stop.
 - **Requires the Playwright MCP server.** Quick-install it with
-  `csdd mcp install playwright` (stdio `npx @playwright/mcp@latest`). If the server
+  `npx -y @protonspy/csdd mcp install playwright` (stdio `npx @playwright/mcp@latest`). If the server
   is not connected, report that e2e was skipped because Playwright is unavailable —
   never fabricate a browser result.
 

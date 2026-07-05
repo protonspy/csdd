@@ -53,6 +53,7 @@ npx @protonspy/csdd spec generate my-feature --artifact requirements   # → val
 | Command | What it does |
 |---|---|
 | `npx @protonspy/csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks) |
+| `npx @protonspy/csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) into the workspace — the complement of `init --exclude` |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
 | `npx @protonspy/csdd spec init · generate · validate · approve · status` | the requirements → design → tasks gated lifecycle |
 | `npx @protonspy/csdd steering · skill · agent · mcp …` | author the 5 governed resources (`create · list · show · delete`, plus `validate` where applicable) |
