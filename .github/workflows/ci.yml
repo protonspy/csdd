@@ -53,6 +53,10 @@ jobs:
 
       - name: test (coverage, no race)
         if: runner.os == 'Windows'
+        # Force bash so the coverprofile arg parses like Linux/macOS; the Windows
+        # runner's default PowerShell mangles `-coverprofile=coverage.out ./...`
+        # into a bogus `.out` package pattern.
+        shell: bash
         run: go test -coverprofile=coverage.out ./...
 
   lint:
