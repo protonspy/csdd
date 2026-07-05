@@ -147,7 +147,7 @@ requirements ──approve──▶ design ──approve──▶ tasks ──ap
 2. **Generate → review → approve, one phase at a time:** `spec generate --artifact requirements` → human reviews → `spec approve --phase requirements`; then `design`, then `tasks`. The gate refuses the next `generate` until the current phase is approved.
 3. `ready_for_implementation` flips to `true` only after all three phases are approved — and only csdd flips it. Do not set it yourself.
 4. **Branch before the first task:** `git switch -c <type>/<feature>` in kebab-case (`feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, `perf/`). The PreToolUse hook blocks commits on the default branch.
-5. Implementation runs one task per iteration with fresh-context sub-agents (implementer → reviewer → debugger), TDD red→green per task. Stay inside the approved design boundary.
+5. Implementation runs one task per iteration with fresh-context sub-agents (`test-designer` enumerates the cases → `implementer` builds them → `code-reviewer`, plus `security-reviewer` when auth/secrets/input are touched), TDD red→green per task. Stay inside the approved design boundary. Independent `(P)` tasks in *different* `_Boundary:_` groups may run as parallel `implementer` sub-agents in isolated git worktrees; same-boundary tasks stay ordered and every `_Depends:_` is honored first.
 6. Commit a slice only after review is clean, then push — the `pre-push` hook runs the test gate and blocks a red push.
 7. **Close each feature with a `/clear`** once its PR ships, so context does not accumulate across features.
 8. Steering is updated only when a new pattern emerges that the agent could not derive from the code.

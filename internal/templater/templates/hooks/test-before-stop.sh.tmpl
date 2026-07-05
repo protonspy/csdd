@@ -1,31 +1,26 @@
 #!/bin/bash
-# Stop hook: remind the agent to verify before claiming completion.
+# Stop hook: nudge the agent to verify before it claims completion.
 #
-# By default this is ADVISORY (exits 0) — running the full suite on every Stop
-# is slow and noisy. It prints the verification checklist so the reminder lands
-# in context. To make it a hard gate, uncomment the block below to run your
-# project's checks and `exit 2` on failure (exit 2 tells Claude Code to keep
-# working rather than stop).
-set -euo pipefail
+# Claude Code Stop-hook contract:
+#   * exit 0 with NO stdout            -> allow the stop (silent).
+#   * print {"decision":"block","reason":"..."} to STDOUT and exit 0
+#         -> block the stop; "reason" is fed back to Claude as its next turn.
+#   * exit 2 with a message on STDERR  -> also blocks the stop (hard gate).
+# A plain `echo ... >&2; exit 0` does NOT reach Claude for a Stop hook, so this
+# script emits the JSON decision form. To avoid an infinite stop-loop it fires
+# ONE-SHOT: the first Stop blocks with the reminder, the next Stop allows the
+# stop. Two independent loop-guards make that safe:
+#   1. stdin's `stop_hook_active` is true when Claude is already continuing
+#      because a previous Stop hook blocked -> we never block again.
+#   2. a per-session sentinel marker records that we already nudged this round.
+set -uo pipefail
 
-echo "Before reporting done, run the verify-change skill: tests, lint, typecheck, build — and paste the real output." >&2
-
-# Spec-boundary context hygiene: when the spec you're working on has all its
-# tasks checked, nudge the operator to /clear before the next feature so context
-# does not accumulate across specs. Claude cannot run /clear itself — this is a
-# reminder to the human. Keyed off the most recently modified specs/*/tasks.md.
-specs_dir="${CLAUDE_PROJECT_DIR:-$PWD}/specs"
-latest_tasks=$(ls -t "$specs_dir"/*/tasks.md 2>/dev/null | head -n1 || true)
-if [ -n "$latest_tasks" ]; then
-  total=$(grep -cE '^[[:space:]]*- \[[ xX]\]' "$latest_tasks" 2>/dev/null || true)
-  open=$(grep -cE '^[[:space:]]*- \[ \]' "$latest_tasks" 2>/dev/null || true)
-  if [ "${total:-0}" -gt 0 ] && [ "${open:-0}" -eq 0 ]; then
-    feature=$(basename "$(dirname "$latest_tasks")")
-    echo "Spec '$feature' has all tasks checked — once its PR ships, run /clear to reset context before the next feature." >&2
-  fi
-fi
+input="$(cat)"
 
 # --- Hard gate (opt-in): uncomment and adapt to your project ---------------
+# Runs your checks on every Stop and blocks with exit 2 (stderr is fed back to
+# Claude) until they pass. Enable this only if you want a strict gate; it
+# supersedes the advisory one-shot nudge below.
 # if [ -f Makefile ] && grep -qE '^(test|verify):' Makefile; then
 #   make verify || make test || { echo "verification failed — not done yet" >&2; exit 2; }
 # elif [ -f package.json ]; then
@@ -34,5 +29,71 @@ fi
 #   go test ./... || { echo "tests failed — not done yet" >&2; exit 2; }
 # fi
 # ---------------------------------------------------------------------------
+
+# Parse the two fields we care about from the stdin JSON (jq -> python3 -> crude
+# grep/sed fallback so the hook works with none of them installed).
+stop_active=false
+session_id=""
+if command -v jq >/dev/null 2>&1; then
+  stop_active="$(printf '%s' "$input" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false)"
+  session_id="$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)"
+elif command -v python3 >/dev/null 2>&1; then
+  stop_active="$(printf '%s' "$input" | python3 -c 'import sys,json;print(str(json.load(sys.stdin).get("stop_hook_active",False)).lower())' 2>/dev/null || echo false)"
+  session_id="$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("session_id",""))' 2>/dev/null || true)"
+else
+  printf '%s' "$input" | grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && stop_active=true
+  session_id="$(printf '%s' "$input" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+fi
+
+# Per-session marker kept in the temp dir (not the repo) so it auto-cleans and
+# never gets committed.
+marker="${TMPDIR:-/tmp}/csdd-stop-nudged-${session_id:-default}"
+
+# Loop-guard 1: Claude is already continuing from a previous Stop-hook block.
+# Never block again; clear any stale marker.
+if [ "$stop_active" = "true" ]; then
+  rm -f "$marker" 2>/dev/null || true
+  exit 0
+fi
+
+# Loop-guard 2: we already nudged on the previous Stop -> allow the stop now
+# and clear the marker.
+if [ -f "$marker" ]; then
+  rm -f "$marker" 2>/dev/null || true
+  exit 0
+fi
+
+# Build the reminder that will be fed back to Claude.
+reason="Before reporting done, run the verify-change skill: tests, lint, typecheck, build — and paste the real output."
+
+# Spec-boundary context hygiene: if the most recently modified specs/*/tasks.md
+# has every task checked, fold in a /clear reminder (Claude cannot run /clear
+# itself, but it will surface this to the operator). Keyed off the newest
+# specs/*/tasks.md.
+specs_dir="${CLAUDE_PROJECT_DIR:-$PWD}/specs"
+latest_tasks="$(ls -t "$specs_dir"/*/tasks.md 2>/dev/null | head -n1 || true)"
+if [ -n "$latest_tasks" ]; then
+  total="$(grep -cE '^[[:space:]]*- \[[ xX]\]' "$latest_tasks" 2>/dev/null || true)"
+  open="$(grep -cE '^[[:space:]]*- \[ \]' "$latest_tasks" 2>/dev/null || true)"
+  if [ "${total:-0}" -gt 0 ] && [ "${open:-0}" -eq 0 ]; then
+    feature="$(basename "$(dirname "$latest_tasks")")"
+    reason="$reason  Also: spec '$feature' has all tasks checked — once its PR ships, remind the operator to run /clear before the next feature."
+  fi
+fi
+
+# Record the marker BEFORE emitting so that even a crash mid-emit lets the next
+# Stop through, then emit the one-shot block decision on stdout and exit 0.
+touch "$marker" 2>/dev/null || true
+
+if command -v jq >/dev/null 2>&1; then
+  jq -n --arg r "$reason" '{decision:"block", reason:$r}'
+elif command -v python3 >/dev/null 2>&1; then
+  printf '%s' "$reason" | python3 -c 'import sys,json;print(json.dumps({"decision":"block","reason":sys.stdin.read()}))'
+else
+  # No jq/python3: the reason built above contains no " or \ characters, so this
+  # hand-rolled JSON is safe. (A spec directory name containing a double quote
+  # could break it, but those are not valid feature names.)
+  printf '{"decision":"block","reason":"%s"}\n' "$reason"
+fi
 
 exit 0

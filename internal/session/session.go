@@ -160,12 +160,9 @@ func LoadSpecDetail(root, feature string) (SpecDetail, error) {
 	if fi, err := os.Stat(specDir); err != nil || !fi.IsDir() {
 		return SpecDetail{}, fmt.Errorf("spec not found: %s", feature)
 	}
-	d := SpecDetail{SpecCard: buildCard(specsDir, feature)}
-	if data, err := os.ReadFile(filepath.Join(specDir, "tasks.md")); err == nil {
-		d.Phases, _ = ParseTasks(string(data))
-	}
-	s, _ := loadSpec(specDir)
-	for _, is := range validationIssues(specDir, s) {
+	card, phases, issues, _ := buildCardFull(specsDir, feature)
+	d := SpecDetail{SpecCard: card, Phases: phases}
+	for _, is := range issues {
 		d.IssueList = append(d.IssueList, ValidationIssue{File: is.File, Line: is.Line, Msg: is.Msg})
 	}
 	d.Phases = orEmpty(d.Phases)
@@ -176,6 +173,16 @@ func LoadSpecDetail(root, feature string) (SpecDetail, error) {
 }
 
 func buildCard(specsDir, feature string) SpecCard {
+	card, _, _, _ := buildCardFull(specsDir, feature)
+	return card
+}
+
+// buildCardFull assembles a spec card and also returns the parsed task phases,
+// validation issues, and spec.json it computed along the way. LoadSpecDetail
+// reuses these instead of re-reading tasks.md, re-loading spec.json, and
+// re-running the validator a second time — the dashboard polls this path every
+// ~800ms, and on WSL's /mnt/c each avoided file read crosses the 9p boundary.
+func buildCardFull(specsDir, feature string) (SpecCard, []TaskPhase, []validator.Issue, specJSON) {
 	specDir := filepath.Join(specsDir, feature)
 	card := SpecCard{Feature: feature, Approvals: map[string]Approval{}}
 	s, ok := loadSpec(specDir)
@@ -203,13 +210,16 @@ func buildCard(specsDir, feature string) SpecCard {
 		}
 		sort.Strings(card.Artifacts)
 	}
+	var phases []TaskPhase
 	if data, err := os.ReadFile(filepath.Join(specDir, "tasks.md")); err == nil {
-		_, stats := ParseTasks(string(data))
+		var stats TaskStats
+		phases, stats = ParseTasks(string(data))
 		card.Tasks = stats
 	}
-	card.Issues = len(validationIssues(specDir, s))
+	issues := validationIssues(specDir, s)
+	card.Issues = len(issues)
 	card.Artifacts = orEmpty(card.Artifacts)
-	return card
+	return card, phases, issues, s
 }
 
 // validationIssues runs the mechanical validator scoped to the spec's furthest

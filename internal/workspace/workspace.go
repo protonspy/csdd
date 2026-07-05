@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/protonspy/csdd/internal/paths"
 )
@@ -30,6 +31,52 @@ func KebabCheck(name, kind string) error {
 		return fmt.Errorf("%s name must be kebab-case (lowercase, hyphen-separated): got %q", kind, name)
 	}
 	return nil
+}
+
+// SafeName rejects a positional artifact name that could escape its parent
+// directory when joined onto a workspace path. Every delete/show/generate/approve
+// lookup MUST call this before filepath.Join, because those names arrive from CLI
+// args and may be malformed or hostile — without it, `csdd spec delete .. --force`
+// resolves to the workspace root and RemoveAll deletes the whole project. It
+// rejects path separators, "." / "..", absolute paths, and (on Windows) reserved
+// device names via filepath.IsLocal.
+func SafeName(name, kind string) error {
+	if name == "" {
+		return fmt.Errorf("%s name is required", kind)
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." || !filepath.IsLocal(name) {
+		return fmt.Errorf("invalid %s name %q: must be a single path segment with no separators or '..'", kind, name)
+	}
+	return nil
+}
+
+// AtomicWrite writes data to a temp file in the same directory as path and
+// renames it into place, so a crash or a concurrent reader (e.g. the web
+// dashboard polling spec.json) never observes a truncated or half-written file.
+// The temp file is created in the destination directory so the rename stays on
+// one filesystem.
+func AtomicWrite(path string, data []byte, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // Find walks upward from start looking for the nearest .claude/ directory.
@@ -112,10 +159,10 @@ func SafeWrite(path, content string) (bool, error) {
 	if _, err := os.Stat(path); err == nil {
 		return false, nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := AtomicWrite(path, []byte(content), 0o644); err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(path, []byte(content), 0o644)
+	return true, nil
 }
 
 // WriteFile writes content unconditionally unless the path exists and overwrite is false.
@@ -125,10 +172,7 @@ func WriteFile(path, content string, overwrite bool) error {
 			return fmt.Errorf("refusing to overwrite existing file: %s (pass --force)", path)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return AtomicWrite(path, []byte(content), 0o644)
 }
 
 // Relative reports the path of target relative to root (for friendly logging).

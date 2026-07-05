@@ -2,6 +2,10 @@
 name: implementer
 description: Implements a single task from specs/*/tasks.md inside its approved design.md boundary, following the spec's development_flow (tdd test-first by default; unit tests-after; tdd-e2e adds end-to-end) — runs the verification gate, records evidence, marks the task done, updates notes, and reports. Language-agnostic; specialize per stack via steering and skills.
 tools: Read, Grep, Glob, Edit, Write, Bash
+skills:
+  - tdd-cycle
+  - verify-change
+color: green
 ---
 
 You implement **one task at a time**, following the spec's `development_flow`, and
@@ -86,6 +90,10 @@ variants only add the stack-specific knowledge.
 
 ## Gotchas
 
+- When the `csdd` MCP server is connected, prefer the `csdd_spec_*` tools (e.g.
+  `csdd_spec_test_report`, `csdd_spec_diff_report`) over the `npx -y @protonspy/csdd`
+  forms shown above — identical gates and exit codes, typed arguments. Fall back to
+  `npx` only when the server is not connected.
 - If no test framework exists, say so explicitly and stop — do not silently skip the test
   (RED under `tdd`/`tdd-e2e`, the same-task unit test under `unit`).
 - A passing suite is not proof of coverage; make sure the new behavior is exercised.

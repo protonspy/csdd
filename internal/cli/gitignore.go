@@ -4,18 +4,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // pinggyTokenFile is the workspace-local store for the pinggy Pro access token.
 // It is a secret — never committed — so it is always gitignored.
 const pinggyTokenFile = ".pinggy-token"
 
+// pinggyKnownHostsFile is the workspace-local TOFU known_hosts the tunnel writes
+// for pinggy ssh host-key pinning. Not a secret, but workspace-local churn that
+// should not be committed.
+const pinggyKnownHostsFile = ".pinggy-known_hosts"
+
 // gitignoreTargets lists the root-level csdd artifacts that should not be
-// committed — the compiled binary and the pinggy token secret. The binary is
-// added only when present; the token file is always ignored because
-// `csdd web --pinggy-token` may create it later.
+// committed — the compiled binary, the pinggy token secret, and the pinggy
+// known_hosts. The binary is added only when present; the pinggy files are
+// always ignored because `csdd web` may create them later.
 func gitignoreTargets(root string) []string {
-	targets := []string{pinggyTokenFile}
+	targets := []string{pinggyTokenFile, pinggyKnownHostsFile}
 	for _, name := range []string{"csdd", "csdd.exe"} {
 		if pathExists(filepath.Join(root, name)) {
 			targets = append(targets, name)
@@ -67,7 +74,7 @@ func ensureGitignore(root string, names []string) ([]string, error) {
 	for _, e := range toAdd {
 		b.WriteString(e + "\n")
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := workspace.AtomicWrite(path, []byte(b.String()), 0o644); err != nil {
 		return nil, err
 	}
 	return toAdd, nil

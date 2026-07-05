@@ -13,7 +13,15 @@ if command -v jq >/dev/null 2>&1; then
 elif command -v python3 >/dev/null 2>&1; then
   cmd="$(printf '%s' "$input" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || true)"
 else
-  cmd="$input"
+  # No jq/python3: best-effort extract just the "command" string with sed rather
+  # than scanning the whole payload (matching the whole payload would let the
+  # denylist trip on file paths or a tool description that merely mentions, say,
+  # "rm -rf"). Heuristic only — it stops at the first embedded quote, so a
+  # command containing an escaped quote is matched by its (leading) prefix. If
+  # extraction yields nothing, fall back to the whole payload so we fail safe
+  # (may over-block) rather than letting a destructive command slip through.
+  cmd="$(printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+  [ -n "$cmd" ] || cmd="$input"
 fi
 
 # Denylist of destructive patterns. Conservative on purpose: these need a human.

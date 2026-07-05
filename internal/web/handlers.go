@@ -120,6 +120,10 @@ func requireHost(next http.Handler, allowed ...string) http.Handler {
 		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if extra["*"] {
+			next.ServeHTTP(w, r) // wildcard bind: caller opted into any-Host access
+			return
+		}
 		h := hostname(r.Host)
 		if !alwaysAllowedHosts[h] && !extra[h] {
 			http.Error(w, "forbidden: unrecognised Host header", http.StatusForbidden)
@@ -127,6 +131,16 @@ func requireHost(next http.Handler, allowed ...string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isWildcardHost reports whether addr is an all-interfaces bind address, for
+// which the Host-header guard is relaxed (see serve).
+func isWildcardHost(addr string) bool {
+	switch strings.TrimSpace(addr) {
+	case "", "0.0.0.0", "::", "[::]":
+		return true
+	}
+	return false
 }
 
 // hostname returns the lowercased host portion of a Host header, stripped of any

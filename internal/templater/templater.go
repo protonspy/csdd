@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"strings"
 	"text/template"
+
+	"github.com/protonspy/csdd/internal/textutil"
 )
 
 //go:embed all:templates
@@ -33,7 +35,9 @@ func Render(efs fs.FS, path string, data any) (string, error) {
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("execute template %s: %w", path, err)
 	}
-	return buf.String(), nil
+	// Emit LF so scaffolded files are byte-deterministic regardless of whether
+	// git checked the embedded templates out as LF or CRLF on the build machine.
+	return textutil.NormalizeNewlines(buf.String()), nil
 }
 
 // Static returns the raw text of a template without rendering, useful for
@@ -43,7 +47,7 @@ func Static(efs fs.FS, path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read template %s: %w", path, err)
 	}
-	return string(raw), nil
+	return textutil.NormalizeNewlines(string(raw)), nil
 }
 
 // RuleFiles enumerates every .claude/rules/ template, returning a
@@ -66,7 +70,7 @@ func RuleFiles(efs fs.FS) (map[string]string, error) {
 		}
 		// Strip the ".tmpl" suffix when emitting on disk.
 		name := strings.TrimSuffix(e.Name(), ".tmpl")
-		out[name] = string(raw)
+		out[name] = textutil.NormalizeNewlines(string(raw))
 	}
 	return out, nil
 }
@@ -89,7 +93,7 @@ func staticTree(efs fs.FS, dir string) (map[string]string, error) {
 		}
 		rel := strings.TrimPrefix(p, dir+"/")
 		rel = strings.TrimSuffix(rel, ".tmpl")
-		out[rel] = string(raw)
+		out[rel] = textutil.NormalizeNewlines(string(raw))
 		return nil
 	})
 	if err != nil {
@@ -144,7 +148,7 @@ func WorkflowTemplateFiles(efs fs.FS) (map[string]string, error) {
 		if name == "spec.json" {
 			name = "init.json"
 		}
-		out["specs/"+name] = string(raw)
+		out["specs/"+name] = textutil.NormalizeNewlines(string(raw))
 	}
 
 	steeringEntries, err := fs.ReadDir(efs, "templates/steering")
@@ -168,14 +172,14 @@ func WorkflowTemplateFiles(efs fs.FS) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		out["steering/"+name] = string(raw)
+		out["steering/"+name] = textutil.NormalizeNewlines(string(raw))
 	}
 
 	customRef, err := fs.ReadFile(efs, "templates/steering-custom/custom.md.tmpl")
 	if err != nil {
 		return nil, err
 	}
-	out["steering-custom/custom.md"] = string(customRef)
+	out["steering-custom/custom.md"] = textutil.NormalizeNewlines(string(customRef))
 
 	return out, nil
 }

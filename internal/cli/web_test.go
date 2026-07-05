@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -41,7 +42,7 @@ func TestResolvePinggyTokenPersistsAndGitignores(t *testing.T) {
 	if strings.TrimSpace(string(saved)) != "TOK123" {
 		t.Errorf("saved token = %q", saved)
 	}
-	if fi, _ := os.Stat(filepath.Join(dir, ".pinggy-token")); fi != nil && fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(filepath.Join(dir, ".pinggy-token")); fi != nil && runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("token file perms = %v, want 0600", fi.Mode().Perm())
 	}
 	if gi, _ := os.ReadFile(filepath.Join(dir, ".gitignore")); !strings.Contains(string(gi), ".pinggy-token") {

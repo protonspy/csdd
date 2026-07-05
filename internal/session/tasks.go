@@ -3,20 +3,23 @@ package session
 import (
 	"regexp"
 	"strings"
+
+	"github.com/protonspy/csdd/internal/textutil"
+	"github.com/protonspy/csdd/internal/validator"
 )
 
-// Task display parser. This deliberately differs from validator.parseTasks:
-// the validator is concerned with correctness (it ignores the checkbox state
-// and phase grouping), while the dashboard needs the done-state, the phase a
-// task lives under, and the RED/GREEN TDD marker. The base regexes mirror the
-// validator's literals so the two stay behaviourally consistent.
+// Task display parser. The dashboard needs more than the validator's correctness
+// pass (done-state, the phase a task lives under, the RED/GREEN TDD marker), but
+// it shares the validator's *canonical* task-line and annotation grammar so the
+// two surfaces can never disagree on what counts as a task, boundary, or
+// requirement reference. Only the display-only regexes live here.
 var (
-	taskLineRe  = regexp.MustCompile(`^(\s*)-\s+\[\s*([xX ]?)\s*\]\s+(\d+(?:\.\d+)?)\.?\s+(.*)$`)
+	taskLineRe  = validator.TaskLineRe
+	reqAnnotRe  = validator.ReqAnnotRe
+	boundaryRe  = validator.BoundaryAnnotRe
+	dependsRe   = validator.DependsAnnotRe
+	parallelRe  = validator.ParallelRe
 	phaseHeadRe = regexp.MustCompile(`^##\s+Phase\s+\d+\s*:?\s*(.*)$`)
-	reqAnnotRe  = regexp.MustCompile(`_Requirements:\s*([\d,\.\s]+)_`)
-	boundaryRe  = regexp.MustCompile(`_Boundary:\s*([A-Za-z0-9_\-<>]+)_`)
-	dependsRe   = regexp.MustCompile(`_Depends:\s*([\d,\.\s]+)_`)
-	parallelRe  = regexp.MustCompile(`\(P\)`)
 	tddRe       = regexp.MustCompile(`(?i)^(RED|GREEN)\b`)
 )
 
@@ -52,6 +55,10 @@ type TaskStats struct {
 // stats. Annotation lines (indented "_Requirements:_" etc.) following a task
 // line are attributed to that task.
 func ParseTasks(text string) ([]TaskPhase, TaskStats) {
+	// Normalize line endings and blank out fenced code so a "- [ ] 1. …" example
+	// inside a ``` block never inflates the board's Total/Done counts — matching
+	// exactly what the validator counts.
+	text = validator.MaskCodeFences(textutil.NormalizeNewlines(text))
 	var phases []TaskPhase
 	var stats TaskStats
 	curPhase := -1

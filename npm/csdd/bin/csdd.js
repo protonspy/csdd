@@ -73,7 +73,11 @@ child.on("error", (err) => {
 
 child.on("exit", (code, signal) => {
   if (signal) {
-    // Re-raise the signal so the parent exit status reflects it.
+    // Re-raise the signal so the parent's exit status reflects it. Remove our own
+    // handler for that signal first, otherwise the forwarding listener installed
+    // above would intercept the re-raise and the wrapper would exit 0 instead of
+    // dying from the signal.
+    process.removeAllListeners(signal);
     process.kill(process.pid, signal);
   } else {
     process.exit(code ?? 0);

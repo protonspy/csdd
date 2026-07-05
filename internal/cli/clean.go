@@ -26,6 +26,10 @@ func runClean(args []string, templates embed.FS) int {
 	if err := fset.Parse(args); err != nil {
 		return failOnFlagParse(err)
 	}
+	if err := rejectPositionals("clean", fset); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 
 	r, err := workspace.Resolve(root)
 	if err != nil {

@@ -591,3 +591,103 @@ func TestIssueStringFormat(t *testing.T) {
 		t.Errorf("no-line format wrong: %s", noLine)
 	}
 }
+
+// --- Regression tests for grammar-unification fixes ---
+
+func TestExtractRequirementIDsMidLineEARSKeyword(t *testing.T) {
+	// A criterion whose EARS keyword is not immediately after the number must
+	// still register an ID, or tasks referencing it get false "unknown requirement".
+	req := "### Requirement 1: Boot\n\n" +
+		"1. On startup, WHEN the app boots THE SYSTEM SHALL load config.\n"
+	ids := extractRequirementIDs(req)
+	if _, ok := ids["1.1"]; !ok {
+		t.Errorf("mid-line EARS keyword criterion not registered as 1.1: got %v", ids)
+	}
+}
+
+func TestExtractRequirementIDsIgnoresNonEARSNotes(t *testing.T) {
+	req := "### Requirement 1: Boot\n\n" +
+		"1. WHEN x THE SYSTEM SHALL y.\n\n" +
+		"Notes:\n1. just a note, not a criterion\n"
+	ids := extractRequirementIDs(req)
+	if _, ok := ids["1.1"]; !ok {
+		t.Errorf("real criterion 1.1 missing: %v", ids)
+	}
+	// The note reuses list number 1 but has no EARS structure, so it must not
+	// create a phantom duplicate criterion.
+	if dups := checkDuplicateCriterionIDs(req); len(dups) != 0 {
+		t.Errorf("non-EARS numbered note caused false duplicate: %v", dups)
+	}
+}
+
+func TestExtractComponentsStopsAtNextSection(t *testing.T) {
+	design := "## Components and Interfaces\n\n" +
+		"### AlbumService\n- intent\n\n" +
+		"## Testing Strategy\n\n" +
+		"### UnitTests\n- cases\n"
+	comps := extractComponents(design)
+	if _, ok := comps["AlbumService"]; !ok {
+		t.Errorf("AlbumService component missing: %v", comps)
+	}
+	if _, ok := comps["UnitTests"]; ok {
+		t.Errorf("UnitTests from a later section leaked into components: %v", comps)
+	}
+}
+
+func TestParseTasksThreeLevelID(t *testing.T) {
+	tasks := "## Phase 1\n- [ ] 1. Parent\n  - [ ] 1.1 Child\n    - [ ] 1.1.1 Grandchild\n"
+	got := parseTasks(tasks)
+	var ids []string
+	for _, tk := range got {
+		ids = append(ids, tk.id)
+	}
+	found := false
+	for _, id := range ids {
+		if id == "1.1.1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("three-level task id 1.1.1 not parsed; got ids %v", ids)
+	}
+}
+
+func TestValidatorIgnoresFencedTaskExamples(t *testing.T) {
+	// A fenced example must not be counted as a real task or trip duplicate-ID.
+	tasks := "## Phase 1\n- [ ] 1. Real _Boundary: Svc_\n" +
+		"    - _Requirements: 1.1_\n\n" +
+		"```\n- [ ] 1. Fenced example\n```\n"
+	masked := MaskCodeFences(tasks)
+	got := parseTasks(masked)
+	if len(got) != 1 {
+		t.Errorf("expected 1 real task, fenced example was counted: got %d", len(got))
+	}
+}
+
+func TestDuplicateCriterionLineNumberAccurate(t *testing.T) {
+	req := "### Requirement 1: R\n" + // line 1
+		"1. WHEN a THE SYSTEM SHALL b.\n" + // line 2 -> 1.1 first
+		"1. WHEN c THE SYSTEM SHALL d.\n" // line 3 -> 1.1 dup
+	dups := checkDuplicateCriterionIDs(req)
+	if len(dups) != 1 {
+		t.Fatalf("expected 1 duplicate, got %d: %v", len(dups), dups)
+	}
+	if dups[0].Line != 3 {
+		t.Errorf("duplicate reported on line %d, want 3", dups[0].Line)
+	}
+	if !strings.Contains(dups[0].Msg, "first seen on line 2") {
+		t.Errorf("first-seen line wrong: %q", dups[0].Msg)
+	}
+}
+
+func TestValidateSpecCRLFRequirements(t *testing.T) {
+	// CRLF requirements must validate identically to LF.
+	crlf := strings.ReplaceAll(validRequirements, "\n", "\r\n")
+	dir := writeSpec(t, map[string]string{"requirements.md": crlf})
+	issues := ValidateSpec(dir, PhaseRequirements)
+	for _, is := range issues {
+		if strings.Contains(is.Msg, "EARS") {
+			t.Errorf("CRLF requirements produced a false EARS issue: %v", is)
+		}
+	}
+}

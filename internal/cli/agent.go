@@ -21,6 +21,10 @@ func runAgent(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
+	if isHelpFlag(action) {
+		help(os.Stdout)
+		return 0
+	}
 	switch action {
 	case "create":
 		return agentCreate(rest, templates)
@@ -46,6 +50,7 @@ type AgentCreateOptions struct {
 	Tools       []string
 	Model       string
 	Effort      string // optional; empty = omit (inherit session config)
+	Color       string // optional; empty = omit (no display color)
 	Title       string
 	Force       bool
 }
@@ -57,8 +62,9 @@ func agentCreate(args []string, templates embed.FS) int {
 	addRoot(fs, &opts.Root)
 	fs.StringVar(&opts.Description, "description", "", "When the orchestrator should pick this agent.")
 	fs.Var(&tools, "tools", "Tool name (repeatable). Default: Read, Grep.")
-	fs.StringVar(&opts.Model, "model", "", "Optional model override (e.g., sonnet, opus, haiku).")
+	fs.StringVar(&opts.Model, "model", "", "Optional model override (e.g., sonnet, opus, haiku, fable, or a full model ID).")
 	fs.StringVar(&opts.Effort, "effort", "", "Optional effort: low|medium|high|xhigh|max.")
+	fs.StringVar(&opts.Color, "color", "", "Optional display color: red|blue|green|yellow|purple|orange|pink|cyan.")
 	fs.StringVar(&opts.Title, "title", "", "Document title (default: derived from name).")
 	addForce(fs, &opts.Force)
 	positionals, err := parseFlags(fs, args)
@@ -86,8 +92,11 @@ func AgentCreate(templates embed.FS, opts AgentCreateOptions) error {
 	if err := workspace.KebabCheck(opts.Name, "agent"); err != nil {
 		return err
 	}
-	// Validate effort before writing any file, so an invalid value creates nothing.
+	// Validate effort and color before writing any file, so an invalid value creates nothing.
 	if err := validateEffort(opts.Effort); err != nil {
+		return err
+	}
+	if err := validateColor(opts.Color); err != nil {
 		return err
 	}
 	r, err := workspace.Resolve(opts.Root)
@@ -114,6 +123,7 @@ func AgentCreate(templates embed.FS, opts AgentCreateOptions) error {
 		"Tools":       toolsStr,
 		"Model":       opts.Model,
 		"Effort":      opts.Effort,
+		"Color":       opts.Color,
 		"Title":       title,
 	})
 	if err != nil {
@@ -166,6 +176,9 @@ func agentList(args []string) int {
 }
 
 func findAgent(root, name string) (string, bool) {
+	if err := workspace.SafeName(name, "agent"); err != nil {
+		return "", false
+	}
 	base := workspace.AgentRoot(root)
 	candidate := filepath.Join(base, name+".md")
 	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {

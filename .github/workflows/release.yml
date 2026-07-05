@@ -18,8 +18,11 @@ on:
         required: true
         type: string
 
+# Least privilege at the workflow level: only the final "release" job needs to
+# write (create the tag + GitHub Release). validate/build/npm-publish keep the
+# read-only default and override to what they actually need.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -45,6 +48,10 @@ jobs:
     name: build ${{ matrix.goos }}/${{ matrix.goarch }}
     needs: ci
     runs-on: ubuntu-latest
+    # Cross-compile only; no write access needed. Keep the read-only default
+    # (inherited from the workflow-level permissions above) explicit here.
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
@@ -54,15 +61,18 @@ jobs:
           - { goos: darwin,  goarch: amd64 }
           - { goos: darwin,  goarch: arm64 }
           - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: '1.22'
+          # Ship binaries built with a current, patched toolchain (go.mod stays at
+          # 1.22 for install-compatibility — do NOT switch to go-version-file).
+          go-version: '1.25'
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -98,7 +108,7 @@ jobs:
           fi
           rm -f "${bin}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: csdd-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -115,18 +125,19 @@ jobs:
       contents: read
       id-token: write   # required for npm --provenance attestation
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing requires npm >= 11.5.1 (newer than what ships with Node).
+      # Trusted publishing requires npm >= 11.5.1 (newer than what ships with
+      # Node). Pin the major line so the release toolchain is reproducible.
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
           merge-multiple: true
@@ -151,11 +162,26 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          # csdd-*/ covers the 5 platform binaries and csdd-mcp; csdd/ is the root launcher.
+          # Idempotent publish: skip any package@version already on the registry so
+          # re-running after a partial failure can finish instead of hard-failing on
+          # the first already-published package (mirrors the Makefile's npm-publish).
+          publish() {
+            local dir="$1"
+            local name ver
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "skip $name@$ver (already published)"
+              return 0
+            fi
+            echo ">> publishing $name@$ver"
+            npm publish "$dir" --access public --provenance
+          }
+          # csdd-*/ covers the platform binaries and csdd-mcp; csdd/ is the root launcher.
           for d in npm/dist/csdd-*/; do
-            npm publish "$d" --access public --provenance
+            publish "${d%/}"
           done
-          npm publish npm/dist/csdd --access public --provenance
+          publish npm/dist/csdd
 
   # Tag the released commit and create the GitHub Release — only after npm
   # publishing succeeds, so a failed publish never leaves a dangling tag/release.
@@ -163,8 +189,12 @@ jobs:
     name: tag + GitHub release
     needs: npm-publish
     runs-on: ubuntu-latest
+    # This is the only job that mutates the repo (creates the tag + Release), so
+    # scope write access here instead of granting it workflow-wide.
+    permissions:
+      contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -173,7 +203,7 @@ jobs:
         run: cd dist && sha256sum * | tee checksums.txt
 
       - name: Create tag + release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ inputs.version }}
           name: ${{ inputs.version }}

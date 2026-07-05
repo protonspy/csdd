@@ -119,8 +119,16 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth, publicUR
 	// Host allowlist for the DNS-rebinding guard: the loopback names (always
 	// allowed inside newMux) plus the bound host and, when tunnelling, the public
 	// tunnel hostname — otherwise legitimate requests through the tunnel would be
-	// rejected with 403.
-	allowedHosts := []string{opts.Host}
+	// rejected with 403. When the user deliberately binds a wildcard address
+	// (0.0.0.0 / ::), they have opted into all-interfaces LAN access, so pin the
+	// guard open ("*"): rebinding protection only matters for the default loopback
+	// bind, and a fixed allowlist would 403 every LAN client's own IP Host header.
+	var allowedHosts []string
+	if isWildcardHost(opts.Host) {
+		allowedHosts = []string{"*"}
+	} else {
+		allowedHosts = []string{opts.Host}
+	}
 	if publicURL != "" {
 		if u, err := url.Parse(publicURL); err == nil && u.Hostname() != "" {
 			allowedHosts = append(allowedHosts, u.Hostname())

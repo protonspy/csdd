@@ -20,7 +20,7 @@ func main() {
 	if len(args) == 0 || args[0] == "tui" {
 		// TUI gets the same embedded templates so its wizards can render artifacts.
 		if err := tui.Run(templater.FS); err != nil {
-			os.Stderr.WriteString(err.Error() + "\n")
+			_, _ = os.Stderr.WriteString(err.Error() + "\n")
 			os.Exit(1)
 		}
 		return
