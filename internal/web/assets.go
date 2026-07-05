@@ -38,9 +38,20 @@ func spaHandler() http.Handler {
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name != "" {
 			if f, err := sub.Open(name); err == nil {
+				info, statErr := f.Stat()
 				_ = f.Close()
-				fileServer.ServeHTTP(w, r)
-				return
+				// Never hand a directory to the FileServer (it would render a
+				// directory listing); fall through to the SPA shell instead.
+				if statErr == nil && !info.IsDir() {
+					// Vite emits content-hashed filenames under /assets/, so the
+					// bytes for a given URL never change — cache them for a year and
+					// mark them immutable so browsers skip revalidation entirely.
+					if strings.HasPrefix(r.URL.Path, "/assets/") {
+						w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+					}
+					fileServer.ServeHTTP(w, r)
+					return
+				}
 			}
 		}
 		serveIndex(w, sub)

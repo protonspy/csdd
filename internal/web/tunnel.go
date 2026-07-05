@@ -10,9 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/protonspy/csdd/internal/render"
 )
 
 // tunnelHost is the localtunnel service. The dashboard reuses its public
@@ -37,7 +40,7 @@ func isKnownProvider(p string) bool {
 func startTunnel(ctx context.Context, localPort int, opts Options) (string, error) {
 	switch opts.Provider {
 	case providerPinggy, "": // pinggy is the default
-		return startPinggy(ctx, localPort, opts.PinggyToken)
+		return startPinggy(ctx, localPort, opts.PinggyToken, opts.Root)
 	case providerLocaltunnel:
 		return startLocaltunnel(ctx, localPort, opts.Subdomain)
 	default:
@@ -203,6 +206,11 @@ func tunnelPassword(ctx context.Context) string {
 // the Pro tier (custom domains, no expiry) authenticates with token@host.
 const pinggyHost = "a.pinggy.io"
 
+// pinggyKnownHostsFile is the per-workspace, TOFU-pinned SSH known_hosts store
+// for Pinggy's host key. It lives next to the workspace so the pin survives
+// across restarts.
+const pinggyKnownHostsFile = ".pinggy-known_hosts"
+
 // pinggyURLRE matches the public https URL Pinggy prints once the tunnel is up
 // (free: *.pinggy-free.link; Pro: a custom domain).
 var pinggyURLRE = regexp.MustCompile(`https://[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
@@ -212,19 +220,34 @@ var pinggyURLRE = regexp.MustCompile(`https://[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
 // ctx is cancelled. A non-empty token selects the Pro tier (custom domains).
 // The exposed surface is already token-guarded by the dashboard auth the caller
 // forced on, so a public URL never reaches project data unauthenticated.
-func startPinggy(ctx context.Context, localPort int, token string) (string, error) {
+func startPinggy(ctx context.Context, localPort int, token, root string) (string, error) {
 	target := pinggyHost
 	if token != "" {
 		target = token + "@" + pinggyHost
 	}
+
+	// Host-key policy: Pinggy publishes no stable, pinnable SSH host key (its own
+	// docs use StrictHostKeyChecking=no). Rather than the /dev/null footgun —
+	// which silently accepts a NEW key on EVERY connection, i.e. a standing MITM
+	// window that could steal the dashboard token — pin Trust-On-First-Use:
+	// accept-new records the key the first time into a persistent per-workspace
+	// known_hosts file, then verifies against it on every later connection.
+	// Tradeoff: only the very first connect is exposed (an active MITM present at
+	// that instant); thereafter any substituted key is refused. Not as strong as
+	// a hard-coded pin, but strictly better than accepting all keys forever.
+	knownHosts := filepath.Join(root, pinggyKnownHostsFile)
+	if f, err := os.OpenFile(knownHosts, os.O_CREATE|os.O_APPEND, 0o600); err == nil {
+		_ = f.Close()
+	}
+	render.Info("pinggy ssh host key pinned (trust-on-first-use) in " + pinggyKnownHostsFile)
+
 	// -T: no PTY (we parse output). `x:https` forces an https-only public
 	// endpoint (no plaintext). ExitOnForwardFailure fails fast if the remote
-	// forward is rejected. Host-key checks are off because Pinggy rotates
-	// anonymous endpoints — acceptable since the tunnel is token-guarded.
+	// forward is rejected.
 	cmd := exec.CommandContext(ctx, "ssh",
 		"-p", "443",
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "UserKnownHostsFile="+knownHosts,
+		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ServerAliveInterval=30",
 		"-o", "ExitOnForwardFailure=yes",
 		"-T",

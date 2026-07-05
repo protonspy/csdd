@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -145,6 +146,88 @@ func TestFileEndpoint(t *testing.T) {
 	for _, bad := range []string{"../../etc/passwd", "go.mod", ""} {
 		if code := getJSON(t, srv.URL+"/api/file?path="+bad, nil); code != http.StatusNotFound {
 			t.Errorf("file path %q code = %d, want 404", bad, code)
+		}
+	}
+}
+
+// TestFileBlockedPaths proves the web layer never serves the pinggy token file
+// or anything under .git, even though they exist in the workspace and auth is
+// off. Both should 404, and the token's contents must not appear in the body.
+func TestFileBlockedPaths(t *testing.T) {
+	root := tempWorkspace(t, map[string]string{
+		".pinggy-token": "super-secret-token",
+		".git/config":   "[core]\n\trepositoryformatversion = 0\n",
+		"CLAUDE.md":     "# Claude\n",
+	})
+	srv := testServer(t, root)
+
+	for _, bad := range []string{".pinggy-token", "./.pinggy-token", ".git/config", ".git", ".git/refs/heads/main"} {
+		resp, err := http.Get(srv.URL + "/api/file?path=" + bad)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("blocked path %q → %d, want 404", bad, resp.StatusCode)
+		}
+		if strings.Contains(string(body), "super-secret-token") {
+			t.Errorf("blocked path %q leaked the token in the body: %s", bad, body)
+		}
+	}
+
+	// A normal file is still served (guard is not over-broad).
+	if code := getJSON(t, srv.URL+"/api/file?path=CLAUDE.md", nil); code != http.StatusOK {
+		t.Errorf("CLAUDE.md → %d, want 200", code)
+	}
+}
+
+// TestFileNotFoundHidesPath confirms fix 7: a missing file's 404 body carries a
+// generic message, not the absolute filesystem path from the underlying error.
+func TestFileNotFoundHidesPath(t *testing.T) {
+	root := sampleWorkspace(t)
+	srv := testServer(t, root)
+	resp, err := http.Get(srv.URL + "/api/file?path=does/not/exist.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing file → %d, want 404", resp.StatusCode)
+	}
+	if strings.Contains(string(body), root) || strings.Contains(string(body), "exist.md") {
+		t.Errorf("404 body leaked path details: %s", body)
+	}
+}
+
+// TestHostHeaderValidation covers the DNS-rebinding guard: loopback names and an
+// explicitly-allowed host pass; any other Host is rejected with 403 on every
+// route (here the public /api/health), independent of auth.
+func TestHostHeaderValidation(t *testing.T) {
+	root := sampleWorkspace(t)
+	handler := newMux(root, newHub(), newAuth(false, ""), "dash.example.com")
+
+	cases := []struct {
+		host string
+		want int
+	}{
+		{"localhost:7777", http.StatusOK},
+		{"127.0.0.1:7777", http.StatusOK},
+		{"[::1]:7777", http.StatusOK},
+		{"dash.example.com", http.StatusOK},        // explicitly allowed host
+		{"DASH.EXAMPLE.COM:443", http.StatusOK},    // case-insensitive
+		{"evil.example.com", http.StatusForbidden}, // rebinding attacker's domain
+		{"192.168.0.5:7777", http.StatusForbidden}, // some LAN IP, not allowed
+		{"", http.StatusForbidden},                 // missing Host
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest("GET", "/api/health", nil)
+		req.Host = c.host
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != c.want {
+			t.Errorf("Host %q → %d, want %d", c.host, rec.Code, c.want)
 		}
 	}
 }
