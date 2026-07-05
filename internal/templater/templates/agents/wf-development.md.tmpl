@@ -17,7 +17,7 @@ reuse csdd's existing, validated machinery rather than reinventing it.
 
 This workflow stands on what csdd already ships:
 
-- **Spec gates:** `csdd spec generate|validate|approve` for design and tasks.
+- **Spec gates:** `npx -y @protonspy/csdd spec generate|validate|approve` for design and tasks.
 - **Implementation:** the `tdd-cycle` skill — one red→green→refactor per task.
 - **Verification:** the `verify-change` skill for the evidence block.
 - **Review:** the `code-reviewer` and `security-reviewer` sub-agents and the
@@ -30,8 +30,8 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 
 | Phase | Skill / tool | Produces | Gate |
 |-------|--------------|----------|------|
-| 1. Architecture | `dev-architecture` | `specs/<f>/architecture.md` (+ADRs) → csdd `design.md` | `csdd spec approve --phase design` |
-| 2. Epics & stories | `dev-epics-stories` | `specs/<f>/epics.md` + stories → csdd `tasks.md` | `csdd spec approve --phase tasks` |
+| 1. Architecture | `dev-architecture` | `specs/<f>/architecture.md` (+ADRs) → csdd `design.md` | `npx -y @protonspy/csdd spec approve --phase design` |
+| 2. Epics & stories | `dev-epics-stories` | `specs/<f>/epics.md` + stories → csdd `tasks.md` | `npx -y @protonspy/csdd spec approve --phase tasks` |
 | 3. Readiness | `dev-readiness-check` | readiness verdict PASS/CONCERNS/FAIL | must be PASS to start |
 | 4. Sprint | `dev-sprint` | `specs/<f>/sprint-status.yaml` | — |
 | 5. Build | `tdd-cycle` (existing) | code + tests, one task at a time | green suite per task |
@@ -41,7 +41,7 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 ## Operating procedure
 
 1. **Confirm the entry gate on a clean context.** Run `/clear` before starting a
-   new feature, then `csdd spec status <feature>`. Do not start architecture
+   new feature, then `npx -y @protonspy/csdd spec status <feature>`. Do not start architecture
    unless the requirements phase is approved. If it is not, send the user back to
    `wf:product/discovery` → `discovery-handoff`.
 2. **Run phases in order, gating each.** Architecture must be approved before
@@ -63,9 +63,9 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 - You are downstream only. If a requirement is wrong or missing, do not patch it
   in code — route it back to discovery; the PRD and EARS requirements are the
   source of truth.
-- Never `--force` a gate. A failing `csdd spec validate` means fix the artifact.
+- Never `--force` a gate. A failing `npx -y @protonspy/csdd spec validate` means fix the artifact.
 - Architecture and stories feed csdd's `design.md`/`tasks.md` — they do not
-  replace them. The `csdd spec` artifacts remain canonical and validated.
+  replace them. The `npx -y @protonspy/csdd spec` artifacts remain canonical and validated.
 - One task per `tdd-cycle`. Keep `sprint-status.yaml` honest — a task is done
   only when its tests are green and review has no open blockers.
 
@@ -85,6 +85,6 @@ Between phases, report:
 - [ ] `design.md` and `tasks.md` are generated, filled, validated, and approved.
 - [ ] `dev-readiness-check` returned PASS before implementation began.
 - [ ] Every task went through `tdd-cycle` with a green suite and clean review.
-- [ ] Unit tests were recorded via `csdd spec test-report <feature> --run --lang <lang>`; `specs/<feature>/test-report.json` shows tests green and coverage captured.
+- [ ] Unit tests were recorded via `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>`; `specs/<feature>/test-report.json` shows tests green and coverage captured.
 - [ ] `sprint-status.yaml` reflects reality; a `dev-retrospective` closes the epic.
 - [ ] The pre-push test gate passes and the PR carries a real verification block.

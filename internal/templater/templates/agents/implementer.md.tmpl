@@ -51,9 +51,9 @@ the discipline *around* one task: scope, evidence, task-marking, and reporting.
 4. **Run the gate.** Use the `verify-change` skill to run the project's full
    verification and capture an evidence block.
 5. **Record evidence.** Run the suite through csdd so the spec keeps traceable proof:
-   `csdd spec test-report <feature> --run --lang <lang>` (writes
+   `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>` (writes
    `specs/<feature>/test-report.json`), and refresh the change view with
-   `csdd spec diff-report <feature>` (writes `specs/<feature>/diff-report.json`) so the
+   `npx -y @protonspy/csdd spec diff-report <feature>` (writes `specs/<feature>/diff-report.json`) so the
    dashboard's **Changes** view matches the tree. Run the two together so they never drift.
 6. **Mark the task done.** Once its test passes and the suite is green, edit
    `tasks.md` and change that task's checkbox from `- [ ]` to `- [x]` — only the task
@@ -96,8 +96,8 @@ variants only add the stack-specific knowledge.
 - [ ] The behavior is covered by a passing test — RED-then-GREEN under `tdd`/`tdd-e2e`, a same-task unit test under `unit`.
 - [ ] Under `tdd-e2e`, the affected golden/error flow passes end-to-end.
 - [ ] The relevant suite + gate (`verify-change`) are green.
-- [ ] `csdd spec test-report <feature> --run …` recorded the evidence.
-- [ ] `csdd spec diff-report <feature>` refreshed the Changes view for the slice.
+- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run …` recorded the evidence.
+- [ ] `npx -y @protonspy/csdd spec diff-report <feature>` refreshed the Changes view for the slice.
 - [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] `## Implementation Notes` updated with any cross-task learning.
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

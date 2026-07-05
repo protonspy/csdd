@@ -23,13 +23,13 @@ find — you hand specific gaps back to the phase that owns them.
 ## Collect Inputs First
 
 - Which feature? Confirm `specs/<feature>/` has requirements, design, and tasks.
-- Run `csdd spec status <feature>` and `csdd spec validate <feature>` to get the
+- Run `npx -y @protonspy/csdd spec status <feature>` and `npx -y @protonspy/csdd spec validate <feature>` to get the
   mechanical state before adding judgment.
 
 ## Execution Workflow
 
 ### 1) Mechanical gate
-Run `csdd spec validate <feature>`. Any non-zero exit is an automatic FAIL until
+Run `npx -y @protonspy/csdd spec validate <feature>`. Any non-zero exit is an automatic FAIL until
 fixed — record the exact issues.
 
 ### 2) Coherence checks
@@ -50,7 +50,7 @@ first. Write `specs/<feature>/readiness.md`.
 
 ## Gotchas
 
-- A green `csdd spec validate` is necessary but not sufficient — it checks
+- A green `npx -y @protonspy/csdd spec validate` is necessary but not sufficient — it checks
   structure, not whether the plan is actually buildable. Do the judgment checks.
 - CONCERNS is not PASS. If you would not want to be paged for it later, it is at
   least a CONCERN.
@@ -60,7 +60,7 @@ first. Write `specs/<feature>/readiness.md`.
 
 ## Verification Before Reporting
 
-- Run: `csdd spec validate <feature>` and `csdd spec status <feature>`.
+- Run: `npx -y @protonspy/csdd spec validate <feature>` and `npx -y @protonspy/csdd spec status <feature>`.
 - Check: every checklist item is graded with evidence; the overall verdict
   matches the worst blocking item.
 - If blocked: if you cannot determine readiness (missing test command, unknown

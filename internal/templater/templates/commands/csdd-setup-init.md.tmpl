@@ -13,7 +13,7 @@ allowed-tools: Read, Grep, Glob, Bash(csdd:*), Bash(npx @protonspy/csdd:*), Bash
 ## Task
 
 Configure this repository's csdd workflow so it fits **this** project. You **layer on top of**
-`csdd init` — you never reimplement its scaffolding, and you never hand-edit csdd-managed files
+`npx @protonspy/csdd init` — you never reimplement its scaffolding, and you never hand-edit csdd-managed files
 (the `CLAUDE.md` steering block, `spec.json`, `.mcp.json`); those are owned by the CLI.
 
 Work in this order, and **drive every change through the `csdd` CLI**:
@@ -22,22 +22,22 @@ Work in this order, and **drive every change through the `csdd` CLI**:
    package manager, and the build/test commands. Note `$ARGUMENTS` if the user scoped the focus.
    Summarize what you detected before changing anything.
 2. **Ensure csdd is initialized.** If the workspace is not initialized (no `.claude/steering`), run
-   `csdd init` first. If it already exists, do not re-init.
-3. **Adapt steering.** Use `csdd steering create` / refresh `product.md`, `tech.md`, and
+   `npx @protonspy/csdd init` first. If it already exists, do not re-init.
+3. **Adapt steering.** Use `npx @protonspy/csdd steering create` / refresh `product.md`, `tech.md`, and
    `structure.md` so they describe the real stack, conventions, and the actual test/quality gate.
    Keep the "why", not file dumps. Never put secrets, tokens, or credentials in steering.
 4. **Specialize the implementer.** Derive a stack-specialized implementer from the shipped
-   `implementer` agent: run `csdd agent create <stack>-developer --description "..." --tools Read
+   `implementer` agent: run `npx @protonspy/csdd agent create <stack>-developer --description "..." --tools Read
    --tools Grep --tools Glob --tools Edit --tools Write --tools Bash`, then fill its body from the
    generic `implementer` plus this stack's test command, idioms, and gate. Add the skills the stack
-   needs (e.g. a framework or `<lang>` test skill) with `csdd skill create` when one is missing.
+   needs (e.g. a framework or `<lang>` test skill) with `npx @protonspy/csdd skill create` when one is missing.
    When you scaffold a sub-agent or skill, choose its `--model` and `--effort` by the task's
    complexity: a lower/cheaper model and lower effort for mechanical, well-bounded work; a stronger
    model and higher effort for genuinely complex reasoning. When neither a specific model nor a
    specific effort is warranted, omit both flags so the agent/skill inherits the session configuration.
-5. **Validate.** Run `csdd steering validate` and `csdd skill validate` (and `csdd spec validate` /
-   `status` if a spec exists); confirm the new agent with `csdd agent show <name>` (there is no
-   `csdd agent validate`). Fix anything the validators report; if `csdd` exits non-zero, stop and
+5. **Validate.** Run `npx @protonspy/csdd steering validate` and `npx @protonspy/csdd skill validate` (and `npx @protonspy/csdd spec validate` /
+   `status` if a spec exists); confirm the new agent with `npx @protonspy/csdd agent show <name>` (there is no
+   `npx @protonspy/csdd agent validate`). Fix anything the validators report; if `csdd` exits non-zero, stop and
    report rather than forcing past it.
 6. **Report.** List what you created or changed (steering files, the specialized agent, skills) and
    **what needs human review** — especially steering content and the agent's stack assumptions. Note

@@ -39,7 +39,7 @@ what to try (start). Tie each item to evidence, not impressions.
 ### 3) Convert lessons to action
 For each durable lesson, decide its home:
 - A recurring technical mistake → update `.claude/steering/tech.md` or
-  `structure.md` (run `csdd steering validate` after).
+  `structure.md` (run `npx -y @protonspy/csdd steering validate` after).
 - A process gap → note it against the relevant `wf:development` phase.
 - A one-off → record it and move on; do not over-generalize.
 
@@ -59,7 +59,7 @@ Write `specs/<feature>/retrospective.md` with the actions and their owners.
 
 ## Verification Before Reporting
 
-- Run: `csdd steering validate` if you touched steering.
+- Run: `npx -y @protonspy/csdd steering validate` if you touched steering.
 - Check: every "what hurt" has a concrete action with an owner; steering edits
   capture patterns, not noise.
 - If blocked: if the evidence is too thin to draw lessons, say so rather than

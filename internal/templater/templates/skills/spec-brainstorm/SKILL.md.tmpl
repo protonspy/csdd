@@ -82,7 +82,7 @@ must choose an approach before you generate anything.
 Only after an approach is chosen:
 
 ```bash
-csdd spec init <feature> --flow <unit|tdd|tdd-e2e>
+npx -y @protonspy/csdd spec init <feature> --flow <unit|tdd|tdd-e2e>
 ```
 
 Author `requirements.md` in EARS (see `.claude/rules/ears-format.md`). Every acceptance
@@ -90,7 +90,7 @@ criterion traces to a recorded answer; mark any gap `[ASSUMPTION]` rather than i
 Then validate and fix until clean:
 
 ```bash
-csdd spec validate <feature>
+npx -y @protonspy/csdd spec validate <feature>
 ```
 
 ### 6) Hand off to the approval gate
@@ -134,7 +134,7 @@ If any fire, stop and return to the workflow above.
 
 ## Verification Before Reporting
 
-- Run: `csdd spec validate <feature>` after generating requirements.
+- Run: `npx -y @protonspy/csdd spec validate <feature>` after generating requirements.
 - Check: every criterion is EARS and traces to a recorded answer or a labeled `[ASSUMPTION]`;
   an approach was chosen before generation; the requirements phase is left unapproved for the
   human.
@@ -146,5 +146,5 @@ If any fire, stop and return to the workflow above.
 - [ ] The question set covered problem, user, success, constraints, errors, non-goals, integrations.
 - [ ] 2-3 approaches were proposed and the user chose one before any artifact was generated.
 - [ ] `requirements.md` was generated from the answers, every criterion EARS, gaps marked `[ASSUMPTION]`.
-- [ ] `csdd spec validate <feature>` passed.
+- [ ] `npx -y @protonspy/csdd spec validate <feature>` passed.
 - [ ] The requirements phase is handed to the human for approval — not auto-approved, no design/tasks/code started.
