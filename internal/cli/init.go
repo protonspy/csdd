@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,10 @@ func runInit(args []string, templates embed.FS) int {
 	fs.BoolVar(&noMCP, "no-mcp", false, "Do not register the csdd MCP server in .mcp.json.")
 	if err := fs.Parse(args); err != nil {
 		return failOnFlagParse(err)
+	}
+	if err := rejectPositionals("init", fs); err != nil {
+		render.Err(err.Error())
+		return 1
 	}
 	exSet, err := parseExclusions(exclude.values)
 	if err != nil {
@@ -347,9 +352,10 @@ func initWorkspace(root string, opts initOptions, templates embed.FS) (initCount
 
 	// Baseline steering files, imported into CLAUDE.md as always-on memory.
 	if opts.withBaseline && !opts.skip("steering") {
-		var names []string
-		for name, tplPath := range standardSteeringTemplates() {
-			content, err := templater.Static(templates, tplPath)
+		tpls := standardSteeringTemplates()
+		names := standardSteeringOrder()
+		for _, name := range names {
+			content, err := templater.Static(templates, tpls[name])
 			if err != nil {
 				return c, err
 			}
@@ -360,7 +366,6 @@ func initWorkspace(root string, opts initOptions, templates embed.FS) (initCount
 			if created {
 				c.files++
 			}
-			names = append(names, name)
 		}
 		// A no-op when CLAUDE.md was excluded (there is nothing to wire into).
 		if _, err := ensureSteeringImports(root, names...); err != nil {
@@ -385,4 +390,18 @@ func standardSteeringTemplates() map[string]string {
 		"testing.md":         "templates/steering/testing.md.tmpl",
 		"api-conventions.md": "templates/steering/api-conventions.md.tmpl",
 	}
+}
+
+// standardSteeringOrder returns the baseline steering file names in a stable
+// sorted order. Both scaffolders iterate this instead of the map directly, so
+// the files are created — and the CLAUDE.md @-import block is written — in the
+// same order on every run and machine (Go map iteration is randomized).
+func standardSteeringOrder() []string {
+	m := standardSteeringTemplates()
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

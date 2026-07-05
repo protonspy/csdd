@@ -109,3 +109,67 @@ func TestCSVRespectsQuotes(t *testing.T) {
 		t.Errorf("CSV: got %v want %v", got, want)
 	}
 }
+
+func TestParseCRLFFrontmatter(t *testing.T) {
+	in := "---\r\ninclusion: always\r\nname: api-design\r\n---\r\n\r\n# Body\r\n"
+	fm := Parse(in)
+	if got := fm.AsString("inclusion", ""); got != "always" {
+		t.Errorf("CRLF inclusion = %q, want always", got)
+	}
+	if got := fm.AsString("name", ""); got != "api-design" {
+		t.Errorf("CRLF name = %q, want api-design", got)
+	}
+}
+
+func TestParseBOMFrontmatter(t *testing.T) {
+	bom := string(rune(0xFEFF))
+	in := bom + "---\ninclusion: always\n---\n# Body\n"
+	fm := Parse(in)
+	if got := fm.AsString("inclusion", ""); got != "always" {
+		t.Errorf("BOM-prefixed frontmatter did not parse: inclusion = %q", got)
+	}
+}
+
+func TestParseStripsInlineComment(t *testing.T) {
+	in := "---\ninclusion: always # standard mode\nname: thing\n---\n"
+	fm := Parse(in)
+	if got := fm.AsString("inclusion", ""); got != "always" {
+		t.Errorf("inline comment not stripped: inclusion = %q", got)
+	}
+}
+
+func TestParseHashInsideQuotesKept(t *testing.T) {
+	in := "---\ndescription: \"has a # hash\"\n---\n"
+	fm := Parse(in)
+	if got := fm.AsString("description", ""); got != "has a # hash" {
+		t.Errorf("quoted hash mangled: description = %q", got)
+	}
+}
+
+func TestParseFoldedBlockScalar(t *testing.T) {
+	in := "---\ndescription: >\n  first line\n  second line\nname: thing\n---\n"
+	fm := Parse(in)
+	if got := fm.AsString("description", ""); got != "first line second line" {
+		t.Errorf("folded block scalar = %q, want %q", got, "first line second line")
+	}
+	if got := fm.AsString("name", ""); got != "thing" {
+		t.Errorf("field after block scalar lost: name = %q", got)
+	}
+}
+
+func TestParseLiteralBlockScalar(t *testing.T) {
+	in := "---\ndescription: |\n  line one\n  line two\n---\n"
+	fm := Parse(in)
+	if got := fm.AsString("description", ""); got != "line one\nline two" {
+		t.Errorf("literal block scalar = %q, want %q", got, "line one\nline two")
+	}
+}
+
+func TestParseEscapedQuotesInArray(t *testing.T) {
+	in := "---\ntools: [\"a, b\", c]\n---\n"
+	fm := Parse(in)
+	got := fm.AsStringSlice("tools")
+	if len(got) != 2 || got[0] != "a, b" || got[1] != "c" {
+		t.Errorf("array with embedded comma mis-split: %v", got)
+	}
+}

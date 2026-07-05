@@ -23,6 +23,10 @@ func runSteering(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
+	if isHelpFlag(action) {
+		help(os.Stdout)
+		return 0
+	}
 	switch action {
 	case "init":
 		return steeringInit(rest, templates)
@@ -61,9 +65,10 @@ func steeringInit(args []string, templates embed.FS) int {
 		return 1
 	}
 	created := 0
-	var names []string
-	for name, tpl := range standardSteeringTemplates() {
-		content, err := templater.Static(templates, tpl)
+	tpls := standardSteeringTemplates()
+	names := standardSteeringOrder()
+	for _, name := range names {
+		content, err := templater.Static(templates, tpls[name])
 		if err != nil {
 			render.Err(err.Error())
 			return 1
@@ -81,7 +86,6 @@ func steeringInit(args []string, templates embed.FS) int {
 		} else {
 			render.Info("skipped " + rel + " (exists)")
 		}
-		names = append(names, name)
 	}
 	render.Info("standard steering files created: " + intStr(created))
 	if added, err := ensureSteeringImports(r, names...); err != nil {
@@ -226,6 +230,7 @@ func steeringList(args []string) int {
 		}
 		data, err := os.ReadFile(filepath.Join(sdir, e.Name()))
 		if err != nil {
+			render.Warn("skipping steering '" + e.Name() + "': " + err.Error())
 			continue
 		}
 		fm := frontmatter.Parse(string(data))
@@ -273,6 +278,10 @@ func steeringShow(args []string) int {
 		render.Err(err.Error())
 		return 1
 	}
+	if err := workspace.SafeName(positionals[0], "steering"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	sdir, err := workspace.SteeringDir(r)
 	if err != nil {
 		render.Err(err.Error())
@@ -299,10 +308,14 @@ func steeringDelete(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " steering delete NAME")
+		render.Err("usage: " + prog() + " steering delete NAME [--force]")
 		return 1
 	}
 	name := positionals[0]
+	if err := workspace.SafeName(name, "steering"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	r, err := workspace.Resolve(root)
 	if err != nil {
 		render.Err(err.Error())
@@ -333,7 +346,9 @@ func steeringDelete(args []string) int {
 func steeringValidate(args []string) int {
 	fs := flag.NewFlagSet("steering validate", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -351,11 +366,26 @@ func steeringValidate(args []string) int {
 	name := ""
 	if len(positionals) >= 1 {
 		name = positionals[0]
+		if err := workspace.SafeName(name, "steering"); err != nil {
+			render.Err(err.Error())
+			return 1
+		}
 	}
 	issues, err := validator.ValidateSteering(sdir, name)
 	if err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	target := name
+	if target == "" {
+		target = "steering"
+	}
+	if jsonOut {
+		emitJSON(validationJSON{Target: target, OK: len(issues) == 0, Issues: issuesToJSON(issues)})
+		if len(issues) > 0 {
+			return 2
+		}
+		return 0
 	}
 	if len(issues) == 0 {
 		render.OK("all steering files valid")

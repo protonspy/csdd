@@ -118,8 +118,8 @@ func TestUpdatePreservesManagedAgentModelEffort(t *testing.T) {
 	agent := filepath.Join(dir, ".claude", "agents", "implementer.md")
 	withOverrides := strings.Replace(
 		readFile(t, agent),
-		"tools: Read, Grep, Glob, Edit, Write, Bash\n---",
-		"tools: Read, Grep, Glob, Edit, Write, Bash\nmodel: opus\neffort: high\n---",
+		"tools: Read, Grep, Glob, Edit, Write, Bash\n",
+		"tools: Read, Grep, Glob, Edit, Write, Bash\nmodel: opus\neffort: high\n",
 		1,
 	)
 	if err := os.WriteFile(agent, []byte(withOverrides), 0o644); err != nil {

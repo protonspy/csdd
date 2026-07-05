@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -97,7 +98,7 @@ func Serve(opts Options) int {
 
 	printStartup(localURL, publicURL, opts.Provider, tunnelPass, a, opts.Root)
 
-	if err := serve(ctx, ln, opts, a); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := serve(ctx, ln, opts, a, publicURL); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		render.Err("csdd web: " + err.Error())
 		return 1
 	}
@@ -106,21 +107,42 @@ func Serve(opts Options) int {
 
 // serve wires the mux, starts the change poller, and runs the HTTP server until
 // ctx is cancelled. Separated from Serve so tests can inject a listener + ctx.
-func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
+// publicURL, when non-empty, is the tunnel URL whose hostname must also be
+// accepted by the Host-header guard.
+func serve(ctx context.Context, ln net.Listener, opts Options, a *auth, publicURL string) error {
 	h := newHub()
 
 	pollCtx, cancelPoll := context.WithCancel(ctx)
 	defer cancelPoll()
 	go pollChanges(pollCtx, opts.Root, h)
 
+	// Host allowlist for the DNS-rebinding guard: the loopback names (always
+	// allowed inside newMux) plus the bound host and, when tunnelling, the public
+	// tunnel hostname — otherwise legitimate requests through the tunnel would be
+	// rejected with 403. When the user deliberately binds a wildcard address
+	// (0.0.0.0 / ::), they have opted into all-interfaces LAN access, so pin the
+	// guard open ("*"): rebinding protection only matters for the default loopback
+	// bind, and a fixed allowlist would 403 every LAN client's own IP Host header.
+	var allowedHosts []string
+	if isWildcardHost(opts.Host) {
+		allowedHosts = []string{"*"}
+	} else {
+		allowedHosts = []string{opts.Host}
+	}
+	if publicURL != "" {
+		if u, err := url.Parse(publicURL); err == nil && u.Hostname() != "" {
+			allowedHosts = append(allowedHosts, u.Hostname())
+		}
+	}
+
 	srv := &http.Server{
-		Handler: newMux(opts.Root, h, a),
+		Handler: newMux(opts.Root, h, a, allowedHosts...),
 		// Bound only the header read (slow-loris guard), not the whole request:
 		// a full ReadTimeout would also cap idle keep-alive connections, which the
 		// tunnel holds open between requests — closing them surfaces as 502s.
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
-		WriteTimeout:      0, // SSE streams indefinitely — no write deadline
+		WriteTimeout:      0, // SSE streams indefinitely — no global write deadline
 	}
 
 	errCh := make(chan error, 1)
@@ -128,6 +150,10 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth) error {
 
 	select {
 	case <-ctx.Done():
+		// Close all SSE subscriber channels first so their handler goroutines
+		// return immediately; otherwise Shutdown would block on the long-lived
+		// event streams until its timeout and return context.DeadlineExceeded.
+		h.shutdown()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutCtx)
@@ -152,6 +178,11 @@ func printStartup(localURL, publicURL, provider, tunnelPass string, a *auth, roo
 			render.Info("share this link: " + entryURL(publicURL, a))
 		}
 		if provider == providerLocaltunnel {
+			// The loca.lt → this-machine back-haul is plain TCP (see tunnelWorker),
+			// so nothing on that leg is encrypted. Warn loudly: the auth token and
+			// every file body traverse the internet in cleartext.
+			render.Warn("localtunnel back-haul is UNENCRYPTED: the loca.lt → this-machine leg is plain TCP, so the auth token and every file you view cross the internet in CLEARTEXT.")
+			render.Warn("prefer the default --provider pinggy (end-to-end TLS) for anything sensitive.")
 			// loca.lt shows a one-time "Tunnel website ahead" page to browser
 			// visitors before the app loads; they must enter this machine's public
 			// IP once per subdomain. Surface it so that click is a copy-paste.

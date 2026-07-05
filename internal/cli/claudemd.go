@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/protonspy/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/textutil"
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // Markers delimiting the csdd-managed steering import block inside CLAUDE.md.
@@ -24,7 +26,10 @@ func ensureSteeringImports(root string, names ...string) (int, error) {
 	if err != nil {
 		return 0, nil // no CLAUDE.md yet — nothing to wire
 	}
-	text := string(data)
+	// Normalize line endings before matching: on a CRLF CLAUDE.md the existing
+	// import line is "imp\r\n", which neither dedup check below would match, so a
+	// duplicate @-import was appended on every run.
+	text := textutil.NormalizeNewlines(string(data))
 	start := strings.Index(text, steeringMarkerStart)
 	end := strings.Index(text, steeringMarkerEnd)
 	if start == -1 || end == -1 || end < start {
@@ -52,7 +57,7 @@ func ensureSteeringImports(root string, names ...string) (int, error) {
 		lines = append([]string{existing}, additions...)
 	}
 	rebuilt := text[:blockStart] + "\n" + strings.Join(lines, "\n") + "\n" + text[end:]
-	if err := os.WriteFile(entry, []byte(rebuilt), 0o644); err != nil {
+	if err := workspace.AtomicWrite(entry, []byte(rebuilt), 0o644); err != nil {
 		return 0, err
 	}
 	return len(additions), nil

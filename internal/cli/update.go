@@ -133,6 +133,10 @@ func runUpdate(args []string, templates embed.FS) int {
 	if err := fset.Parse(args); err != nil {
 		return failOnFlagParse(err)
 	}
+	if err := rejectPositionals("update", fset); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 
 	root, err := workspace.Resolve(opts.root)
 	if err != nil {
@@ -162,17 +166,25 @@ func runUpdate(args []string, templates embed.FS) int {
 	// them — but only interactively. Non-interactive runs (CI, agents) keep the
 	// safe-by-backup behaviour: apply and preserve the old copy as .old.
 	conflicts := plan.countConflicts()
-	if conflicts > 0 && !opts.force && !opts.yes && stdinIsInteractive() {
-		render.Warn(fmt.Sprintf("%d file(s) you edited differ from this version and would be overridden:", conflicts))
+	if conflicts > 0 && !opts.force && !opts.yes {
+		render.Warn(fmt.Sprintf("%d file(s) you edited differ from this version:", conflicts))
 		for _, c := range plan.changes {
 			if c.kind == kindConflict {
 				render.Info("  ! " + c.rel)
 			}
 		}
 		render.Info("Your current versions are saved as .old before the new ones are written.")
-		if !confirm("Override these files?") {
-			opts.skipConflicts = true
-			render.Info("Keeping your versions untouched. Re-run with --yes to override.")
+		if stdinIsInteractive() {
+			if !confirm("Override these files?") {
+				opts.skipConflicts = true
+				render.Info("Keeping your versions untouched. Re-run with --yes to override.")
+			}
+		} else {
+			// Non-interactive (CI, an agent driving the CLI): proceed, but never
+			// silently — the conflicts were just listed above and each edited file
+			// is preserved as .old. Pass --yes to suppress this notice, or answer
+			// interactively to choose per run.
+			render.Info("Non-interactive: applying new versions; your edits are kept as .old. (Pass --yes to acknowledge, or run interactively to choose.)")
 		}
 	}
 
@@ -287,12 +299,17 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 			res.changes = append(res.changes, ch)
 			continue
 		}
-		// Preserve the user's copy as .old, then write the new version.
+		// Preserve the user's copy as .old, then write the new version. Carry the
+		// original file's mode over so a backed-up hook script stays executable.
 		if !opts.force {
 			old := nextOldPath(f.Abs)
 			ch.backup = filepath.ToSlash(workspace.Relative(opts.root, old))
 			if !opts.dryRun {
-				if err := os.WriteFile(old, diskBytes, 0o644); err != nil {
+				mode := os.FileMode(0o644)
+				if info, statErr := os.Stat(f.Abs); statErr == nil {
+					mode = info.Mode().Perm()
+				}
+				if err := os.WriteFile(old, diskBytes, mode); err != nil {
 					return res, err
 				}
 			}

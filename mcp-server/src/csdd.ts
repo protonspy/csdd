@@ -21,6 +21,7 @@ const PKG: Record<string, string> = {
   "darwin-x64": "@protonspy/csdd-darwin-x64",
   "darwin-arm64": "@protonspy/csdd-darwin-arm64",
   "win32-x64": "@protonspy/csdd-win32-x64",
+  "win32-arm64": "@protonspy/csdd-win32-arm64",
 };
 
 const binName = process.platform === "win32" ? "csdd.exe" : "csdd";

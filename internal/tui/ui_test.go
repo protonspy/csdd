@@ -104,7 +104,9 @@ func TestPreviewTextRuneSafe(t *testing.T) {
 	if err := os.WriteFile(p, []byte("αααααααα"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := previewText(p, 5, 10)
+	b := browserModel{items: []browserItem{{path: p}}}
+	b.loadPreview()
+	out := b.previewText(5, 10)
 	if !strings.Contains(out, "…") {
 		t.Errorf("wide line should be truncated with an ellipsis: %q", out)
 	}
@@ -116,7 +118,9 @@ func TestPreviewTextRuneSafe(t *testing.T) {
 }
 
 func TestPreviewTextMissingFile(t *testing.T) {
-	out := previewText(filepath.Join(t.TempDir(), "nope.md"), 40, 10)
+	b := browserModel{items: []browserItem{{path: filepath.Join(t.TempDir(), "nope.md")}}}
+	b.loadPreview()
+	out := b.previewText(40, 10)
 	if !strings.Contains(out, "could not read") {
 		t.Errorf("missing file preview should report the error: %q", out)
 	}

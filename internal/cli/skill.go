@@ -22,6 +22,10 @@ func runSkill(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
+	if isHelpFlag(action) {
+		help(os.Stdout)
+		return 0
+	}
 	switch action {
 	case "create":
 		return skillCreate(rest, templates)
@@ -173,6 +177,11 @@ func skillList(args []string) int {
 }
 
 func findSkill(root, name string) (string, bool) {
+	// Guard before joining: a name like ".." would resolve findSkill to .claude/
+	// itself, which skillDelete would then RemoveAll.
+	if err := workspace.SafeName(name, "skill"); err != nil {
+		return "", false
+	}
 	base := workspace.SkillRoot(root)
 	candidate := filepath.Join(base, name)
 	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
@@ -309,13 +318,15 @@ func safeSkillChildPath(base, rel string) (string, error) {
 func skillValidate(args []string) int {
 	fs := flag.NewFlagSet("skill validate", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " skill validate NAME")
+		render.Err("usage: " + prog() + " skill validate NAME [--json]")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -330,6 +341,17 @@ func skillValidate(args []string) int {
 		return 1
 	}
 	issues, lines, tokens := validator.ValidateSkill(sdir, name)
+	if jsonOut {
+		emitJSON(struct {
+			validationJSON
+			Lines  int `json:"lines"`
+			Tokens int `json:"tokens"`
+		}{validationJSON{Target: name, OK: len(issues) == 0, Issues: issuesToJSON(issues)}, lines, tokens})
+		if len(issues) > 0 {
+			return 2
+		}
+		return 0
+	}
 	if len(issues) == 0 {
 		render.OK(fmt.Sprintf("%s: skill valid (%d lines, ~%d tokens)", name, lines, tokens))
 		return 0

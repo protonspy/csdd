@@ -128,15 +128,16 @@ func TestEnsureGitignoreRespectsExistingBareEntry(t *testing.T) {
 // only the artifacts actually present at root.
 func TestGitignoreTargetsOnlyExisting(t *testing.T) {
 	dir := t.TempDir()
-	// The pinggy token secret is always ignored, even before it exists.
-	if got := gitignoreTargets(dir); len(got) != 1 || got[0] != ".pinggy-token" {
-		t.Errorf("empty dir should yield [.pinggy-token], got %v", got)
+	// The pinggy token secret and known_hosts are always ignored, even before
+	// they exist (csdd web may create them later).
+	if got := gitignoreTargets(dir); len(got) != 2 || got[0] != ".pinggy-token" || got[1] != ".pinggy-known_hosts" {
+		t.Errorf("empty dir should yield [.pinggy-token .pinggy-known_hosts], got %v", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "csdd"), []byte("ELF"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	got := gitignoreTargets(dir)
-	if len(got) != 2 || got[0] != ".pinggy-token" || got[1] != "csdd" {
-		t.Errorf("expected [.pinggy-token csdd], got %v", got)
+	if len(got) != 3 || got[2] != "csdd" {
+		t.Errorf("expected [.pinggy-token .pinggy-known_hosts csdd], got %v", got)
 	}
 }

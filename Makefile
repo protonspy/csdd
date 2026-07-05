@@ -26,8 +26,9 @@ LDFLAGS   := -s -w -X $(MODULE)/internal/cli.version=$(VERSION)
 DIST      ?= dist
 ARTIFACTS ?= $(DIST)
 
-# GOOS/GOARCH targets shipped to npm — must match npm/scripts/build-packages.mjs.
-PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+# GOOS/GOARCH targets shipped to npm — must match npm/scripts/build-packages.mjs
+# and the release.yml build matrix.
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .DEFAULT_GOAL := help
 

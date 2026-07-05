@@ -22,6 +22,7 @@ type hub struct {
 	mu      sync.Mutex
 	clients map[chan int]struct{}
 	version int
+	closed  bool // set by shutdown; blocks further subscriptions/broadcasts
 }
 
 func newHub() *hub {
@@ -37,8 +38,14 @@ func (h *hub) currentVersion() int {
 func (h *hub) subscribe() chan int {
 	ch := make(chan int, 1)
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	// After shutdown, hand back an already-closed channel so the SSE handler's
+	// receive returns immediately (it treats a closed channel as "disconnect").
+	if h.closed {
+		close(ch)
+		return ch
+	}
 	h.clients[ch] = struct{}{}
-	h.mu.Unlock()
 	return ch
 }
 
@@ -51,6 +58,25 @@ func (h *hub) unsubscribe(ch chan int) {
 	h.mu.Unlock()
 }
 
+// shutdown closes every subscriber channel and marks the hub closed, so all SSE
+// handler goroutines return promptly (they exit when their channel closes). It
+// is called before http.Server.Shutdown; otherwise the long-lived event streams
+// would keep their connections active until Shutdown's timeout elapses and it
+// returned context.DeadlineExceeded. Idempotent; subscribe/broadcast are no-ops
+// afterwards, so no send can race a closed channel.
+func (h *hub) shutdown() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return
+	}
+	h.closed = true
+	for ch := range h.clients {
+		delete(h.clients, ch)
+		close(ch)
+	}
+}
+
 // broadcast bumps the version and notifies every client without blocking. A
 // client whose 1-slot buffer is full (slow consumer) simply misses this tick;
 // because each notification carries the latest version, it catches up on the
@@ -58,6 +84,9 @@ func (h *hub) unsubscribe(ch chan int) {
 func (h *hub) broadcast() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.closed {
+		return h.version
+	}
 	h.version++
 	for ch := range h.clients {
 		select {

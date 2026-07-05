@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/protonspy/csdd/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/manifest"
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/render"
 	"github.com/protonspy/csdd/internal/session"
@@ -24,8 +25,13 @@ import (
 	"github.com/protonspy/csdd/internal/workspace"
 )
 
+// specSchemaVersion is the current spec.json schema. It is written on every save
+// so a future csdd can detect and migrate older layouts instead of guessing.
+const specSchemaVersion = 1
+
 // SpecJSON mirrors the schema produced by the Python reference implementation.
 type SpecJSON struct {
+	SchemaVersion          int                     `json:"schema_version,omitempty"`
 	FeatureName            string                  `json:"feature_name"`
 	Language               string                  `json:"language"`
 	Phase                  string                  `json:"phase"`
@@ -33,6 +39,18 @@ type SpecJSON struct {
 	Approvals              map[string]ApprovalFlag `json:"approvals"`
 	ReadyForImplementation bool                    `json:"ready_for_implementation"`
 	CreatedAt              string                  `json:"created_at"`
+
+	// extra preserves any keys a newer csdd wrote that this binary does not model,
+	// so round-tripping spec.json through an older binary never silently drops
+	// them. Unexported ⇒ ignored by encoding/json; merged back in saveSpecJSON.
+	extra map[string]json.RawMessage
+}
+
+// knownSpecKeys are the JSON object keys SpecJSON models directly; anything else
+// on disk is captured into SpecJSON.extra and round-tripped untouched.
+var knownSpecKeys = []string{
+	"schema_version", "feature_name", "language", "phase", "development_flow",
+	"approvals", "ready_for_implementation", "created_at",
 }
 
 // defaultDevelopmentFlow is the flow assumed when none is selected and steering
@@ -95,10 +113,15 @@ func resolveDefaultFlow(root string) string {
 	return defaultDevelopmentFlow
 }
 
-// ApprovalFlag tracks generation + approval state for a phase.
+// ApprovalFlag tracks generation + approval state for a phase. ContentHash binds
+// an approval to the exact artifact content that was approved: if the phase's
+// requirements.md / design.md / tasks.md is edited by hand after approval, the
+// stored hash no longer matches and the drift is reported — closing the loophole
+// where a spec-driven gate could be bypassed by editing the file post-approval.
 type ApprovalFlag struct {
-	Generated bool `json:"generated"`
-	Approved  bool `json:"approved"`
+	Generated   bool   `json:"generated"`
+	Approved    bool   `json:"approved"`
+	ContentHash string `json:"content_hash,omitempty"`
 }
 
 func runSpec(args []string, templates embed.FS) int {
@@ -106,6 +129,10 @@ func runSpec(args []string, templates embed.FS) int {
 	if err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	if isHelpFlag(action) {
+		help(os.Stdout)
+		return 0
 	}
 	switch action {
 	case "init":
@@ -218,7 +245,9 @@ func specInit(args []string, templates embed.FS) int {
 func specList(args []string) int {
 	fs := flag.NewFlagSet("spec list", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	_, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -240,6 +269,7 @@ func specList(args []string) int {
 	}
 	type row struct{ feature, phase, approved, ready string }
 	var rows []row
+	var jsonRows []specSummaryJSON
 	maxName := len("feature")
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -247,13 +277,18 @@ func specList(args []string) int {
 		}
 		data, err := loadSpecJSON(filepath.Join(base, e.Name()))
 		if err != nil {
+			// A dir with no spec.json isn't a spec — skip it quietly. But a spec.json
+			// that fails to parse is corruption the user must see, not hide.
+			if !os.IsNotExist(err) {
+				render.Warn("skipping spec '" + e.Name() + "': " + err.Error())
+			}
 			continue
 		}
 		ready := "no"
 		if data.ReadyForImplementation {
 			ready = "yes"
 		}
-		var approved []string
+		approved := []string{}
 		for k, v := range data.Approvals {
 			if v.Approved {
 				approved = append(approved, k)
@@ -265,9 +300,19 @@ func specList(args []string) int {
 			appStr = strings.Join(approved, ",")
 		}
 		rows = append(rows, row{e.Name(), data.Phase, appStr, ready})
+		jsonRows = append(jsonRows, specSummaryJSON{
+			Feature:  e.Name(),
+			Phase:    data.Phase,
+			Approved: approved,
+			Ready:    data.ReadyForImplementation,
+		})
 		if len(e.Name()) > maxName {
 			maxName = len(e.Name())
 		}
+	}
+	if jsonOut {
+		sort.Slice(jsonRows, func(i, j int) bool { return jsonRows[i].Feature < jsonRows[j].Feature })
+		return emitJSON(jsonRows)
 	}
 	if len(rows) == 0 {
 		render.Info("no specs found")
@@ -284,13 +329,15 @@ func specList(args []string) int {
 func specShow(args []string) int {
 	fs := flag.NewFlagSet("spec show", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " spec show FEATURE")
+		render.Err("usage: " + prog() + " spec show FEATURE [--json]")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -299,6 +346,10 @@ func specShow(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
+	if err := workspace.SafeName(feature, "feature"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	sdir := filepath.Join(paths.Specs(r), feature)
 	if !pathExists(sdir) {
 		render.Err("spec not found: " + feature)
@@ -308,6 +359,9 @@ func specShow(args []string) int {
 	if err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	if jsonOut {
+		return emitJSON(data)
 	}
 	fmt.Println(render.Bold("feature: " + data.FeatureName))
 	fmt.Println("phase:    " + data.Phase)
@@ -395,6 +449,9 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := workspace.SafeName(opts.Feature, "feature"); err != nil {
+		return err
+	}
 	sdir := filepath.Join(paths.Specs(r), opts.Feature)
 	if !pathExists(sdir) {
 		return fmt.Errorf("spec not found: %s. Run `%s spec init %s` first", opts.Feature, prog(), opts.Feature)
@@ -409,8 +466,8 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 		if opts.Artifact == "tasks" {
 			prev = "design"
 		}
-		if !data.Approvals[prev].Approved && !opts.Force {
-			return fmt.Errorf("phase gate: '%s' must be approved before generating '%s'. Use --force only for explicitly fast-track / Quick Plan flows", prev, opts.Artifact)
+		if !phaseApprovedAndCurrent(sdir, data, prev) && !opts.Force {
+			return fmt.Errorf("phase gate: '%s' must be approved (and unchanged since) before generating '%s'. Use --force only for explicitly fast-track / Quick Plan flows", prev, opts.Artifact)
 		}
 	}
 	templateMap := map[string][2]string{
@@ -442,6 +499,7 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 	if a, ok := data.Approvals[opts.Artifact]; ok {
 		a.Generated = true
 		a.Approved = false
+		a.ContentHash = "" // regeneration invalidates any prior approval binding
 		data.Approvals[opts.Artifact] = a
 	}
 	if tracked {
@@ -500,6 +558,9 @@ func SpecApprove(opts SpecApproveOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := workspace.SafeName(opts.Feature, "feature"); err != nil {
+		return err
+	}
 	sdir := filepath.Join(paths.Specs(r), opts.Feature)
 	if !pathExists(sdir) {
 		return fmt.Errorf("spec not found: %s", opts.Feature)
@@ -515,11 +576,11 @@ func SpecApprove(opts SpecApproveOptions) error {
 	if !state.Generated {
 		return fmt.Errorf("cannot approve '%s': not generated yet", opts.Phase)
 	}
-	if prev := previousPhase(opts.Phase); prev != "" && !data.Approvals[prev].Approved {
+	if prev := previousPhase(opts.Phase); prev != "" && !phaseApprovedAndCurrent(sdir, data, prev) {
 		if !opts.Force {
-			return fmt.Errorf("phase gate: '%s' must be approved before approving '%s'", prev, opts.Phase)
+			return fmt.Errorf("phase gate: '%s' must be approved (and unchanged since) before approving '%s'", prev, opts.Phase)
 		}
-		render.Warn("approval forced despite missing prior approval for '" + prev + "'")
+		render.Warn("approval forced despite missing/stale prior approval for '" + prev + "'")
 	}
 	issues := validator.ValidateSpec(sdir, validator.Phase(opts.Phase))
 	if len(issues) > 0 {
@@ -532,6 +593,9 @@ func SpecApprove(opts SpecApproveOptions) error {
 		render.Warn("approval forced despite validation issues")
 	}
 	state.Approved = true
+	if h, err := phaseContentHash(sdir, opts.Phase); err == nil {
+		state.ContentHash = h
+	}
 	data.Approvals[opts.Phase] = state
 	data.Phase = opts.Phase + "-approved"
 	ready := true
@@ -552,6 +616,76 @@ func SpecApprove(opts SpecApproveOptions) error {
 	return nil
 }
 
+// phaseArtifact maps an approvable phase to the artifact whose content its
+// approval certifies.
+func phaseArtifact(phase string) string {
+	switch phase {
+	case "requirements":
+		return "requirements.md"
+	case "design":
+		return "design.md"
+	case "tasks":
+		return "tasks.md"
+	}
+	return ""
+}
+
+// phaseContentHash returns the line-ending-normalized content hash of a phase's
+// artifact. Normalization means a CRLF re-checkout never looks like drift.
+func phaseContentHash(specDir, phase string) (string, error) {
+	name := phaseArtifact(phase)
+	if name == "" {
+		return "", fmt.Errorf("no artifact for phase %q", phase)
+	}
+	b, err := os.ReadFile(filepath.Join(specDir, name))
+	if err != nil {
+		return "", err
+	}
+	return manifest.Hash(string(b)), nil
+}
+
+// phaseApprovedAndCurrent reports whether a phase is approved AND its artifact
+// has not been edited since (no drift). A drifted approval must not satisfy a
+// phase gate — otherwise a post-approval hand-edit would let the next phase
+// proceed on a stale checkpoint. Approvals with no stored hash (written by an
+// older csdd) are trusted, since drift can't be detected for them.
+func phaseApprovedAndCurrent(specDir string, s SpecJSON, phase string) bool {
+	a, ok := s.Approvals[phase]
+	if !ok || !a.Approved {
+		return false
+	}
+	if a.ContentHash == "" {
+		return true
+	}
+	h, err := phaseContentHash(specDir, phase)
+	return err == nil && h == a.ContentHash
+}
+
+// approvalDriftIssues reports any phase whose artifact was edited after approval,
+// so a hand-edit can't silently ride on a stale approval. Approvals recorded by
+// older csdd versions (no stored hash) are skipped — no false positives.
+func approvalDriftIssues(specDir string, s SpecJSON) []validator.Issue {
+	var out []validator.Issue
+	for _, phase := range workspace.SpecPhases {
+		a, ok := s.Approvals[phase]
+		if !ok || !a.Approved || a.ContentHash == "" {
+			continue
+		}
+		h, err := phaseContentHash(specDir, phase)
+		if err != nil {
+			continue
+		}
+		if h != a.ContentHash {
+			out = append(out, validator.Issue{
+				File: phaseArtifact(phase),
+				Msg: fmt.Sprintf("edited after approval — the '%s' approval no longer certifies this content; re-approve (`%s spec approve %s --phase %s`) or regenerate",
+					phase, prog(), s.FeatureName, phase),
+			})
+		}
+	}
+	return out
+}
+
 func previousPhase(phase string) string {
 	switch phase {
 	case "design":
@@ -566,13 +700,15 @@ func previousPhase(phase string) string {
 func specValidate(args []string) int {
 	fs := flag.NewFlagSet("spec validate", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " spec validate FEATURE")
+		render.Err("usage: " + prog() + " spec validate FEATURE [--json]")
 		return 1
 	}
 	r, err := workspace.Resolve(root)
@@ -581,6 +717,10 @@ func specValidate(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
+	if err := workspace.SafeName(feature, "feature"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	sdir := filepath.Join(paths.Specs(r), feature)
 	if !pathExists(sdir) {
 		render.Err("spec not found: " + feature)
@@ -593,6 +733,16 @@ func specValidate(args []string) int {
 	}
 	phase, preflight := validationScope(sdir, data)
 	issues := append(preflight, validator.ValidateSpec(sdir, phase)...)
+	issues = append(issues, approvalDriftIssues(sdir, data)...)
+	if jsonOut {
+		// Exit code still encodes the result (2 = issues) so an agent can branch on
+		// $? without parsing, while stdout carries the details.
+		emitJSON(validationJSON{Target: feature, OK: len(issues) == 0, Issues: issuesToJSON(issues)})
+		if len(issues) > 0 {
+			return 2
+		}
+		return 0
+	}
 	if len(issues) == 0 {
 		render.OK(feature + ": validation passed")
 		return 0
@@ -637,6 +787,10 @@ func specDelete(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
+	if err := workspace.SafeName(feature, "feature"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	if !force {
 		render.Err("refusing to delete spec '" + feature + "' without --force")
 		return 1
@@ -692,6 +846,10 @@ func specTestReport(args []string) int {
 		return 1
 	}
 	feature := positionals[0]
+	if err := workspace.SafeName(feature, "feature"); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	r, err := workspace.Resolve(root)
 	if err != nil {
 		render.Err(err.Error())
@@ -900,12 +1058,23 @@ func nz(n int) int {
 
 func loadSpecJSON(specDir string) (SpecJSON, error) {
 	var s SpecJSON
-	data, err := os.ReadFile(filepath.Join(specDir, "spec.json"))
+	path := filepath.Join(specDir, "spec.json")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return s, err
 	}
 	if err := json.Unmarshal(data, &s); err != nil {
-		return s, err
+		return s, fmt.Errorf("parse %s: %w", path, err)
+	}
+	// Capture keys this binary does not model so save() can round-trip them.
+	var all map[string]json.RawMessage
+	if json.Unmarshal(data, &all) == nil {
+		for _, k := range knownSpecKeys {
+			delete(all, k)
+		}
+		if len(all) > 0 {
+			s.extra = all
+		}
 	}
 	if s.Approvals == nil {
 		s.Approvals = map[string]ApprovalFlag{}
@@ -914,10 +1083,35 @@ func loadSpecJSON(specDir string) (SpecJSON, error) {
 }
 
 func saveSpecJSON(specDir string, s SpecJSON) error {
-	b, err := json.MarshalIndent(s, "", "  ")
+	if s.SchemaVersion == 0 {
+		s.SchemaVersion = specSchemaVersion
+	}
+	var b []byte
+	var err error
+	if len(s.extra) == 0 {
+		// Fast path: keep the clean, field-ordered layout with no diff churn.
+		b, err = json.MarshalIndent(s, "", "  ")
+	} else {
+		// Forward-compat path: merge unknown keys back so an older binary never
+		// drops fields a newer csdd wrote.
+		known, mErr := json.Marshal(s)
+		if mErr != nil {
+			return mErr
+		}
+		merged := map[string]json.RawMessage{}
+		if err := json.Unmarshal(known, &merged); err != nil {
+			return err
+		}
+		for k, v := range s.extra {
+			if _, ok := merged[k]; !ok {
+				merged[k] = v
+			}
+		}
+		b, err = json.MarshalIndent(merged, "", "  ")
+	}
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	return os.WriteFile(filepath.Join(specDir, "spec.json"), b, 0o644)
+	return workspace.AtomicWrite(filepath.Join(specDir, "spec.json"), b, 0o644)
 }

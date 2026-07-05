@@ -1,0 +1,15 @@
+# golangci-lint configuration (v2 schema — golangci-lint v2.x).
+#
+# Deliberately conservative: only the standard, high-signal analyzers are
+# enabled so CI stays green-friendly instead of drowning in style nits. Add more
+# linters here as the codebase is cleaned up.
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck # unchecked errors
+    - govet # go vet's analyzers
+    - ineffassign # assignments never read
+    - staticcheck # staticcheck (SA/S/ST) suite
+    - unused # unused code

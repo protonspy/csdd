@@ -10,27 +10,70 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/protonspy/csdd/internal/frontmatter"
+	"github.com/protonspy/csdd/internal/textutil"
 )
 
 var (
-	reqHeader       = regexp.MustCompile(`(?m)^###\s+Requirement\s+(\d+)\b`)
-	criterion       = regexp.MustCompile(`(?mi)^(\s*)(\d+)\.\s+(WHEN|WHILE|IF|WHERE|THE\s+SYSTEM)\b`)
-	criterionNumber = regexp.MustCompile(`(?m)^\s*(\d+)\.\s+`)
+	reqHeader = regexp.MustCompile(`(?m)^###\s+Requirement\s+(\d+)\b`)
+	// criterionLine matches a numbered list item; group 1 is the list number and
+	// group 2 the remaining text. Whether it counts as an acceptance criterion is
+	// decided by earsLine on group 2, so extraction and the EARS check agree.
+	criterionLine   = regexp.MustCompile(`^\s*(\d+)\.\s+(.*)$`)
 	earsLine        = regexp.MustCompile(`(?i)\b(WHEN|WHILE|IF|WHERE)\b.*\bTHE\s+SYSTEM\s+SHALL\b|\bTHE\s+SYSTEM\s+SHALL\b`)
 	shouldWord      = regexp.MustCompile(`(?i)\bshould\b`)
 	numberedLine    = regexp.MustCompile(`^\d+\.\s`)
-	taskLine        = regexp.MustCompile(`^(\s*)-\s+\[\s*[xX ]?\s*\]\s+(\d+(?:\.\d+)?)\.?\s+(.*)$`)
-	reqAnnot        = regexp.MustCompile(`_Requirements:\s*([\d,\.\s]+)_`)
-	boundaryAnnot   = regexp.MustCompile(`_Boundary:\s*([A-Za-z0-9_\-]+)_`)
-	dependsAnnot    = regexp.MustCompile(`_Depends:\s*([\d,\.\s]+)_`)
-	parallelMarker  = regexp.MustCompile(`\(P\)`)
 	componentHeader = regexp.MustCompile(`(?m)^###\s+([A-Za-z0-9_\-]+)\s*$`)
+	componentsHead  = regexp.MustCompile(`(?m)^##\s+Components and Interfaces\s*$`)
+	nextH2          = regexp.MustCompile(`(?m)^##\s`)
 	traceabilityRow = regexp.MustCompile(`(?m)^\|\s*(\d+\.\d+)\s*\|`)
 	numericID       = regexp.MustCompile(`^\d+\.\d+$`)
+
+	// Canonical task grammar. It is exported and reused by internal/session so the
+	// validator (correctness) and the dashboard (display) can never disagree on
+	// what a task line or annotation is. Group indices: 1=indent, 2=checkbox
+	// state, 3=id (any depth: 1, 1.2, 1.2.3), 4=title. Boundary names share the
+	// component-header charset — a boundary must name a real component.
+	TaskLineRe      = regexp.MustCompile(`^(\s*)-\s+\[\s*([xX ]?)\s*\]\s+(\d+(?:\.\d+)*)\.?\s+(.*)$`)
+	ReqAnnotRe      = regexp.MustCompile(`_Requirements:\s*([\d,\.\s]+)_`)
+	BoundaryAnnotRe = regexp.MustCompile(`_Boundary:\s*([A-Za-z0-9_\-]+)_`)
+	DependsAnnotRe  = regexp.MustCompile(`_Depends:\s*([\d,\.\s]+)_`)
+	ParallelRe      = regexp.MustCompile(`\(P\)`)
 )
+
+// MaskCodeFences is the exported entry point to fence masking, shared with
+// internal/session so the dashboard's task stats ignore fenced examples exactly
+// as the validator's checks do.
+func MaskCodeFences(text string) string { return maskCodeFences(text) }
+
+// maskCodeFences blanks every line inside a fenced code block (``` or ~~~) while
+// preserving the total line count, so line-oriented regexes never mistake a
+// fenced example ("- [ ] 1. …" in a doc, a numbered list in prose) for a real
+// task or acceptance criterion. Line numbers in reported issues stay accurate.
+func maskCodeFences(text string) string {
+	lines := strings.Split(text, "\n")
+	inFence := false
+	fence := ""
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !inFence {
+			if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+				inFence = true
+				fence = trimmed[:3]
+				lines[i] = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, fence) {
+			inFence = false
+		}
+		lines[i] = ""
+	}
+	return strings.Join(lines, "\n")
+}
 
 // Issue represents a single validation problem.
 type Issue struct {
@@ -87,10 +130,11 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 
 	// Requirements
 	if wantReq {
-		if text, err := os.ReadFile(reqPath); err == nil {
-			reqIDs = extractRequirementIDs(string(text))
-			issues = append(issues, checkEARS("requirements.md", string(text))...)
-			headers := reqHeader.FindAllStringSubmatch(string(text), -1)
+		if raw, err := os.ReadFile(reqPath); err == nil {
+			text := maskCodeFences(textutil.NormalizeNewlines(string(raw)))
+			reqIDs = extractRequirementIDs(text)
+			issues = append(issues, checkEARS("requirements.md", text)...)
+			headers := reqHeader.FindAllStringSubmatch(text, -1)
 			seen := map[string]int{}
 			for _, h := range headers {
 				seen[h[1]]++
@@ -100,7 +144,7 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 					issues = append(issues, Issue{File: "requirements.md", Msg: fmt.Sprintf("duplicate Requirement %s header", k)})
 				}
 			}
-			issues = append(issues, checkDuplicateCriterionIDs(string(text))...)
+			issues = append(issues, checkDuplicateCriterionIDs(text)...)
 		} else if phase != PhaseAll {
 			if _, err := os.Stat(bugfixPath); err != nil {
 				issues = append(issues, Issue{File: "requirements.md", Msg: "missing (or bugfix.md)"})
@@ -110,7 +154,7 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 
 	// Bugfix
 	if data, err := os.ReadFile(bugfixPath); err == nil {
-		text := string(data)
+		text := textutil.NormalizeNewlines(string(data))
 		for _, needle := range []string{"Current Behavior:", "Expected Behavior:", "Unchanged Behavior:"} {
 			if !strings.Contains(text, needle) {
 				issues = append(issues, Issue{File: "bugfix.md", Msg: "missing '" + needle + "' section"})
@@ -124,7 +168,8 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 	// Design
 	if wantDesign {
 		if data, err := os.ReadFile(designPath); err == nil {
-			text := string(data)
+			text := textutil.NormalizeNewlines(string(data))
+			masked := maskCodeFences(text)
 			lineCount := strings.Count(text, "\n") + 1
 			if lineCount > 1000 {
 				issues = append(issues, Issue{
@@ -132,8 +177,8 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 					Msg:  fmt.Sprintf("%d lines > 1000 — split the feature into multiple specs", lineCount),
 				})
 			}
-			components = extractComponents(text)
-			traceability = extractTraceability(text)
+			components = extractComponents(masked)
+			traceability = extractTraceability(masked)
 			if !strings.Contains(text, "## File Structure Plan") {
 				issues = append(issues, Issue{File: "design.md", Msg: "missing '## File Structure Plan' section"})
 			}
@@ -162,7 +207,7 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 	// Tasks
 	if wantTasks {
 		if data, err := os.ReadFile(tasksPath); err == nil {
-			tasks := parseTasks(string(data))
+			tasks := parseTasks(maskCodeFences(textutil.NormalizeNewlines(string(data))))
 			ids := map[string]struct{}{}
 			boundaries := map[string]string{}
 			firstLine := map[string]int{}
@@ -276,31 +321,50 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 	return issues
 }
 
+// scannedCriterion is one acceptance criterion discovered by scanCriteria.
+type scannedCriterion struct {
+	id     string // "<reqNum>.<listNum>"
+	lineNo int    // 1-based line in the (masked) text
+}
+
+// scanCriteria walks the text line by line, tracking the current Requirement
+// header, and returns every numbered list item that carries EARS structure. Both
+// ID extraction and duplicate detection use this single pass, so a criterion the
+// EARS check accepts always yields exactly one ID (no anchoring mismatch), an
+// incidental numbered note (no EARS keywords) is never mistaken for a criterion,
+// and reported line numbers point at the criterion itself.
+func scanCriteria(text string) []scannedCriterion {
+	var out []scannedCriterion
+	curReq := ""
+	for i, line := range strings.Split(text, "\n") {
+		if hm := reqHeader.FindStringSubmatch(line); hm != nil {
+			curReq = hm[1]
+			continue
+		}
+		if curReq == "" {
+			continue
+		}
+		m := criterionLine.FindStringSubmatch(line)
+		if m == nil || !earsLine.MatchString(m[2]) {
+			continue
+		}
+		out = append(out, scannedCriterion{id: curReq + "." + m[1], lineNo: i + 1})
+	}
+	return out
+}
+
 func checkDuplicateCriterionIDs(text string) []Issue {
 	var issues []Issue
-	headers := reqHeader.FindAllStringSubmatchIndex(text, -1)
-	for i, h := range headers {
-		reqN := text[h[2]:h[3]]
-		start := h[1]
-		end := len(text)
-		if i+1 < len(headers) {
-			end = headers[i+1][0]
-		}
-		block := text[start:end]
-		seen := map[string]int{}
-		for _, m := range criterionNumber.FindAllStringSubmatchIndex(block, -1) {
-			criterionN := block[m[2]:m[3]]
-			id := reqN + "." + criterionN
-			line := strings.Count(text[:start+m[0]], "\n") + 1
-			if prev, ok := seen[id]; ok {
-				issues = append(issues, Issue{
-					File: "requirements.md",
-					Line: line,
-					Msg:  fmt.Sprintf("duplicate acceptance criterion ID %s (first seen on line %d)", id, prev),
-				})
-			} else {
-				seen[id] = line
-			}
+	seen := map[string]int{}
+	for _, c := range scanCriteria(text) {
+		if prev, ok := seen[c.id]; ok {
+			issues = append(issues, Issue{
+				File: "requirements.md",
+				Line: c.lineNo,
+				Msg:  fmt.Sprintf("duplicate acceptance criterion ID %s (first seen on line %d)", c.id, prev),
+			})
+		} else {
+			seen[c.id] = c.lineNo
 		}
 	}
 	return issues
@@ -308,28 +372,23 @@ func checkDuplicateCriterionIDs(text string) []Issue {
 
 func extractRequirementIDs(text string) map[string]struct{} {
 	out := map[string]struct{}{}
-	headers := reqHeader.FindAllStringSubmatchIndex(text, -1)
-	for i, m := range headers {
-		reqN := text[m[2]:m[3]]
-		start := m[1]
-		end := len(text)
-		if i+1 < len(headers) {
-			end = headers[i+1][0]
-		}
-		block := text[start:end]
-		for _, cm := range criterion.FindAllStringSubmatch(block, -1) {
-			out[reqN+"."+cm[2]] = struct{}{}
-		}
+	for _, c := range scanCriteria(text) {
+		out[c.id] = struct{}{}
 	}
 	return out
 }
 
 func extractComponents(text string) map[string]struct{} {
-	idx := strings.Index(text, "## Components and Interfaces")
-	if idx < 0 {
+	loc := componentsHead.FindStringIndex(text)
+	if loc == nil {
 		return nil
 	}
-	section := text[idx:]
+	section := text[loc[1]:]
+	// Stop at the next top-level "## " heading so component "###" headers don't
+	// leak in from later sections (Testing Strategy, Error Handling, …).
+	if end := nextH2.FindStringIndex(section); end != nil {
+		section = section[:end[0]]
+	}
 	out := map[string]struct{}{}
 	for _, m := range componentHeader.FindAllStringSubmatch(section, -1) {
 		out[m[1]] = struct{}{}
@@ -389,38 +448,38 @@ func parseTasks(text string) []taskRecord {
 			return
 		}
 		joined := strings.Join(block, "\n")
-		if m := reqAnnot.FindStringSubmatch(joined); m != nil {
+		if m := ReqAnnotRe.FindStringSubmatch(joined); m != nil {
 			for _, tok := range strings.Split(m[1], ",") {
 				if t := strings.TrimSpace(tok); t != "" {
 					cur.requirements = append(cur.requirements, t)
 				}
 			}
 		}
-		if m := dependsAnnot.FindStringSubmatch(joined); m != nil {
+		if m := DependsAnnotRe.FindStringSubmatch(joined); m != nil {
 			for _, tok := range strings.Split(m[1], ",") {
 				if t := strings.TrimSpace(tok); t != "" {
 					cur.depends = append(cur.depends, t)
 				}
 			}
 		}
-		if m := boundaryAnnot.FindStringSubmatch(joined); m != nil {
+		if m := BoundaryAnnotRe.FindStringSubmatch(joined); m != nil {
 			cur.boundary = m[1]
 		}
-		if parallelMarker.MatchString(joined) {
+		if ParallelRe.MatchString(joined) {
 			cur.parallel = true
 		}
 		out = append(out, *cur)
 		cur = nil
 	}
 	for i, line := range strings.Split(text, "\n") {
-		if m := taskLine.FindStringSubmatch(line); m != nil {
+		if m := TaskLineRe.FindStringSubmatch(line); m != nil {
 			flush()
 			block = []string{line}
-			cur = &taskRecord{id: m[2], lineNo: i + 1}
-			if parallelMarker.MatchString(line) {
+			cur = &taskRecord{id: m[3], lineNo: i + 1}
+			if ParallelRe.MatchString(line) {
 				cur.parallel = true
 			}
-			if bm := boundaryAnnot.FindStringSubmatch(line); bm != nil {
+			if bm := BoundaryAnnotRe.FindStringSubmatch(line); bm != nil {
 				cur.boundary = bm[1]
 			}
 			continue
@@ -445,12 +504,7 @@ func truncate(s string, n int) string {
 
 func sortedJoin(in []string) string {
 	cp := append([]string(nil), in...)
-	// Simple insertion sort: small slices.
-	for i := 1; i < len(cp); i++ {
-		for j := i; j > 0 && cp[j-1] > cp[j]; j-- {
-			cp[j-1], cp[j] = cp[j], cp[j-1]
-		}
-	}
+	sort.Strings(cp)
 	return strings.Join(cp, ", ")
 }
 
@@ -528,7 +582,7 @@ func ValidateSkill(skillDir, name string) ([]Issue, int, int) {
 	if err != nil {
 		return []Issue{{File: filepath.Base(skillDir), Msg: "SKILL.md missing"}}, 0, 0
 	}
-	text := string(data)
+	text := textutil.NormalizeNewlines(string(data))
 	fm := frontmatter.Parse(text)
 	if fm.AsString("name", "") == "" {
 		issues = append(issues, Issue{File: "SKILL.md", Msg: "frontmatter missing 'name'"})

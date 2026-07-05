@@ -50,7 +50,13 @@ func runCopy(args []string, templates embed.FS) int {
 	var force bool
 	addRoot(fset, &root)
 	addForce(fset, &force)
-	if err := fset.Parse(args); err != nil {
+	// Use parseFlags (not fset.Parse) so flags may follow the positional, e.g.
+	// `csdd copy skills/foo --force`. Plain Parse stops at the first non-flag and
+	// would leave --force unparsed, so --force was silently ignored — and the
+	// documented `csdd --root PATH copy …` form (rewritten to trailing --root)
+	// operated on the wrong workspace.
+	rest, err := parseFlags(fset, args)
+	if err != nil {
 		return failOnFlagParse(err)
 	}
 
@@ -65,7 +71,6 @@ func runCopy(args []string, templates embed.FS) int {
 	}
 
 	kinds := copyKinds()
-	rest := fset.Args()
 	if len(rest) == 0 {
 		return listCopyable(templates, kinds, "")
 	}

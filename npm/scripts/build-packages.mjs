@@ -32,12 +32,16 @@ import { fileURLToPath } from "node:url";
 const SCOPE = "@protonspy";
 
 // Go target -> npm platform/arch + os/cpu constraints.
+// Must match the Makefile PLATFORMS and the release.yml build matrix. The root
+// package's optionalDependencies are generated from this list, so adding a
+// target here emits its platform package and wires it up automatically.
 const TARGETS = [
   { goos: "linux", goarch: "amd64", node: "linux-x64", os: "linux", cpu: "x64" },
   { goos: "linux", goarch: "arm64", node: "linux-arm64", os: "linux", cpu: "arm64" },
   { goos: "darwin", goarch: "amd64", node: "darwin-x64", os: "darwin", cpu: "x64" },
   { goos: "darwin", goarch: "arm64", node: "darwin-arm64", os: "darwin", cpu: "arm64" },
   { goos: "windows", goarch: "amd64", node: "win32-x64", os: "win32", cpu: "x64" },
+  { goos: "windows", goarch: "arm64", node: "win32-arm64", os: "win32", cpu: "arm64" },
 ];
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));

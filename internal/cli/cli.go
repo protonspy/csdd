@@ -233,6 +233,16 @@ func parseAction(resource string, args []string) (string, []string, error) {
 	return args[0], args[1:], nil
 }
 
+// rejectPositionals errors when a command that takes no positional arguments
+// received some, so e.g. `csdd init mydir` (a user expecting `git init DIR`
+// semantics) fails loudly instead of silently operating on the cwd.
+func rejectPositionals(cmd string, fs *flag.FlagSet) error {
+	if extra := fs.Args(); len(extra) > 0 {
+		return fmt.Errorf("`%s %s` takes no positional arguments; got %q (did you mean a flag like --root?)", prog(), cmd, extra[0])
+	}
+	return nil
+}
+
 // failOnFlagParse short-circuits when a flag parse fails.
 func failOnFlagParse(err error) int {
 	if err == nil {
@@ -243,6 +253,12 @@ func failOnFlagParse(err error) int {
 	}
 	render.Err(err.Error())
 	return 1
+}
+
+// isHelpFlag reports whether an action token is really a request for help, so
+// `csdd spec --help` prints usage instead of erroring with "unknown action".
+func isHelpFlag(s string) bool {
+	return s == "-h" || s == "--help" || s == "help"
 }
 
 // containsString reports whether needle is in haystack.

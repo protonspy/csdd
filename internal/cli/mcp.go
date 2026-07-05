@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -43,6 +42,10 @@ func runMCP(args []string) int {
 	if err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	if isHelpFlag(action) {
+		help(os.Stdout)
+		return 0
 	}
 	switch action {
 	case "add":
@@ -105,10 +108,7 @@ func saveMCP(path string, cfg MCPConfig) error {
 		return err
 	}
 	b = append(b, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0o644)
+	return workspace.AtomicWrite(path, b, 0o644)
 }
 
 // MCPAddOptions is the headless equivalent shared by the CLI and the TUI.
@@ -271,6 +271,26 @@ func mcpList(args []string) int {
 		return code
 	}
 	cfg := r.cfg
+	if r.jsonOut {
+		type serverJSON struct {
+			Name      string   `json:"name"`
+			Transport string   `json:"transport"`
+			Disabled  bool     `json:"disabled"`
+			Command   string   `json:"command,omitempty"`
+			Args      []string `json:"args,omitempty"`
+			URL       string   `json:"url,omitempty"`
+		}
+		out := []serverJSON{}
+		for _, n := range sortedServerNames(cfg) {
+			s := cfg.MCPServers[n]
+			transport := "stdio"
+			if s.URL != "" {
+				transport = s.Type
+			}
+			out = append(out, serverJSON{Name: n, Transport: transport, Disabled: s.Disabled, Command: s.Command, Args: s.Args, URL: s.URL})
+		}
+		return emitJSON(out)
+	}
 	if len(cfg.MCPServers) == 0 {
 		render.Info("no mcp servers configured")
 		return 0
@@ -429,6 +449,13 @@ func mcpValidate(args []string) int {
 		return code
 	}
 	issues := validateMCPConfig(res.cfg)
+	if res.jsonOut {
+		emitJSON(validationJSON{Target: "mcp.json", OK: len(issues) == 0, Issues: issuesToJSON(issues)})
+		if len(issues) > 0 {
+			return 2
+		}
+		return 0
+	}
 	if len(issues) == 0 {
 		render.OK(fmt.Sprintf("mcp.json valid (%d server(s))", len(res.cfg.MCPServers)))
 		return 0
@@ -487,15 +514,20 @@ func sortedServerNames(cfg MCPConfig) []string {
 }
 
 // mcpResult bundles a resolved root + loaded config for the read commands.
+// jsonOut carries the shared --json flag so list/show/validate can emit
+// machine-readable output without each re-parsing flags.
 type mcpResult struct {
-	root string
-	cfg  MCPConfig
+	root    string
+	cfg     MCPConfig
+	jsonOut bool
 }
 
 func mcpResolveAndLoad(args []string) (mcpResult, []string, int) {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	var root string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return mcpResult{}, nil, failOnFlagParse(err)
@@ -515,7 +547,7 @@ func mcpResolveAndLoad(args []string) (mcpResult, []string, int) {
 		render.Err(err.Error())
 		return mcpResult{}, nil, 1
 	}
-	return mcpResult{root: r, cfg: cfg}, positionals, 0
+	return mcpResult{root: r, cfg: cfg, jsonOut: jsonOut}, positionals, 0
 }
 
 func mcpResolveLoadNamed(args []string, action string) (mcpResult, string, int) {

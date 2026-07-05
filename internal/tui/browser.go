@@ -26,12 +26,41 @@ type browserModel struct {
 	items  []browserItem
 	cursor int
 	err    string
+
+	// previewPath/previewRaw cache the currently-selected file's contents so the
+	// render path (View) never touches disk. The file is read once, in Update,
+	// when the selection changes — critical on WSL's /mnt/c 9p mount where a
+	// per-frame os.ReadFile made scrolling visibly janky.
+	previewPath string
+	previewRaw  string
+	previewErr  bool
 }
 
 func newBrowser(root string) browserModel {
 	b := browserModel{root: root}
 	b.refresh()
+	b.loadPreview()
 	return b
+}
+
+// loadPreview reads the currently-selected item's file into the cache. It is a
+// no-op when the cached path already matches, so repeated calls are cheap.
+func (b *browserModel) loadPreview() {
+	if b.cursor < 0 || b.cursor >= len(b.items) {
+		b.previewPath, b.previewRaw, b.previewErr = "", "", false
+		return
+	}
+	path := b.items[b.cursor].path
+	if path == b.previewPath && !b.previewErr {
+		return
+	}
+	data, err := os.ReadFile(path)
+	b.previewPath = path
+	if err != nil {
+		b.previewRaw, b.previewErr = "could not read "+path, true
+		return
+	}
+	b.previewRaw, b.previewErr = string(data), false
 }
 
 func (b *browserModel) refresh() {
@@ -149,13 +178,16 @@ func (b browserModel) Update(msg tea.Msg) (browserModel, tea.Cmd) {
 	case "up", "k":
 		if b.cursor > 0 {
 			b.cursor--
+			b.loadPreview()
 		}
 	case "down", "j":
 		if b.cursor < len(b.items)-1 {
 			b.cursor++
+			b.loadPreview()
 		}
 	case "r":
 		b.refresh()
+		b.loadPreview()
 	}
 	return b, nil
 }
@@ -201,7 +233,7 @@ func (b browserModel) View(width, height int) string {
 		list.WriteString(prefix + line + "\n")
 	}
 
-	preview := previewText(b.items[b.cursor].path, previewW, bodyH-2)
+	preview := b.previewText(previewW, bodyH-2)
 	listBox := Styles.Box.Width(listW).Height(bodyH).Render(list.String())
 	previewBox := Styles.Box.Width(previewW).Height(bodyH).Render(
 		Styles.Heading.Render(b.items[b.cursor].label) + "\n\n" + preview,
@@ -210,12 +242,13 @@ func (b browserModel) View(width, height int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, listBox, "  ", previewBox) + "\n" + hint
 }
 
-func previewText(path string, width, height int) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Styles.Err.Render("could not read " + path)
+// previewText formats the cached file contents to fit the preview pane. It does
+// no IO — the content was loaded in loadPreview when the selection last changed.
+func (b browserModel) previewText(width, height int) string {
+	if b.previewErr {
+		return Styles.Err.Render(b.previewRaw)
 	}
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(b.previewRaw, "\n")
 	if len(lines) > height {
 		lines = lines[:height]
 		lines = append(lines, Styles.Dim.Render("…"))
