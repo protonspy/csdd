@@ -28,6 +28,9 @@ message — do not use a placeholder or a generic "update files".
    - `type` ∈ feat | fix | refactor | test | docs | chore.
    - Reference the spec feature and the task IDs this slice completes.
    - `$ARGUMENTS` may add extra scope or a note — fold it in when present.
+   - The message carries **only** the content above — never append AI or assistant
+     attribution: no `Co-authored-by:` line for the assistant, no `Claude-Session` /
+     `claude.ai/code` link, no "🤖 Generated with…" trailer.
 3. Create the commit with `git commit`. Do **not** push — the `pre-push` hook
    runs the test gate at push time.
 4. Refuse to commit if a `code-reviewer` Blocker is still open, or if secrets
