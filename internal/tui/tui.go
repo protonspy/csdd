@@ -186,6 +186,3 @@ type resultMsg struct {
 func cmdBack() tea.Cmd                { return func() tea.Msg { return backToMenuMsg{} } }
 func cmdOpen(kind wizardKind) tea.Cmd { return func() tea.Msg { return openWizardMsg{kind} } }
 func cmdBrowser() tea.Cmd             { return func() tea.Msg { return openBrowserMsg{} } }
-func cmdResult(text string, isErr bool) tea.Cmd {
-	return func() tea.Msg { return resultMsg{text: text, isErr: isErr} }
-}

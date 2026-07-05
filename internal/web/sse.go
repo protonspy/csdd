@@ -134,14 +134,14 @@ func (h *hub) sseHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			writeEvent(w, flusher, v)
 		case <-keepalive.C:
-			fmt.Fprint(w, ": ping\n\n")
+			_, _ = fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
 		}
 	}
 }
 
 func writeEvent(w http.ResponseWriter, flusher http.Flusher, version int) {
-	fmt.Fprintf(w, "event: change\ndata: {\"version\":%d}\n\n", version)
+	_, _ = fmt.Fprintf(w, "event: change\ndata: {\"version\":%d}\n\n", version)
 	flusher.Flush()
 }
 

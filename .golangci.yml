@@ -13,3 +13,21 @@ linters:
     - ineffassign # assignments never read
     - staticcheck # staticcheck (SA/S/ST) suite
     - unused # unused code
+  exclusions:
+    rules:
+      # Test code is intentionally lax about unchecked errors (Close/Chdir/…) and
+      # uses patterns staticcheck false-positives on (e.g. randomToken() ==
+      # randomToken() to assert non-determinism, Hash("a") != Hash("a") to assert
+      # determinism).
+      - path: _test\.go
+        linters:
+          - errcheck
+          - staticcheck
+      # QF1001 (apply De Morgan's law) and S1016 (struct literal -> conversion)
+      # are style suggestions where the explicit form reads clearer; keep it.
+      - linters:
+          - staticcheck
+        text: "QF1001"
+      - linters:
+          - staticcheck
+        text: "S1016"

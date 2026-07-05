@@ -529,7 +529,7 @@ func parseLcov(root, path string) *Coverage {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	cov := &Coverage{Format: "lcov", Source: rel(root, path), Files: []FileCoverage{}}
 	var cur *FileCoverage
@@ -648,7 +648,7 @@ func parseGoCover(root, path string) *Coverage {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	cov := &Coverage{Format: "gocover", Source: rel(root, path), Files: []FileCoverage{}}
 	perFile := map[string]*FileCoverage{}

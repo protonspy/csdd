@@ -213,7 +213,7 @@ func skillShow(args []string) int {
 		return 1
 	}
 	fmt.Println(render.Bold(workspace.Relative(r, sdir)))
-	filepath.Walk(sdir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(sdir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}

@@ -116,7 +116,7 @@ func prog() string {
 }
 
 func help(w *os.File) {
-	fmt.Fprintln(w, strings.TrimSpace(helpText()))
+	_, _ = fmt.Fprintln(w, strings.TrimSpace(helpText()))
 }
 
 func helpText() string {

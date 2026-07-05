@@ -148,18 +148,18 @@ func tunnelWorker(ctx context.Context, remotePort, localPort int) {
 		first := make([]byte, 1)
 		n, rerr := remote.Read(first)
 		if rerr != nil {
-			remote.Close()
+			_ = remote.Close()
 			continue // idle pooled connection dropped; reconnect promptly
 		}
 		local, lerr := d.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
 		if lerr != nil {
-			remote.Close()
+			_ = remote.Close()
 			tunnelSleep(ctx, time.Second)
 			continue
 		}
 		if _, werr := local.Write(first[:n]); werr != nil {
-			remote.Close()
-			local.Close()
+			_ = remote.Close()
+			_ = local.Close()
 			continue
 		}
 		pipe(remote, local)
@@ -172,8 +172,8 @@ func pipe(a, b net.Conn) {
 	go func() { _, _ = io.Copy(a, b); done <- struct{}{} }()
 	go func() { _, _ = io.Copy(b, a); done <- struct{}{} }()
 	<-done
-	a.Close()
-	b.Close()
+	_ = a.Close()
+	_ = b.Close()
 }
 
 // tunnelPassword fetches the value loca.lt's "Tunnel website ahead" interstitial
