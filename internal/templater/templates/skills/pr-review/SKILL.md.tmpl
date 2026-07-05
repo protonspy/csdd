@@ -49,6 +49,9 @@ commit before review is clean; do not push before the commit exists.
   and the active spec and creates the commit. **Do not commit while a Blocker is open.**
 - `/csdd-commit` writes a Conventional Commits message referencing the spec feature
   and the task IDs this slice completes, one logical slice per commit.
+- The commit message carries **no AI or assistant attribution** — never append a
+  `Co-authored-by:` line for the assistant, a `Claude-Session` / `claude.ai/code`
+  link, or a "🤖 Generated with…" trailer.
 
 ### 4) Push — tests run here
 - `git push`. The `pre-push` hook runs the project's test gate and **blocks the push if anything is red**.
@@ -57,6 +60,8 @@ commit before review is clean; do not push before the commit exists.
 ### 5) Open or update the PR
 - Use the project's PR template (`.github/pull_request_template.md`).
 - Fill: summary, spec links, tasks completed, the real verification output, risks.
+- The PR title and body carry **no AI or assistant attribution** either — spec links
+  and evidence only, never a `Co-authored-by:` / `Claude-Session` / "Generated with…" line.
 - When a GitHub MCP server is connected, prefer its tools for reading PR/issue/Actions
   state (status, review threads, CI results) over shelling to `gh` — same data, typed.
 
@@ -78,6 +83,7 @@ the rule is violating its spirit.**
 - A Blocker is still open.
 - You're reaching for `git push --no-verify`.
 - Your PR body has no spec/task links or no verification output.
+- You're about to add a `Co-authored-by:`, `Claude-Session`, or "Generated with…" line to a commit or PR.
 
 If any fire, stop and return to the fixed order above.
 
