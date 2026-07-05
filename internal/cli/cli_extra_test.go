@@ -469,6 +469,9 @@ func TestSpecGenerateAndApproveWriteFailures(t *testing.T) {
 // Making the parent .claude/skills read-only is enough — RemoveAll cannot
 // unlink entries from a directory it has no write permission on.
 func TestSkillDeleteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -486,6 +489,9 @@ func TestSkillDeleteFailure(t *testing.T) {
 
 // TestAgentDeleteFailure mirrors TestSkillDeleteFailure for agents.
 func TestAgentDeleteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -503,6 +509,9 @@ func TestAgentDeleteFailure(t *testing.T) {
 
 // TestSteeringDeleteFailure mirrors the delete-failure pattern for steering.
 func TestSteeringDeleteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
@@ -520,6 +529,9 @@ func TestSteeringDeleteFailure(t *testing.T) {
 
 // TestSpecDeleteFailure covers specDelete's os.RemoveAll error branch.
 func TestSpecDeleteFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based permission restriction is a no-op on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses chmod; skipping")
 	}
