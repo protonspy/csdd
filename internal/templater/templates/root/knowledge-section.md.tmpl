@@ -1,0 +1,32 @@
+The workspace carries a **knowledge base** — a graph brain and an LLM-wiki — plus
+a **tech contract**. Drive them through the CLI (or `npx @protonspy/csdd …`); the CLI
+is the only author of `docs/graph/` and `.csdd/`, and nothing ever edits
+`docs/raw/`.
+
+**Workflow moments — do these without being asked:**
+
+- **Consult the graph before searching.** Before you grep or read source to
+  understand structure, query the brain: `csdd graph query "<terms>"`,
+  `csdd graph explain "<label>"`, `csdd graph path "<A>" "<B>"`. Understanding
+  should come from traversing relationships, not re-reading files.
+- **Rebuild after changing** specs, tasks, `.claude/`, `docs/`, or `.go` files:
+  `csdd graph build` (byte-stable output — commit it with the change).
+- **Ingest raw sources.** When a file lands in `docs/raw/`, run the `wiki` skill's
+  **Ingest** workflow: read it, write/extend pages under `docs/wiki/pages/` with
+  `sources:` provenance, cross-link, update `index.md` + `log.md`.
+- **Gate before commit/PR:** `csdd graph analyze --strict` (SDD + tech lints) and
+  `csdd wiki lint` (wiki health) must be clean.
+
+**The tech contract (`docs/stack.md`) is law.** Any technology **not** listed
+there is an **open decision**: propose 2–3 options with trade-offs and **ask the
+human** before adopting — never introduce a dependency silently (this is what
+stops assuming Redis when the decision was RabbitMQ). Before the first use of a
+listed library in a feature, **refine** it against current documentation
+(Context7 MCP when configured, else web search) and file the findings as a wiki
+page linked from that row's **Refs** column. Use the **stack** skill for all of
+this.
+
+**Invoke the `stack` skill whenever:** a new dependency or technology is about to
+enter the project; `csdd graph analyze` reports a tech finding
+(`undeclared`/`phantom`/`unrefined`); or the user mentions adopting or changing
+technology.

@@ -1,0 +1,21 @@
+---
+description: Run the mechanical SDD lint over the whole spec — untested criteria, orphan tasks, unimplemented components, pending references, cycles, plus wiki/tech findings.
+argument-hint: [--strict]
+allowed-tools: Bash(csdd graph analyze:*), Bash(npx @protonspy/csdd graph analyze:*), Bash(csdd graph build:*)
+---
+
+## Task
+
+Use the **graph** skill to gate the current work before review/commit:
+
+1. Rebuild first so the analysis reflects the working tree: `csdd graph build`.
+2. Run `csdd graph analyze --strict --json` (append `$ARGUMENTS`). `--strict`
+   exits non-zero when anything is found — treat that as a failing gate.
+3. Walk the `findings` array:
+   - `corpus: spec` — fix untested criteria / orphan tasks / unimplemented
+     components / pending references / dependency cycles at the source artifact.
+   - `corpus: wiki` — hand to the **wiki** skill (Maintain).
+   - `corpus: tech` — hand to the **stack** skill (Reconcile). Do not edit
+     manifests silently.
+4. Report each finding and its resolution, or explicitly flag anything deferred to
+   the human. Do not silently ignore a finding.

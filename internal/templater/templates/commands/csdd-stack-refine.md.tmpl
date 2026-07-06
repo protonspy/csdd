@@ -1,0 +1,20 @@
+---
+description: Refine a contracted library against current docs (Context7 MCP or web), file the findings as a wiki page, and link it in the contract's Refs.
+argument-hint: <library from docs/stack.md>
+allowed-tools: Read, Edit, Write, Bash(npx ctx7:*)
+---
+
+## Task
+
+Use the **stack** skill's **Refine** workflow for the library in `$ARGUMENTS`
+(before its first use in a feature):
+
+1. Run the currency check against **current documentation** — Context7 MCP when
+   configured (`ctx7`/find-docs), else web search. Do not rely on training data
+   for API/config/version details.
+2. Capture the findings as a wiki page `docs/wiki/pages/<library>.md` (via the
+   **wiki** skill, with `sources:` and `tags`).
+3. Link that page in the library's **Refs** column in `docs/stack.md`, and set
+   its **Version** if it was blank.
+4. Report what changed since your prior knowledge, so the implementation uses the
+   library correctly and current.

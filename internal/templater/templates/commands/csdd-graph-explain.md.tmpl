@@ -1,0 +1,14 @@
+---
+description: Explain one node in the csdd knowledge graph — its connections ordered by neighbor degree (the local map).
+argument-hint: <node label>
+allowed-tools: Bash(csdd graph explain:*), Bash(npx @protonspy/csdd graph explain:*)
+---
+
+## Task
+
+Use the **graph** skill. For the node named in `$ARGUMENTS`:
+
+1. Run `csdd graph explain "$ARGUMENTS" --json` (or the `npx @protonspy/csdd` form).
+2. Read the node and its connections, ordered by neighbor degree (hubs first).
+3. Report what the node is, what it connects to, and where it sits in the graph —
+   without reading the underlying files unless the graph is insufficient.

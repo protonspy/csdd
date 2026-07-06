@@ -7,8 +7,30 @@ package paths
 
 import "path/filepath"
 
-// ClaudeDir is the marker directory that identifies a workspace root.
+// ClaudeDir is the Claude Code configuration directory. Historically it also
+// marked a csdd workspace root; the marker is moving to StateDir (.csdd/), which
+// csdd owns exclusively (see StateDir).
 const ClaudeDir = ".claude"
+
+// StateDir is csdd's operational-state directory — the csdd analog of .git/. Its
+// presence at the project root is the workspace marker (R15): hash manifests,
+// incremental build state, and caches live here, never knowledge artifacts.
+const StateDir = ".csdd"
+
+// StateManifestSeg is the csdd-managed artifact manifest under .csdd/, migrated
+// from the legacy .claude/.csdd-manifest.json (R14). It drives `csdd update`.
+const StateManifestSeg = "manifest.json"
+
+// Documentation knowledge-base segments under docs/ (R7). docs/graph/ is the only
+// generated subtree; the rest is human/LLM-authored.
+const (
+	DocsSeg      = "docs"
+	DocsPlansSeg = "plans"
+	DocsRawSeg   = "raw"
+	DocsWikiSeg  = "wiki"
+	DocsGraphSeg = "graph"
+	StackSeg     = "stack.md"
+)
 
 // Entry-point files at the workspace root.
 const (
@@ -63,6 +85,31 @@ func Settings(root string) string { return filepath.Join(root, ClaudeDir, Settin
 // Manifest returns .claude/.csdd-manifest.json, the record of csdd-managed
 // artifacts and their content hashes that `csdd update` reconciles against.
 func Manifest(root string) string { return filepath.Join(root, ClaudeDir, ManifestSeg) }
+
+// State returns the .csdd/ operational-state directory (the workspace marker).
+func State(root string) string { return filepath.Join(root, StateDir) }
+
+// StateManifest returns .csdd/manifest.json, the current home of the csdd-managed
+// artifact manifest.
+func StateManifest(root string) string { return filepath.Join(root, StateDir, StateManifestSeg) }
+
+// Docs returns the repo-root docs/ knowledge-base directory.
+func Docs(root string) string { return filepath.Join(root, DocsSeg) }
+
+// DocsPlans returns docs/plans/.
+func DocsPlans(root string) string { return filepath.Join(root, DocsSeg, DocsPlansSeg) }
+
+// DocsRaw returns docs/raw/, the immutable raw-source dropzone.
+func DocsRaw(root string) string { return filepath.Join(root, DocsSeg, DocsRawSeg) }
+
+// DocsWiki returns docs/wiki/, the LLM-authored structured knowledge base.
+func DocsWiki(root string) string { return filepath.Join(root, DocsSeg, DocsWikiSeg) }
+
+// DocsGraph returns docs/graph/, the only generated subtree in docs/.
+func DocsGraph(root string) string { return filepath.Join(root, DocsSeg, DocsGraphSeg) }
+
+// Stack returns docs/stack.md, the human-authored tech contract.
+func Stack(root string) string { return filepath.Join(root, DocsSeg, StackSeg) }
 
 // MCP returns the repo-root .mcp.json.
 func MCP(root string) string { return filepath.Join(root, MCPFile) }

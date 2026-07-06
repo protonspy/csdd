@@ -1,0 +1,83 @@
+---
+name: stack
+description: Use whenever a new dependency/technology is about to enter the project, when `csdd graph analyze` reports tech findings, or when the user mentions adopting or changing technology. Owns the docs/stack.md contract — Propose, Refine, Reconcile — behind a human-decision gate. Never edits manifests or adopts tech without approval.
+---
+
+# Stack — the tech contract
+
+## Goal
+
+Keep **stack/library/framework decisions the human's**, written down in
+`docs/stack.md` as a contract the agent must follow — so architectural choices
+stay deliberate, libraries are used current and correctly, and silent tech
+decisions (assuming Redis when the decision was RabbitMQ) stop happening.
+
+**The contract is law.** Any technology not listed in `docs/stack.md` is an
+**open decision** — you propose options and ask; you do not adopt. This skill
+never edits dependency manifests and never adopts a technology without an
+explicit human decision.
+
+## The contract file
+
+`docs/stack.md` has three sections:
+- **Decided** — a parseable table `| Domain | Choice | Version | Why | Refs |`.
+  Each row is indexed as a `tech` node and matched against declared dependencies.
+- **Rules** — the decision protocol (pre-filled; see below).
+- **Open questions** — pending decisions.
+
+## Execution Workflow
+
+Three workflows, each gated on a human decision.
+
+1. **Propose** (a new tech need appears):
+   - Identify the need (broker, cache, router, ORM, …).
+   - Present **2–3 options with trade-offs** (fit, maturity, ops cost, lock-in).
+   - **Ask the human to choose.** Do not pick for them.
+   - Only *after* approval, amend the **Decided** table with the chosen row
+     (Domain, Choice, Version, Why, Refs). Add nothing to manifests yourself
+     beyond what the human authorized.
+2. **Refine** (before first use of a contracted library in a feature):
+   - Run the currency check against **current documentation** — Context7 MCP when
+     configured (`ctx7`/find-docs), else web search. Never rely on training data
+     for API details, config, or version specifics.
+   - File the findings as a wiki page (`docs/wiki/pages/<lib>.md`, via the wiki
+     skill) and link it in that row's **Refs** column.
+3. **Reconcile** (react to `csdd graph analyze` tech findings):
+   - `undeclared_tech` → a dependency is used but absent from the contract:
+     **Propose** it (options + ask) or remove the dependency. This is the
+     Celery+Redis catcher — do not just add the row silently.
+   - `phantom_tech` → a contract entry with no detected usage: confirm intent
+     (planned?) or drop the entry.
+   - `unrefined_tech` → a contract entry missing Version or Refs: run **Refine**.
+
+## Gotchas
+
+- **Never adopt or swap technology without an explicit human decision.** Options
+  and a question first; amendment only after approval.
+- **Never edit dependency manifests** (`go.mod`, `package.json`,
+  `pyproject.toml`, `requirements.txt`) as part of this skill — that is a code
+  change the human authorizes separately.
+- **Match names so lints resolve.** The contract `Choice` is matched to a
+  dependency by normalized short name (`chi` ↔ `github.com/go-chi/chi/v5`). Name
+  the choice to match the library, or the lints misfire.
+- **Refine uses live docs, not memory.** Context7 MCP when available, else web
+  search — then record what you found as a wiki page in Refs.
+- **No `docs/stack.md` is a lint finding, not an error.** Adoption is
+  incremental; scaffold it with `csdd init` (or create it) when the project is
+  ready to commit its stack.
+
+## Verification Before Reporting
+
+- Any technology you are about to introduce is either already in the **Decided**
+  table, or you presented options and the human explicitly chose.
+- After amending the contract, `csdd graph analyze` no longer reports the tech
+  finding you were resolving.
+- Refined entries carry a **Refs** link to a wiki page built from current docs.
+
+## Completion Criteria
+
+- Every technology in play is a human-approved row in `docs/stack.md`; no silent
+  additions.
+- `analyze` tech findings are resolved (Propose/confirm/drop/Refine) or explicitly
+  deferred to the human in Open questions.
+- No manifest was edited and no library was adopted without an explicit decision.

@@ -1,0 +1,18 @@
+---
+description: Run the deterministic wiki health check — broken wikilinks, orphan pages, index/log desync, unprocessed raw sources — and fix what it finds.
+argument-hint: [--json]
+allowed-tools: Bash(csdd wiki lint:*), Bash(npx @protonspy/csdd wiki lint:*), Read, Write, Edit
+---
+
+## Task
+
+Use the **wiki** skill's **Maintain** workflow:
+
+1. Run `csdd wiki lint --json` (append `$ARGUMENTS`). It exits non-zero when
+   anything is found.
+2. Fix each finding at the source:
+   - broken `[[wikilink]]` → correct the target or create the page.
+   - orphan page / index desync → list it in `index.md` (or link it from a page).
+   - malformed `log.md` entry → rewrite it as `## [YYYY-MM-DD] <op> | <title>`.
+   - **unprocessed raw source** → run the **Ingest** workflow for it.
+3. Re-run `csdd wiki lint` until it is clean (exit 0). Report what you fixed.

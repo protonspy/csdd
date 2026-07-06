@@ -62,6 +62,10 @@ func Run(args []string, templates embed.FS) int {
 		return runAgent(rest, templates)
 	case "mcp":
 		return runMCP(rest)
+	case "graph":
+		return runGraph(rest)
+	case "wiki":
+		return runWiki(rest, templates)
 	case "export":
 		return runExport(rest)
 	case "web", "--web":
@@ -139,6 +143,8 @@ RESOURCES
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
   mcp      {add,install,presets,list,show,remove,enable,disable,validate}
+  graph    {build,query,path,explain,analyze,export}   The knowledge-base index (a structured brain over the workspace).
+  wiki     {init,lint}                 The LLM-authored knowledge base under docs/ (scaffold + health lint).
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
   web                         Launch a read-only web dashboard (live spec progress + file viewer).
 

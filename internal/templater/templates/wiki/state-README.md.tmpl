@@ -1,0 +1,23 @@
+# `.csdd/` — csdd operational state
+
+Machine state only — the csdd analog of `.git/`. **No knowledge artifacts live
+here**: the knowledge graph is at `docs/graph/` and the wiki at `docs/wiki/`. The
+presence of this directory at the project root is the **workspace marker**:
+`csdd init` creates it, and `csdd graph`/`csdd wiki` require it.
+
+| File | Purpose | Committed? |
+|------|---------|------------|
+| `manifest.json` | Content hashes of the csdd-installed core files, used by `csdd update` to tell your edits from core drift. Migrated from the legacy `.claude/.csdd-manifest.json` (read-fallback kept). | yes |
+| `state.json` | Incremental graph-build state (per-source hashes). Regenerable. | no (local) |
+| `cache/` | Per-file extraction fragments keyed by content hash. Regenerable. | no (local) |
+
+Recommended `.gitignore`:
+
+```gitignore
+.csdd/state.json
+.csdd/cache/
+```
+
+Everything here except committed manifests is safe to delete — csdd rebuilds it.
+If you are looking for the graph, it is at `docs/graph/graph.json` (query it with
+`csdd graph query`, don't read it raw).

@@ -1,0 +1,16 @@
+# Wiki log
+
+Append-only chronology of knowledge-base operations. One heading per operation.
+`csdd wiki lint` flags any `## [` heading that does not match the format below.
+
+> **Entry format:** `## [YYYY-MM-DD] <op> | <title>` where
+> `op ∈ ingest | query | lint | refactor`. `grep "^## \[" log.md | tail -5` must
+> always list the five most recent operations.
+
+<!-- Newest entries at the bottom. Example:
+
+## [2026-01-01] ingest | Payment webhooks overview
+
+Ingested docs/raw/stripe-webhooks.md into pages/payment-webhooks.md; linked from
+[[payments]]; added to index under Concepts.
+-->

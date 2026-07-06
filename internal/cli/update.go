@@ -90,6 +90,27 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 	return out, nil
 }
 
+// loadWorkspaceManifest reads the csdd-managed manifest, preferring the new
+// .csdd/manifest.json home and falling back to the legacy
+// .claude/.csdd-manifest.json when the new path is absent (R14.1). Workspaces
+// that only have the legacy file keep working unchanged (R14.2).
+func loadWorkspaceManifest(root string) (*manifest.Manifest, bool, error) {
+	m, exists, err := manifest.Load(paths.StateManifest(root))
+	if err != nil {
+		return nil, false, err
+	}
+	if exists {
+		return m, true, nil
+	}
+	return manifest.Load(paths.Manifest(root))
+}
+
+// saveWorkspaceManifest always writes to the new .csdd/manifest.json path, so the
+// next save transparently migrates a legacy workspace forward (R14.1).
+func saveWorkspaceManifest(root string, m *manifest.Manifest, now time.Time) error {
+	return m.Save(paths.StateManifest(root), version, now)
+}
+
 // recordManifest rewrites the workspace manifest to record the shipped-content
 // hash of every managed file for this csdd version. Both `init` and `update`
 // call it so the baseline always reflects what csdd last wrote — which is what
@@ -101,7 +122,7 @@ func recordManifest(root string, templates embed.FS, now time.Time, skipped map[
 	if err != nil {
 		return err
 	}
-	prior, _, _ := manifest.Load(paths.Manifest(root))
+	prior, _, _ := loadWorkspaceManifest(root)
 	m := manifest.New()
 	for _, f := range files {
 		if skipped[f.Rel] {
@@ -112,7 +133,7 @@ func recordManifest(root string, templates embed.FS, now time.Time, skipped map[
 		}
 		m.Files[f.Rel] = managedBaselineHash(f, f.Content)
 	}
-	return m.Save(paths.Manifest(root), version, now)
+	return saveWorkspaceManifest(root, m, now)
 }
 
 type updateOptions struct {
@@ -247,7 +268,7 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 	if err != nil {
 		return res, err
 	}
-	base, existed, err := manifest.Load(paths.Manifest(opts.root))
+	base, existed, err := loadWorkspaceManifest(opts.root)
 	if err != nil {
 		return res, err
 	}

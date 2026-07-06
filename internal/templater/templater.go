@@ -126,6 +126,43 @@ func CommandFiles(efs fs.FS) (map[string]string, error) {
 	return staticTree(efs, "templates/commands")
 }
 
+// WikiScaffoldFiles returns the LLM-wiki scaffold `csdd wiki init` lays down,
+// keyed by workspace-relative destination path. It is the raw-source dropzone
+// plus the wiki catalog/log skeletons; page content is authored by the LLM, so
+// only docs/wiki/pages/ (a directory) is left for the wiki skill to fill.
+func WikiScaffoldFiles(efs fs.FS) (map[string]string, error) {
+	return renderMapping(efs, map[string]string{
+		"templates/wiki/raw-README.md.tmpl": "docs/raw/README.md",
+		"templates/wiki/index.md.tmpl":      "docs/wiki/index.md",
+		"templates/wiki/log.md.tmpl":        "docs/wiki/log.md",
+	})
+}
+
+// KnowledgeStructureFiles returns the remaining knowledge-base structure files
+// `csdd init` scaffolds: the generated-index README, the state-dir README, and
+// the (empty-of-choices) tech contract. Keyed by workspace-relative path.
+func KnowledgeStructureFiles(efs fs.FS) (map[string]string, error) {
+	return renderMapping(efs, map[string]string{
+		"templates/wiki/graph-README.md.tmpl": "docs/graph/README.md",
+		"templates/wiki/state-README.md.tmpl": ".csdd/README.md",
+		"templates/wiki/stack.md.tmpl":        "docs/stack.md",
+	})
+}
+
+// renderMapping reads each template path and returns a dest→content map with
+// line endings normalized to LF (byte-deterministic scaffolding).
+func renderMapping(efs fs.FS, mapping map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(mapping))
+	for tpl, dest := range mapping {
+		raw, err := fs.ReadFile(efs, tpl)
+		if err != nil {
+			return nil, err
+		}
+		out[dest] = textutil.NormalizeNewlines(string(raw))
+	}
+	return out, nil
+}
+
 // WorkflowTemplateFiles returns the versioned templates that belong under
 // .claude/templates/. The embedded tree uses implementation-oriented
 // names; this function emits the canonical on-disk layout from the guide.

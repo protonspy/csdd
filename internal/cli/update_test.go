@@ -89,12 +89,12 @@ func TestUpdatePristineOutdatedUpdatesInPlace(t *testing.T) {
 	if err := os.WriteFile(rule, []byte("OLD SHIPPED\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := manifest.Load(paths.Manifest(dir))
+	m, _, err := manifest.Load(paths.StateManifest(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.Files[relKey] = manifest.Hash("OLD SHIPPED\n")
-	if err := m.Save(paths.Manifest(dir), "test", time.Now()); err != nil {
+	if err := m.Save(paths.StateManifest(dir), "test", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -182,12 +182,12 @@ func TestUpdateCarriesManagedAgentModelEffortAcrossTemplateRefresh(t *testing.T)
 	if err := os.WriteFile(agent, []byte(oldWithOverrides), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := manifest.Load(paths.Manifest(dir))
+	m, _, err := manifest.Load(paths.StateManifest(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
 	m.Files[relKey] = manifest.Hash(oldShipped)
-	if err := m.Save(paths.Manifest(dir), "test", time.Now()); err != nil {
+	if err := m.Save(paths.StateManifest(dir), "test", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -399,7 +399,7 @@ func TestUpdateYesSkipsPrompt(t *testing.T) {
 
 func TestInitWritesManifest(t *testing.T) {
 	dir := freshWorkspace(t)
-	m, exists, err := manifest.Load(paths.Manifest(dir))
+	m, exists, err := manifest.Load(paths.StateManifest(dir))
 	if err != nil || !exists {
 		t.Fatalf("init should write a manifest: exists=%v err=%v", exists, err)
 	}

@@ -8,18 +8,20 @@ import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
 import { ResourceView } from './components/ResourceView'
+import { GraphView } from './components/GraphView'
 import { AuthScreen } from './components/AuthScreen'
 import { resourceKindsHint } from './resources'
 import type { ResourceKind } from './resources'
 
 // View is the top-level workspace area chosen from the header tabs. Specs and
 // Tests are full-width pages; Resources and Files use the contextual sidebar.
-export type View = 'specs' | 'resources' | 'files' | 'tests'
+export type View = 'specs' | 'resources' | 'files' | 'tests' | 'graph'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'specs', label: 'Specs' },
   { id: 'resources', label: 'Resources' },
   { id: 'files', label: 'Files' },
   { id: 'tests', label: 'Tests' },
+  { id: 'graph', label: 'Graph' },
 ]
 
 export type Selection =
@@ -158,6 +160,8 @@ export function App() {
             ))}
 
           {view === 'tests' && <TestsView version={version} />}
+
+          {view === 'graph' && <GraphView version={version} />}
         </main>
       </div>
     </div>
