@@ -1,0 +1,84 @@
+---
+name: wiki
+description: Use to build and maintain the docs/ knowledge base from raw sources — when the user drops a file into docs/raw/ (Ingest), when answering from accumulated knowledge (Query), or when keeping the wiki healthy (Maintain). You author the prose; the CLI scaffolds and lints deterministically.
+---
+
+# Wiki — the LLM-authored knowledge base
+
+## Goal
+
+Turn whatever the user drops into `docs/raw/` (articles, notes, transcripts,
+clippings — immutable, never edited) into a **solid, structured, interlinked
+markdown knowledge base** under `docs/wiki/` that is cheap for an LLM to consume.
+This is Karpathy's LLM-wiki pattern instantiated on csdd: **you author content**;
+the **CLI scaffolds and lints** (`csdd wiki init|lint`) but never writes prose and
+never touches `docs/raw/`.
+
+**Boundary (do not cross):** the wiki is a knowledge base built from
+`docs/raw/` — it is **not** documentation *of the specs*. `specs/` holds
+per-feature contracts; the wiki holds knowledge. When a page must mention project
+internals, **link** to them (a path or `[[wikilink]]`) — never restate them.
+Duplicated text is drift waiting to happen and a Maintain finding.
+
+## Page conventions
+
+- **One concept per page**, under `docs/wiki/pages/<slug>.md`.
+- **Frontmatter**: `title`, `tags: [..]`, and — crucially — `sources: [docs/raw/<file>]`
+  for provenance (every page records the raw source it was derived from).
+- **`[[wikilinks]]`** connect related pages. `[[Page Title]]`, `[[slug|alias]]`,
+  and `[[slug#anchor]]` all resolve to the page whose filename matches the slug.
+- **`index.md`** is the catalog (every page is listed under a category);
+  **`log.md`** is the append-only chronology.
+
+## Execution Workflow
+
+Three workflows. Deterministic structure comes from the CLI; judgment is yours.
+
+1. **Ingest** (a source landed in `docs/raw/`):
+   - Read the raw file. Do **not** modify it.
+   - Write or extend pages under `docs/wiki/pages/` capturing its knowledge, with
+     `sources:` pointing back at the raw file (this creates the `derived_from`
+     provenance edge that clears the "unprocessed source" lint).
+   - Add `[[wikilinks]]` to related pages; add the new page to `index.md` under
+     the right category.
+   - Append a `log.md` entry: `## [YYYY-MM-DD] ingest | <title>`.
+2. **Query** (answer from accumulated knowledge):
+   - Read `index.md`, drill into the relevant pages, and — for structural
+     questions — run `csdd graph query`/`explain` (the wiki is part of the same
+     graph). Synthesize with citations.
+   - When the synthesis is worth keeping, file it back as a new page (explorations
+     compound). Append `## [YYYY-MM-DD] query | <title>`.
+3. **Maintain** (keep it healthy):
+   - Run `csdd wiki lint` and fix every finding — broken `[[wikilinks]]`, orphan
+     pages, index desync, malformed `log.md` entries, and **unprocessed raw
+     sources** (Ingest them).
+   - Look for contradictions or stale claims between pages; reconcile them.
+   - Append `## [YYYY-MM-DD] refactor | <what changed>`.
+
+## Gotchas
+
+- **Never edit `docs/raw/`.** It is immutable input for everyone — CLI, LLM, and
+  (by convention) the user only adds, never rewrites.
+- **Never restate spec/code content.** Link to it. A page that duplicates
+  internals is a Maintain finding the moment the source changes.
+- **`sources:` is not optional.** A page without it reads as knowledge from
+  nowhere and leaves its raw source flagged "unprocessed".
+- **`log.md` format is linted.** Entries must be exactly
+  `## [YYYY-MM-DD] <op> | <title>` with `op ∈ ingest|query|lint|refactor`.
+- **The CLI is the only author of `docs/graph/`.** Rebuild with `csdd graph build`
+  after ingesting so the wiki corpus is reflected in the graph.
+
+## Verification Before Reporting
+
+- `csdd wiki lint` ran this session and reports **no findings** (exit 0), or every
+  finding is explicitly acknowledged to the human.
+- Every new/edited page carries `title` and `sources:` frontmatter and is listed
+  in `index.md`.
+- A `log.md` entry was appended for the operation, in the documented format.
+
+## Completion Criteria
+
+- New knowledge from `docs/raw/` is captured in `docs/wiki/pages/` with provenance
+  and cross-links; nothing under `docs/raw/` was modified.
+- `index.md` and `log.md` are in sync with the pages on disk (lint clean).
+- No page restates spec/code content — internals are linked, not duplicated.

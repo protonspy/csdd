@@ -1,0 +1,17 @@
+# `docs/raw/` — the raw-source dropzone (immutable)
+
+Drop sources here **verbatim**: articles, notes, transcripts, clippings, exported
+threads — anything you want turned into knowledge. One rule:
+
+> **Nothing here is ever edited — not by the CLI, not by the LLM.** Raw sources
+> are immutable input. You only ever *add* files.
+
+The `wiki` skill's **Ingest** workflow reads what you drop here and writes
+structured, interlinked pages under `docs/wiki/pages/`, recording provenance with
+a `sources:` frontmatter entry pointing back at the raw file. Until a page derives
+from a raw file, `csdd wiki lint` flags it as an **unprocessed source** — so
+nothing you drop is silently forgotten.
+
+The graph indexes each file here as an opaque `raw_source` node (path only; the
+content is never parsed). Its purpose in the graph is provenance (`derived_from`
+targets) and the unprocessed-source lint.

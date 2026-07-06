@@ -1,0 +1,26 @@
+# Knowledge base — consult it before searching
+
+csdd maintains a **knowledge base** in two cooperating halves. Use it; do not
+re-derive what it already holds.
+
+- **The graph** (`docs/graph/graph.json`, built by `csdd graph build`) is a
+  structured brain over specs, `.claude/`, `docs/`, the tech contract, and the Go
+  source. **Before you grep or read code** to understand structure, query it:
+  `csdd graph query "<terms>"`, `csdd graph explain "<label>"`,
+  `csdd graph path "<A>" "<B>"`. Understanding should come from traversing
+  relationships, not from re-reading files.
+- **The wiki** (`docs/wiki/`, authored via the `wiki` skill from immutable sources
+  in `docs/raw/`) is the prose knowledge base. **Read `docs/wiki/index.md`** before
+  searching the docs.
+
+Discipline:
+
+- **Rebuild after you change** specs, tasks, `.claude/`, `docs/`, or `.go` files:
+  `csdd graph build` (byte-stable; commit the regenerated `graph.json` with the
+  change).
+- **Gate before review/commit**: `csdd graph analyze --strict` (SDD + tech lints)
+  and `csdd wiki lint` (wiki health) must be clean.
+- **The CLI is the only author of `docs/graph/` and `.csdd/`.** Never hand-edit
+  them; never modify `docs/raw/`.
+- A new dependency or technology is an **open decision** — use the `stack` skill:
+  propose options, ask, and only then amend `docs/stack.md`.

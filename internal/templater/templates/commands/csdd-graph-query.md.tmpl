@@ -1,0 +1,20 @@
+---
+description: Query the csdd knowledge graph for nodes matching terms and their neighborhood (brain-first, before grepping).
+argument-hint: <terms to search for>
+allowed-tools: Bash(csdd graph query:*), Bash(npx @protonspy/csdd graph query:*)
+---
+
+## Task
+
+Use the **graph** skill. Answer `$ARGUMENTS` by consulting the knowledge graph
+instead of grepping or reading source:
+
+1. Run `csdd graph query "$ARGUMENTS" --json` (or `npx @protonspy/csdd graph query …`
+   when csdd is not installed globally).
+2. Read the matched nodes and their 1-hop neighborhood from the JSON.
+3. If you need the chain between two nodes, follow up with `csdd graph path`; for a
+   single node's full local map, `csdd graph explain`.
+4. Report the answer from the graph. Only fall back to reading files when the
+   graph cannot answer.
+
+Never open `docs/graph/graph.json` by hand — query it.

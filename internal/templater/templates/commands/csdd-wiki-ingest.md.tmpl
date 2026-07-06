@@ -1,0 +1,19 @@
+---
+description: Ingest a raw source from docs/raw/ into the wiki — read it, write/extend pages with provenance, cross-link, update index + log.
+argument-hint: [docs/raw/<file> or a description of what to ingest]
+allowed-tools: Read, Write, Edit, Bash(csdd wiki lint:*), Bash(csdd graph build:*)
+---
+
+## Task
+
+Use the **wiki** skill's **Ingest** workflow for `$ARGUMENTS` (or the most recent
+file the user dropped into `docs/raw/`):
+
+1. Read the raw source. **Do not modify anything under `docs/raw/`.**
+2. Write or extend pages under `docs/wiki/pages/` capturing its knowledge, each
+   with `title`, `tags`, and `sources: [docs/raw/<file>]` frontmatter.
+3. Add `[[wikilinks]]` to related pages; list the new page in `docs/wiki/index.md`.
+4. Append `## [YYYY-MM-DD] ingest | <title>` to `docs/wiki/log.md`.
+5. Rebuild and check: `csdd graph build` then `csdd wiki lint` (must be clean).
+
+Never restate spec/code internals — link to them.

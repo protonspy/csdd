@@ -55,3 +55,7 @@ internal/web/dist/*
 /.mcp.json
 /.githooks/
 /specs/
+
+# csdd operational state (.csdd/): local, regenerable — but commit manifests.
+/.csdd/state.json
+/.csdd/cache/

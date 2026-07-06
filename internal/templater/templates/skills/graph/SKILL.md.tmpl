@@ -1,0 +1,85 @@
+---
+name: graph
+description: Use to consult or refresh the csdd knowledge graph — before grepping/reading code to understand structure, after editing specs/tasks/code, and before review/commit. Drives everything through the `csdd graph` CLI; never writes docs/graph/ or .csdd/ directly.
+---
+
+# Graph — the structured brain
+
+## Goal
+
+Understand and govern the workspace by **querying its structure**, not by reading
+all of it. The graph is a deterministic, persistent index of every csdd artifact,
+the docs/ knowledge base, the tech contract, and (once present) the Go source —
+queried in milliseconds, answered within a token budget. Reach for it *before*
+grep/read and *before* review, so comprehension comes from traversing
+relationships (a few hundred tokens) instead of re-reading files (hundreds of
+thousands).
+
+The CLI is the **single mutation path** for the graph. This skill only ever
+*runs* `csdd graph …` (or `npx @protonspy/csdd graph …` when csdd is not installed
+globally). It never edits `docs/graph/` or `.csdd/` by hand — those are generated.
+
+## Execution Workflow
+
+Pick the moment, run the command, read the output — do not open `graph.json`.
+
+1. **Consult before searching (the brain-first habit).** Before you grep or read
+   source to answer "what depends on X?", "what implements Y?", "where are the
+   hubs?", ask the graph:
+   - `csdd graph query "<terms>" --json` — nodes matching a label, with their
+     1-hop neighborhood. Start here for "what is X and what touches it".
+   - `csdd graph explain "<label>" --json` — one node plus its connections
+     ordered by neighbor degree (the local map).
+   - `csdd graph path "<A>" "<B>" --json` — the shortest chain between two nodes
+     (e.g. a requirement and a code file): "what connects these, and what breaks
+     if I change it".
+2. **Rebuild after editing specs, tasks, or code.** Any change to `specs/`,
+   `.claude/`, `docs/`, or `.go` files makes the index stale:
+   - `csdd graph build` — full deterministic rebuild of `docs/graph/graph.json`
+     (+ one line appended to `docs/graph/log.md`). Byte-stable for an unchanged
+     corpus, so commit the result with the change that caused it.
+3. **Analyze before review or commit.** Run the mechanical SDD lint and treat it
+   as a gate:
+   - `csdd graph analyze --strict --json` — untested criteria, orphan tasks,
+     unimplemented components, pending references, dependency cycles, plus wiki
+     and tech findings. `--strict` exits non-zero, so it fails a pre-commit check.
+
+### Consuming `--json`
+
+Every subcommand takes `--json` and prints a machine-readable object on stdout
+(diagnostics go to stderr). Parse that instead of scraping the human table.
+`analyze --json` returns `{ "findings": [ {kind, corpus, node_id, label,
+message, file} ], "god_nodes": [...] }`; filter `corpus` to focus on `spec`,
+`wiki`, or `tech`.
+
+## Gotchas
+
+- **Never hand-edit `docs/graph/` or `.csdd/`.** They are generated; edits are
+  overwritten on the next `build` and corrupt the byte-stable diff. Change the
+  *source* artifact and rebuild.
+- **`analyze` reflects the live corpus, not the last committed `graph.json`.** It
+  rebuilds in memory, so it is always current — but that means a green `analyze`
+  needs the same working tree the reviewer will see.
+- **Range shorthand is a parse error.** `_Requirements: 3.1-3.5_` is reported,
+  not expanded. List IDs explicitly: `3.1, 3.2, 3.3, 3.4, 3.5`.
+- **A pending reference is a real gap, not noise.** It means an annotation points
+  at an ID that does not exist — fix the annotation or add the missing artifact.
+- **Tech findings route to the stack skill.** `undeclared_tech`,`phantom_tech`,
+  and `unrefined_tech` are contract issues — hand them to the `stack` skill's
+  Reconcile workflow, do not silently edit manifests.
+
+## Verification Before Reporting
+
+- You ran the actual `csdd graph …` command this session and read its output —
+  never report graph facts from memory or a stale `graph.json`.
+- Before claiming the contract is clean, `csdd graph analyze --strict` exited 0.
+- After any spec/task/code edit you intend to commit, `csdd graph build` ran and
+  the regenerated `docs/graph/graph.json` is staged alongside the change.
+
+## Completion Criteria
+
+- The question was answered by a graph query/path/explain, not by re-reading
+  source, whenever the graph could answer it.
+- `docs/graph/graph.json` is current with the working tree (rebuilt after edits).
+- `analyze` findings are either resolved or explicitly acknowledged to the human;
+  none were silently ignored.

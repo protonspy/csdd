@@ -1,0 +1,18 @@
+---
+description: Propose a technology decision — present 2-3 options with trade-offs and ask the human before amending the docs/stack.md contract.
+argument-hint: <the need, e.g. "message broker" or "http router">
+allowed-tools: Read, Edit, Bash(csdd graph analyze:*)
+---
+
+## Task
+
+Use the **stack** skill's **Propose** workflow for the need in `$ARGUMENTS`:
+
+1. Confirm the technology is not already a row in `docs/stack.md` **Decided**.
+2. Present **2–3 options with trade-offs** (fit, maturity, ops cost, lock-in).
+3. **Ask the human to choose.** Do not pick for them, and do not adopt anything.
+4. Only after an explicit decision, add the chosen row to the **Decided** table
+   (`| Domain | Choice | Version | Why | Refs |`). Do not edit dependency
+   manifests here — that is a separate, human-authorized code change.
+
+The contract is law: any technology not listed is an open decision.

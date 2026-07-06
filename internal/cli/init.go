@@ -157,6 +157,7 @@ var excludable = []struct{ key, desc string }{
 	{"commands", ".claude/commands/"},
 	{"hooks", ".claude/hooks/"},
 	{"specs", "specs/"},
+	{"knowledge", "docs/ knowledge base (plans/raw/wiki/graph) + docs/stack.md tech contract"},
 }
 
 // excludableKeys returns the valid --exclude component keys in canonical order.
@@ -238,6 +239,10 @@ func initWorkspace(root string, opts initOptions, templates embed.FS) (initCount
 		{"agents", paths.Agents(root)},
 		{"commands", paths.Commands(root)},
 		{"hooks", paths.Hooks(root)},
+		{"knowledge", paths.DocsPlans(root)},
+		{"knowledge", paths.DocsRaw(root)},
+		{"knowledge", filepath.Join(paths.DocsWiki(root), "pages")},
+		{"knowledge", paths.DocsGraph(root)},
 	}
 	for _, d := range dirs {
 		if opts.skip(d.comp) || pathExists(d.path) {
@@ -369,6 +374,47 @@ func initWorkspace(root string, opts initOptions, templates embed.FS) (initCount
 		}
 		// A no-op when CLAUDE.md was excluded (there is nothing to wire into).
 		if _, err := ensureSteeringImports(root, names...); err != nil {
+			return c, err
+		}
+	}
+
+	// The .csdd/ operational-state directory is the workspace marker (R15.2), so
+	// it is always created — even when the knowledge scaffold is excluded.
+	if !pathExists(paths.State(root)) {
+		if err := mkdirAll(paths.State(root)); err != nil {
+			return c, err
+		}
+		c.dirs++
+	}
+
+	// Knowledge-base scaffold: the docs/ raw+wiki structure, the generated-index
+	// and state READMEs, and the (choice-free) tech contract. Idempotent — never
+	// overwrites, never touches docs/raw/ contents (R9.3, R9.4, R15.1).
+	if !opts.skip("knowledge") {
+		scaffolds := []func(fs.FS) (map[string]string, error){
+			templater.WikiScaffoldFiles,
+			templater.KnowledgeStructureFiles,
+		}
+		for _, fn := range scaffolds {
+			files, err := fn(templates)
+			if err != nil {
+				return c, err
+			}
+			for rel, content := range files {
+				created, err := workspace.SafeWrite(filepath.Join(root, filepath.FromSlash(rel)), content)
+				if err != nil {
+					return c, err
+				}
+				if created {
+					c.files++
+				}
+			}
+		}
+	}
+
+	// Wire the managed knowledge-base section into CLAUDE.md (R16.3, R17.4, R17.7).
+	if !opts.skip("claude-md") {
+		if _, err := ensureKnowledgeSection(root, templates); err != nil {
 			return c, err
 		}
 	}

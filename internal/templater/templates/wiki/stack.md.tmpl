@@ -1,0 +1,37 @@
+# Tech contract
+
+The stack/library/framework decisions for this project, authored by **humans**.
+This file is **law**: any technology not listed below is an **open decision** —
+the agent proposes options and asks before adopting. `csdd graph analyze` indexes
+the Decided table and diffs it against declared dependencies, reporting undeclared
+usage, phantom entries, and unrefined rows.
+
+Manage it with the `stack` skill (Propose / Refine / Reconcile). Do not prefill
+technology choices you have not decided — the structure is provided; the decisions
+are yours.
+
+## Decided
+
+| Domain | Choice | Version | Why | Refs |
+|---|---|---|---|---|
+<!-- | Language | ... | ... | ... | ... | -->
+<!-- | HTTP router | ... | ... | ... | [notes](wiki/pages/<lib>.md) | -->
+
+## Rules
+
+1. **The contract is law.** Use only technologies listed in **Decided**. Anything
+   else is an open decision — propose 2–3 options with trade-offs and **ask the
+   human** before adopting. Never introduce a dependency silently.
+2. **Refine before first use.** Before first using a listed library in a feature,
+   check it against **current documentation** (Context7 MCP when configured, else
+   web search), file the findings as a wiki page, and link it in that row's
+   **Refs**. Do not rely on training data for API/config/version details.
+3. **Reconcile on findings.** When `csdd graph analyze` reports a tech finding,
+   resolve it: `undeclared` → propose it or remove the dependency; `phantom` →
+   confirm intent or drop the entry; `unrefined` → refine it.
+4. **Decisions are the human's.** The agent never edits dependency manifests or
+   adopts technology without an explicit human decision.
+
+## Open questions
+
+<!-- - Which broker: RabbitMQ vs Redis Streams vs Kafka? (owner: ..., due: ...) -->

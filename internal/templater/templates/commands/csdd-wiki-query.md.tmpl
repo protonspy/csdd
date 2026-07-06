@@ -1,0 +1,17 @@
+---
+description: Answer a question from the accumulated wiki knowledge — read index + pages, use the graph for structure, synthesize with citations.
+argument-hint: <question>
+allowed-tools: Read, Bash(csdd graph query:*), Bash(csdd graph explain:*), Write
+---
+
+## Task
+
+Use the **wiki** skill's **Query** workflow to answer `$ARGUMENTS`:
+
+1. Read `docs/wiki/index.md`, then drill into the relevant pages.
+2. For structural questions, run `csdd graph query`/`explain` (the wiki is part of
+   the same graph).
+3. Synthesize an answer **with citations** to the pages/sources you used.
+4. If the synthesis is worth keeping, file it back as a new page under
+   `docs/wiki/pages/` (with `sources:`), list it in `index.md`, and append
+   `## [YYYY-MM-DD] query | <title>` to `log.md` — explorations compound.

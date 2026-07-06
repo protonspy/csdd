@@ -1,0 +1,16 @@
+---
+description: Show the shortest path between two nodes in the csdd knowledge graph — "what connects these, and what breaks if I change one".
+argument-hint: <A> <B>
+allowed-tools: Bash(csdd graph path:*), Bash(npx @protonspy/csdd graph path:*)
+---
+
+## Task
+
+Use the **graph** skill. For the two nodes named in `$ARGUMENTS` (A then B):
+
+1. Run `csdd graph path "<A>" "<B>" --json` (or the `npx @protonspy/csdd` form).
+2. Read the returned steps — each edge with its real direction.
+3. Report the chain and what it implies: what connects A to B, and what would be
+   affected if either changes.
+
+If A and B resolve to the same node the CLI errors — pick more specific labels.

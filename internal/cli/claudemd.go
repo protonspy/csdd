@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"embed"
 	"os"
 	"strings"
 
 	"github.com/protonspy/csdd/internal/paths"
+	"github.com/protonspy/csdd/internal/templater"
 	"github.com/protonspy/csdd/internal/textutil"
 	"github.com/protonspy/csdd/internal/workspace"
 )
@@ -14,6 +16,60 @@ const (
 	steeringMarkerStart = "<!-- csdd:steering:start -->"
 	steeringMarkerEnd   = "<!-- csdd:steering:end -->"
 )
+
+// Markers delimiting the csdd-managed knowledge-base section inside CLAUDE.md
+// (the graph/wiki workflow moments + the tech-contract protocol).
+const (
+	knowledgeMarkerStart = "<!-- csdd:knowledge:start -->"
+	knowledgeMarkerEnd   = "<!-- csdd:knowledge:end -->"
+)
+
+// ensureKnowledgeSection writes the knowledge-base workflow moments (R16.3) and
+// the tech-contract protocol (R17.4, R17.7) into the managed block of CLAUDE.md.
+// It fills the empty markers a fresh template ships with, and — for a legacy
+// CLAUDE.md that predates them — appends the whole section (markers + content).
+// A no-op when CLAUDE.md is absent. Returns whether the file was changed.
+func ensureKnowledgeSection(root string, templates embed.FS) (bool, error) {
+	entry := paths.Entry(root)
+	data, err := os.ReadFile(entry)
+	if err != nil {
+		return false, nil // no CLAUDE.md — nothing to wire
+	}
+	body, err := templater.Static(templates, "templates/root/knowledge-section.md.tmpl")
+	if err != nil {
+		return false, err
+	}
+	body = strings.TrimRight(body, "\n")
+	text := textutil.NormalizeNewlines(string(data))
+
+	start := strings.Index(text, knowledgeMarkerStart)
+	end := strings.Index(text, knowledgeMarkerEnd)
+	var rebuilt string
+	switch {
+	case start != -1 && end != -1 && end > start:
+		// Fill (or refresh) the content between existing markers.
+		before := text[:start+len(knowledgeMarkerStart)]
+		after := text[end:]
+		newBlock := before + "\n" + body + "\n" + after
+		if newBlock == text {
+			return false, nil
+		}
+		rebuilt = newBlock
+	default:
+		// Legacy CLAUDE.md without the markers: append the managed section.
+		section := "\n## Knowledge base — graph, wiki, tech contract\n\n" +
+			knowledgeMarkerStart + "\n" + body + "\n" + knowledgeMarkerEnd + "\n"
+		if strings.HasSuffix(text, "\n") {
+			rebuilt = text + section
+		} else {
+			rebuilt = text + "\n" + section
+		}
+	}
+	if err := workspace.AtomicWrite(entry, []byte(rebuilt), 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 // ensureSteeringImports inserts `@.claude/steering/<name>` import lines into the
 // managed block of CLAUDE.md, one per steering file name (e.g. "product.md").
