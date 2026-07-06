@@ -65,9 +65,9 @@ func requireWorkspace(root string) error {
 		return nil
 	}
 	if dirExists(paths.Claude(root)) {
-		return fmt.Errorf("legacy csdd workspace: found .claude/ but no .csdd/ at %s.\n  Re-run `%s init` to upgrade it in place — nothing is overwritten, only the missing .csdd/ (and other new pieces) are added.", root, prog())
+		return fmt.Errorf("legacy csdd workspace: found .claude/ but no .csdd/ at %s — re-run `%s init` to upgrade it in place (nothing is overwritten; only the missing .csdd/ and other new pieces are added)", root, prog())
 	}
-	return fmt.Errorf("not a csdd workspace (no .csdd/ at %s). Run `%s init` first.", root, prog())
+	return fmt.Errorf("not a csdd workspace (no .csdd/ at %s) — run `%s init` first", root, prog())
 }
 
 // resolveGraphRoot resolves --root and enforces the workspace marker.

@@ -346,7 +346,7 @@ func Path(g *Graph, a, b string, maxHops int) (*PathResult, error) {
 		return nil, fmt.Errorf("no node matches %q", b)
 	}
 	if from.ID == to.ID {
-		return nil, fmt.Errorf("A and B resolve to the same node (%s)", from.ID)
+		return nil, fmt.Errorf("both endpoints resolve to the same node (%s)", from.ID)
 	}
 	if maxHops <= 0 {
 		maxHops = len(g.Nodes) + 1

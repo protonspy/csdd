@@ -108,10 +108,8 @@ func cleanCitedToken(tok string) string {
 	if strings.Contains(tok, "://") || strings.HasPrefix(tok, "http") || strings.HasPrefix(tok, "#") || strings.HasPrefix(tok, "mailto:") {
 		return ""
 	}
-	// Reject wikilink-ish or absolute-URL fragments.
-	if strings.HasPrefix(tok, "/") {
-		tok = strings.TrimPrefix(tok, "/")
-	}
+	// Drop a leading slash so an absolute-looking cite resolves workspace-relative.
+	tok = strings.TrimPrefix(tok, "/")
 	if tok == "" {
 		return ""
 	}

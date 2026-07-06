@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"path"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -144,11 +143,6 @@ func extractRequirements(spec string, src Source) []Fragment {
 	}
 	return []Fragment{frag}
 }
-
-// reCriterionRef matches a clean N.M criterion reference for validating a
-// traceability requirement cell (a value that is not this is preserved as a
-// pending/range reference).
-var reCriterionRef = regexp.MustCompile(`^\d+\.\d+$`)
 
 func extractDesign(spec string, src Source) []Fragment {
 	lines := normLines(src.Content)
@@ -424,9 +418,7 @@ func cleanTaskLabel(title string) string {
 func inlineBoundaries(title string) []string {
 	var out []string
 	for _, m := range reInlineBoundary.FindAllStringSubmatch(title, -1) {
-		for _, b := range splitList(m[1]) {
-			out = append(out, b)
-		}
+		out = append(out, splitList(m[1])...)
 	}
 	return out
 }
@@ -459,23 +451,4 @@ func depLine(line string) (names []string, kind string, ok bool) {
 		}
 	}
 	return nil, "", false
-}
-
-// isValidCriterionRef reports whether ref is a clean N.M reference.
-func isValidCriterionRef(ref string) bool {
-	return reCriterionRef.MatchString(ref)
-}
-
-// requirementRefParts splits an N.M reference; returns ok=false for non-numeric.
-func requirementRefParts(ref string) (n, m int, ok bool) {
-	parts := strings.Split(ref, ".")
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-	a, err1 := strconv.Atoi(parts[0])
-	b, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return 0, 0, false
-	}
-	return a, b, true
 }
