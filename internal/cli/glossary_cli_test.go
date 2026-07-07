@@ -121,7 +121,7 @@ func TestGlossaryLintE2E(t *testing.T) {
 	}
 
 	// 4. The orphan-term informational fires (Feat is unused here).
-	code, out, _ = run(t, "graph", "analyze", "--root", dir)
+	_, out, _ = run(t, "graph", "analyze", "--root", dir)
 	if !strings.Contains(out, "orphan term") {
 		t.Errorf("expected an orphan_term finding in analyze; out=%s", out)
 	}

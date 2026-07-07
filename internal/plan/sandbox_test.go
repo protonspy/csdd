@@ -3,6 +3,7 @@ package plan
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -33,12 +34,13 @@ func TestSandboxInitScaffold(t *testing.T) {
 			t.Errorf("%s contains CRLF; must be LF-normalized", name)
 		}
 	}
-	// The firewall script is executable.
+	// The firewall script is executable. Windows has no POSIX exec bit, so the
+	// mode check only applies on Unix.
 	fi, err := os.Stat(filepath.Join(root, ".devcontainer", "init-firewall.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm()&0o100 == 0 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm()&0o100 == 0 {
 		t.Errorf("init-firewall.sh should be executable, got %v", fi.Mode())
 	}
 	// Default (non-hardened) build arg.

@@ -96,7 +96,7 @@ func Run(opts RunOptions) (RunSummary, error) {
 	fillRunDefaults(&opts)
 	h := opts.Hooks
 	out := opts.Out
-	logf := func(format string, a ...any) { fmt.Fprintf(out, format+"\n", a...) }
+	logf := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format+"\n", a...) }
 
 	doc, err := Load(opts.Root, opts.Slug)
 	if err != nil {
@@ -181,7 +181,7 @@ func Run(opts RunOptions) (RunSummary, error) {
 func executeStep(opts RunOptions, doc *PlanDoc, step Step, mode SessionMode, sum *RunSummary) bool {
 	h := opts.Hooks
 	out := opts.Out
-	logf := func(format string, a ...any) { fmt.Fprintf(out, format+"\n", a...) }
+	logf := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format+"\n", a...) }
 
 	baseBrief, err := Brief(opts.Root, doc, step)
 	if err != nil {
@@ -399,7 +399,7 @@ func fillRunDefaults(opts *RunOptions) {
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
-	fmt.Fprintf(out, "totals: %d steps, %d retries, %d blocks\n", sum.Steps, sum.Retries, sum.Blocks)
+	_, _ = fmt.Fprintf(out, "totals: %d steps, %d retries, %d blocks\n", sum.Steps, sum.Retries, sum.Blocks)
 	return sum
 }
 
