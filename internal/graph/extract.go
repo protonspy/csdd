@@ -45,6 +45,9 @@ func defaultExtractors() []Extractor {
 		&specExtractor{},
 		&claudeExtractor{},
 		&stackExtractor{},
+		&planExtractor{},
+		&adrExtractor{},
+		&glossaryExtractor{},
 		&wikiExtractor{},
 		&goExtractor{},
 	}

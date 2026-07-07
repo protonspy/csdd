@@ -62,6 +62,7 @@ func extractSpecJSON(spec string, src Source) ([]Fragment, error) {
 		Phase           string          `json:"phase"`
 		DevelopmentFlow string          `json:"development_flow"`
 		Ready           bool            `json:"ready_for_implementation"`
+		Plan            string          `json:"plan"`
 		Approvals       json.RawMessage `json:"approvals"`
 	}
 	// A malformed spec.json still yields a bare spec node so the folder is indexed.
@@ -81,10 +82,20 @@ func extractSpecJSON(spec string, src Source) ([]Fragment, error) {
 		attrs["language"] = doc.Language
 	}
 	attrs["ready_for_implementation"] = doc.Ready
-	return []Fragment{{Nodes: []Node{{
+	frag := Fragment{Nodes: []Node{{
 		ID: specNodeID(spec), Label: label, FileType: TypeSpec,
 		SourceFile: src.Path, SourceLocation: "L1", Attrs: attrs,
-	}}}}, nil
+	}}}
+	// spec.json provenance (`plan`) → a plans edge from the owning feat (R8.2).
+	// It resolves only when that feat node exists (the plan still lists the row),
+	// mirroring the edge the plan extractor emits; dedup collapses the pair.
+	if doc.Plan != "" {
+		frag.Edges = append(frag.Edges, Edge{
+			Source: featNodeID(doc.Plan, spec), Target: specNodeID(spec), Relation: RelPlans,
+			Confidence: Extracted, ConfidenceScore: 1.0, SourceFile: src.Path, Ref: spec,
+		})
+	}
+	return []Fragment{frag}, nil
 }
 
 var reRequirementHeading = regexp.MustCompile(`^###\s+Requirement\s+(\d+)\s*:?\s*(.*)$`)

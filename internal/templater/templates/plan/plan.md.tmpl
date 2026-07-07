@@ -1,0 +1,64 @@
+---
+name: {{.Name}}
+status: draft
+---
+
+# {{.Name}} — Plan
+
+<!--
+This is a csdd PLAN: the structured document ABOVE specs. It decomposes an
+initiative into FEATS, where each feat becomes exactly one spec in specs/.
+Author the prose freely; the three sections below (## Feats, ## Quality Gates,
+## Executor Notes) are machine-parsed and linted by `csdd plan validate`. Two
+human gates bracket the whole flow — `csdd plan approve` before autonomous work,
+the pull request after — and everything between is contract-checked machine work.
+Do not fill in choices you have not made; the structure is provided, the
+decisions are yours.
+-->
+
+## Context and vision
+
+<!-- What are we building, and why now? Free prose; the parser ignores it. -->
+
+## Feats
+
+<!--
+One row per feat. A feat = one spec = a short session chain of work. Keep each
+feat small enough that a fresh session can carry it through requirements →
+design → tasks → implementation. Columns (all required, matched by header name):
+
+  #          display order
+  Feat       kebab-case slug — becomes the spec directory name
+  Objective  one line: the outcome this feat delivers
+  Depends    comma-separated feat slugs that must be `done` first (— for none;
+             range shorthand like `1-3` is a validation error — list slugs)
+  Milestone  grouping label (e.g. M1); feats run in milestone then table order
+  (P)        `P` if this feat MAY run in parallel with its milestone siblings
+             (v1 honors the marker for ordering only)
+  Refs       whitespace-separated [[wiki-page]], stack:<name>, and adr:<slug>
+             tokens; each stack:<name> must match a docs/stack.md Decided row,
+             each [[wiki-page]] a page under docs/wiki/pages/, and each
+             adr:<slug> a decision record docs/adr/NNNN-<slug>.md (the why this
+             feat depends on — inlined in full into its run brief)
+-->
+
+| # | Feat | Objective | Depends | Milestone | (P) | Refs |
+|---|------|-----------|---------|-----------|-----|------|
+<!-- | 1 | example-feat | Deliver the thing | — | M1 | | stack:go [[design-notes]] adr:pick-store | -->
+
+## Quality Gates
+
+<!--
+The plan's own verification contract: `- <label>: <command>` lines. The runner
+executes every gate after each implementation step; a red gate blocks advance.
+At least one gate is required for the plan to validate.
+-->
+
+<!-- - verify: make check -->
+
+## Executor Notes
+
+<!--
+Opaque guidance passed verbatim into every session brief: repo conventions,
+workstation quirks, commit rules. Keep it short and imperative.
+-->

@@ -1,0 +1,36 @@
+# csdd sandbox — hardened, language-agnostic devcontainer image.
+#
+# Base is the official devcontainers Ubuntu image (ships a non-root `vscode`
+# user). NO language runtime is installed here: Node (for Claude Code), Go,
+# Python, etc. arrive as devcontainer features so the image stays neutral and
+# every project pins its own toolchain via `csdd sandbox init --feature <name>`.
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+
+# HARDENED restricts the vscode user's sudo to ONLY the firewall script (no
+# general root). It is the recommended build for unattended
+# `csdd plan run --autonomous`; the default keeps broad sudo for interactive use.
+ARG HARDENED=false
+
+# Firewall + resolver tooling. iptables/ipset enforce the default-deny egress;
+# dnsutils/curl/jq resolve and verify the allow-list.
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+ && apt-get install -y --no-install-recommends \
+      iptables ipset dnsutils curl jq ca-certificates \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install the default-deny firewall and its allow-list.
+COPY init-firewall.sh /usr/local/bin/init-firewall.sh
+COPY allowed-domains.txt /etc/csdd/allowed-domains.txt
+RUN chmod +x /usr/local/bin/init-firewall.sh
+
+# Sudo policy. The firewall must run as root at container start; HARDENED limits
+# sudo to exactly that command so a bypass-mode session cannot escalate to a
+# general root shell and reprogram egress.
+RUN if [ "$HARDENED" = "true" ]; then \
+      echo 'vscode ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh' > /etc/sudoers.d/csdd-firewall ; \
+    else \
+      echo 'vscode ALL=(root) NOPASSWD: ALL' > /etc/sudoers.d/csdd-firewall ; \
+    fi \
+ && chmod 0440 /etc/sudoers.d/csdd-firewall
+
+USER vscode

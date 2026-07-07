@@ -1,0 +1,11 @@
+---
+description: Lint a csdd plan — feat-table grammar, dependency cycles, undeclared tech, broken refs, missing quality gates, and EARS over seeds.
+argument-hint: <plan-slug>
+allowed-tools: Bash(csdd plan validate:*), Bash(npx @protonspy/csdd plan validate:*)
+---
+
+## Task
+
+Run `csdd plan validate $ARGUMENTS` and report the findings. Exit non-zero means
+the plan is not ready to approve — walk each finding and fix `plan.md` (or the
+seeds), then re-run. Do not approve a plan with open findings.

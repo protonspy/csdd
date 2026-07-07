@@ -29,7 +29,9 @@ const (
 	DocsRawSeg   = "raw"
 	DocsWikiSeg  = "wiki"
 	DocsGraphSeg = "graph"
+	DocsADRSeg   = "adr"
 	StackSeg     = "stack.md"
+	GlossarySeg  = "glossary.md"
 )
 
 // Entry-point files at the workspace root.
@@ -37,6 +39,11 @@ const (
 	EntryFile = "CLAUDE.md" // agent entry point, imports steering via @-references
 	MCPFile   = ".mcp.json" // Model Context Protocol server config (Claude Code convention)
 )
+
+// DevcontainerDir is the standard devcontainer location at the project root,
+// scaffolded by `csdd sandbox init` (the hardened, default-deny-egress
+// environment that gates bypass-mode Claude runs).
+const DevcontainerDir = ".devcontainer"
 
 // Relative segment names. Most live under .claude/; specs/ lives at the root.
 const (
@@ -108,11 +115,23 @@ func DocsWiki(root string) string { return filepath.Join(root, DocsSeg, DocsWiki
 // DocsGraph returns docs/graph/, the only generated subtree in docs/.
 func DocsGraph(root string) string { return filepath.Join(root, DocsSeg, DocsGraphSeg) }
 
+// DocsADR returns docs/adr/, the human/LLM-authored decision records (one flat,
+// append-only, project-scoped sequence). Linted by the CLI, never written by it.
+func DocsADR(root string) string { return filepath.Join(root, DocsSeg, DocsADRSeg) }
+
 // Stack returns docs/stack.md, the human-authored tech contract.
 func Stack(root string) string { return filepath.Join(root, DocsSeg, StackSeg) }
 
+// Glossary returns docs/glossary.md, the human/LLM-authored ubiquitous-language
+// contract (canonical terms + _Avoid_ aliases). Parsed and linted by the CLI,
+// never written by it.
+func Glossary(root string) string { return filepath.Join(root, DocsSeg, GlossarySeg) }
+
 // MCP returns the repo-root .mcp.json.
 func MCP(root string) string { return filepath.Join(root, MCPFile) }
+
+// Devcontainer returns the .devcontainer/ directory under root.
+func Devcontainer(root string) string { return filepath.Join(root, DevcontainerDir) }
 
 // Entry returns the repo-root CLAUDE.md.
 func Entry(root string) string { return filepath.Join(root, EntryFile) }

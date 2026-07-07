@@ -30,3 +30,43 @@ this.
 enter the project; `csdd graph analyze` reports a tech finding
 (`undeclared`/`phantom`/`unrefined`); or the user mentions adopting or changing
 technology.
+
+**Decision records (`docs/adr/`) capture the why.** A decision that passes the
+**triple gate** — **hard to reverse**, **surprising without context**, **the result
+of a real trade-off** — becomes an ADR at `docs/adr/NNNN-<slug>.md` (append-only,
+project-scoped; a `# <title>` heading then 1–3 sentences). Feats cite it as
+`adr:<slug>` in their `Refs`, `csdd plan validate` breaks on a broken/ambiguous/
+superseded citation, and the record is inlined into every run brief for the feats
+that cite it. **Never decide silently** — a gate-positive decision with no ADR is an
+open decision, not an improvisation. **Never edit a superseded record** — mark it
+`status: superseded` / `superseded-by: <NNNN>` and write its successor. A decision
+that fails the gate is prose, never an ADR (that is what stops ADR spam). The
+`/prd` and `quick-prd` skills own recording the decision the moment it resolves.
+
+**The glossary (`docs/glossary.md`) is the ubiquitous language.** Each domain
+concept has one **canonical term** with a tight definition and an `_Avoid_` list of
+banned synonyms. Identifiers — feat slugs, spec directories, wiki page names — are
+minted from canonical terms; `csdd plan validate`, `csdd graph analyze`, and
+`csdd wiki lint` report an avoided term used as a whole token. **When a domain term
+is contested or fuzzy, invoke the `glossary` skill** — challenge it, sharpen it to
+one canonical form, and record it inline (the file is created lazily on the first
+term). **Never rename a term without its tombstone**: append the old term to the
+successor's `_Avoid_` list in the same edit so the old name stays banned forever.
+
+**Plan mode — the layer above specs.** A **plan** (`docs/plans/<slug>/`) decomposes
+an initiative into **feats**, each becoming exactly one spec.
+
+- **Run `/prd` before multi-feature work.** Anything that spans more than one spec
+  starts as a plan: `/prd` (the PRD skill) interviews, researches, consults the
+  stack, decomposes into feats, and lints with `csdd plan validate` — ending at a
+  validated plan for you to `csdd plan approve`. A single feature stays on the
+  lighter `quick-prd` on-ramp.
+- **Never edit an approved plan, and never execute approvals, during a run.**
+  `csdd plan run` is csdd-controlled: the runner owns `csdd spec approve`, commits,
+  and every write to `plan.md`/`plan.json`/`docs/graph/`/`.csdd/`. A session that
+  touches those is a hard failure. Approval is bound to a content hash — any edit
+  is drift and pauses autonomy until re-approval.
+- **Deviations go through Revise, not improvisation.** When a step hits an
+  unforeseen problem, return a `blocked` verdict with a revision proposal; folding
+  it into the plan and re-approving is the PRD skill's **Revise** workflow — a
+  human act, never a silent workaround.

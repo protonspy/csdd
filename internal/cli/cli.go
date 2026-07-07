@@ -56,6 +56,10 @@ func Run(args []string, templates embed.FS) int {
 		return runSteering(rest, templates)
 	case "spec":
 		return runSpec(rest, templates)
+	case "plan":
+		return runPlan(rest, templates)
+	case "sandbox":
+		return runSandbox(rest, templates)
 	case "skill":
 		return runSkill(rest, templates)
 	case "agent":
@@ -140,6 +144,8 @@ RESOURCES
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
+  plan     {init,validate,approve,status,next,brief,generate,run}   Plans decompose an initiative into feats (docs/plans/<slug>/); each feat becomes one spec.
+  sandbox  {init,doctor}                        Scaffold a hardened default-deny-egress devcontainer; doctor proves isolation before bypass mode.
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
   mcp      {add,install,presets,list,show,remove,enable,disable,validate}

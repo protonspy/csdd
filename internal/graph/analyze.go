@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/protonspy/csdd/internal/glossary"
 )
 
 // Finding is one mechanical contract violation surfaced by analyze. Corpus tags
@@ -36,9 +38,11 @@ type GapReport struct {
 
 // Corpus tags.
 const (
-	corpusSpec = "spec"
-	corpusWiki = "wiki"
-	corpusTech = "tech"
+	corpusSpec     = "spec"
+	corpusWiki     = "wiki"
+	corpusTech     = "tech"
+	corpusPlan     = "plan"
+	corpusGlossary = "glossary"
 )
 
 // Finding kinds.
@@ -59,6 +63,13 @@ const (
 	kindPhantomTech         = "phantom_tech"
 	kindUnrefinedTech       = "unrefined_tech"
 	kindNoTechContract      = "no_tech_contract"
+	kindUnplannedSpec       = "unplanned_spec"
+	kindFeatDependencyCycle = "feat_dependency_cycle"
+	kindBrokenPlanRef       = "broken_plan_ref"
+	kindBrokenDecisionRef   = "broken_decision_ref"
+	kindOrphanDecision      = "orphan_decision"
+	kindAvoidedTerm         = "avoided_term"
+	kindOrphanTerm          = "orphan_term"
 )
 
 // Analyze runs every mechanical check over an assembled graph. root is used only
@@ -69,6 +80,8 @@ func Analyze(g *Graph, root string) GapReport {
 	r.Findings = append(r.Findings, specFindings(g)...)
 	r.Findings = append(r.Findings, wikiFindings(g, root)...)
 	r.Findings = append(r.Findings, techFindings(g, root)...)
+	r.Findings = append(r.Findings, planFindings(g)...)
+	r.Findings = append(r.Findings, glossaryFindings(g, root)...)
 	r.GodNodes = godNodes(g)
 	sortFindings(r.Findings)
 	return r
@@ -310,6 +323,138 @@ func techFindings(g *Graph, root string) []Finding {
 	return out
 }
 
+// planFindings surfaces the plan-corpus lints (R12.2): specs no feat plans
+// ("unplanned spec", informational), feat dependency cycles, and broken plan
+// [[wiki-page]] refs. Broken refs are read from the feat node's wiki_refs attr
+// (not from a dangling edge) so a not-yet-created page is caught precisely.
+func planFindings(g *Graph) []Finding {
+	es := buildEdgeSets(g)
+	wikiPresent := map[string]bool{}
+	adrPresent := map[string]bool{}
+	for _, n := range g.Nodes {
+		switch n.FileType {
+		case TypeWikiPage:
+			wikiPresent[n.ID] = true
+		case TypeADR:
+			adrPresent[n.ID] = true
+		}
+	}
+	var out []Finding
+	for _, n := range g.Nodes {
+		switch n.FileType {
+		case TypeSpec:
+			if !es.hasIn(RelPlans, n.ID) {
+				out = append(out, Finding{
+					Kind: kindUnplannedSpec, Corpus: corpusPlan, NodeID: n.ID, Label: n.Label,
+					Message: "spec is not planned by any feat (informational; plans adopt incrementally)",
+					File:    n.SourceFile,
+				})
+			}
+		case TypeFeat:
+			for _, ref := range attrStrings(n.Attrs["wiki_refs"]) {
+				if !wikiPresent[wikiTargetID(ref)] {
+					out = append(out, Finding{
+						Kind: kindBrokenPlanRef, Corpus: corpusPlan, NodeID: n.ID, Label: n.Label,
+						Message: "broken plan ref [[" + ref + "]] (no matching wiki page)", File: n.SourceFile,
+					})
+				}
+			}
+			for _, ref := range attrStrings(n.Attrs["adr_refs"]) {
+				if !adrPresent[adrNodeID(ref)] {
+					out = append(out, Finding{
+						Kind: kindBrokenDecisionRef, Corpus: corpusPlan, NodeID: n.ID, Label: n.Label,
+						Message: "broken decision ref adr:" + ref + " (no matching record under docs/adr/)", File: n.SourceFile,
+					})
+				}
+			}
+		case TypeADR:
+			// Orphan decision: no feat cites it. Informational — decisions may
+			// legitimately predate the plans that will cite them (R9.2).
+			if !es.hasIn(RelCites, n.ID) {
+				out = append(out, Finding{
+					Kind: kindOrphanDecision, Corpus: corpusPlan, NodeID: n.ID, Label: n.Label,
+					Message: "orphan decision: no feat cites this ADR (informational; decisions may predate plans)",
+					File:    n.SourceFile,
+				})
+			}
+		}
+	}
+	for _, cyc := range dependsCyclesForType(g, TypeFeat) {
+		out = append(out, Finding{
+			Kind: kindFeatDependencyCycle, Corpus: corpusPlan,
+			Message: "feat dependency cycle: " + strings.Join(cyc, " → "),
+		})
+	}
+	return out
+}
+
+// glossaryFindings surfaces the ubiquitous-language lints (R3): an avoided alias
+// in a spec directory or wiki page name (domain-tagged so `csdd wiki lint` renders
+// the wiki subset), and an orphan term with no inbound `references` edge
+// (informational — terms may legitimately predate their first use). Feat/plan
+// slugs are linted by `plan validate`, not here. An absent glossary is silent.
+func glossaryFindings(g *Graph, root string) []Finding {
+	gl := glossary.Load(root)
+	var out []Finding
+	if gl.Present {
+		for _, n := range g.Nodes {
+			var corpus string
+			switch {
+			case n.FileType == TypeSpec:
+				corpus = corpusSpec
+			case isWikiContentPage(n):
+				corpus = corpusWiki
+			default:
+				continue
+			}
+			id := glossaryIdentifier(n)
+			for _, m := range gl.Match(id) {
+				if m.Alias == "" {
+					continue
+				}
+				out = append(out, Finding{
+					Kind: kindAvoidedTerm, Corpus: corpus, NodeID: n.ID, Label: n.Label,
+					Message: "avoided term '" + m.Alias + "' in '" + id + "' — canonical is '" + m.Canonical + "'",
+					File:    n.SourceFile,
+				})
+			}
+		}
+	}
+	es := buildEdgeSets(g)
+	for _, n := range g.Nodes {
+		if n.FileType != TypeTerm {
+			continue
+		}
+		if !es.hasIn(RelReferences, n.ID) {
+			out = append(out, Finding{
+				Kind: kindOrphanTerm, Corpus: corpusGlossary, NodeID: n.ID, Label: n.Label,
+				Message: "orphan term: no identifier references it (informational; terms may predate their use)",
+				File:    n.SourceFile,
+			})
+		}
+	}
+	return out
+}
+
+// attrStrings coerces a node attribute to a string slice, tolerating both the
+// in-memory []string an extractor writes and the []any a reloaded graph carries
+// after JSON round-tripping.
+func attrStrings(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 func asBool(v any) bool {
 	b, _ := v.(bool)
 	return b
@@ -443,19 +588,30 @@ func logFormatFindings(root string) []Finding {
 
 // --- depends_on cycle detection (Tarjan SCC) --------------------------------
 
-// dependencyCycles returns the node-label cycles among depends_on edges, one per
-// strongly-connected component of size > 1 (or a self-loop), deterministically
-// ordered.
+// dependencyCycles returns the task-dependency cycles among depends_on edges, one
+// per strongly-connected component of size > 1 (or a self-loop), deterministically
+// ordered. It is scoped to task nodes; feat-level cycles are reported separately
+// (planFindings) so each carries the right label and corpus.
 func dependencyCycles(g *Graph) [][]string {
+	return dependsCyclesForType(g, TypeTask)
+}
+
+// dependsCyclesForType returns the depends_on cycles among nodes of the given
+// file type, as node-label lists.
+func dependsCyclesForType(g *Graph, fileType string) [][]string {
 	adj := map[string][]string{}
 	label := map[string]string{}
 	selfLoop := map[string]bool{}
 	nodes := map[string]bool{}
+	isType := map[string]bool{}
 	for _, n := range g.Nodes {
 		label[n.ID] = n.Label
+		if n.FileType == fileType {
+			isType[n.ID] = true
+		}
 	}
 	for _, e := range g.Links {
-		if e.Relation != RelDependsOn {
+		if e.Relation != RelDependsOn || !isType[e.Source] || !isType[e.Target] {
 			continue
 		}
 		if e.Source == e.Target {

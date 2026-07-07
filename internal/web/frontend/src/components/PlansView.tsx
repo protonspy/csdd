@@ -1,0 +1,181 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+import type { PlanSummary, PlanDetail, PlanFeat, MilestoneProgress } from '../types'
+import { ProgressBar } from './bits'
+
+// PlansView is the read-only Plans tab: a list of plans with approval/drift
+// badges, and a per-plan view rendering the feat table with derived status,
+// milestone progress, blocked flags, and the run journal (log.md).
+export function PlansView({ version }: { version: number }) {
+  const [plans, setPlans] = useState<PlanSummary[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+
+  useEffect(() => {
+    setErr(null)
+    api.plans().then(setPlans).catch((e) => setErr(String(e)))
+  }, [version])
+
+  if (err) return <div className="banner error">{err}</div>
+  if (!plans) return <div className="empty">Loading…</div>
+  if (open) return <PlanDetailView slug={open} version={version} onBack={() => setOpen(null)} />
+  if (plans.length === 0) return <NoPlans />
+
+  return (
+    <div className="plans-view">
+      <div className="spec-header">
+        <h1>Plans</h1>
+      </div>
+      <div className="cards">
+        {plans.map((p) => (
+          <button key={p.slug} className="card plan-card" onClick={() => setOpen(p.slug)}>
+            <div className="card-title">
+              {p.name || p.slug} <ApprovalBadge approved={p.approved} drift={p.drift} />
+            </div>
+            <div className="muted small">{p.slug}</div>
+            <div className="stat-grid">
+              <Stat label="feats" value={p.feats} />
+              <Stat label="done" value={p.done} tone="ok" />
+              <Stat label="blocked" value={p.blocked} tone={p.blocked > 0 ? 'bad' : undefined} />
+            </div>
+            <ProgressBar pct={p.feats > 0 ? Math.round((p.done * 100) / p.feats) : 0} />
+            {p.deviations > 0 && <div className="badge warn">{p.deviations} deviation(s)</div>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PlanDetailView({ slug, version, onBack }: { slug: string; version: number; onBack: () => void }) {
+  const [d, setD] = useState<PlanDetail | null>(null)
+  const [journal, setJournal] = useState<string>('')
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    setErr(null)
+    api.plan(slug).then(setD).catch((e) => setErr(String(e)))
+    // The run journal is fetched through the hardened /api/file route so it
+    // inherits the host guard and secret redaction.
+    api
+      .file(`docs/plans/${slug}/log.md`)
+      .then((f) => setJournal(f.text ?? ''))
+      .catch(() => setJournal(''))
+  }, [slug, version])
+
+  if (err) return <div className="banner error">{err}</div>
+  if (!d) return <div className="empty">Loading…</div>
+
+  return (
+    <div className="plan-detail">
+      <div className="spec-header">
+        <button className="link-btn" onClick={onBack}>
+          ← Plans
+        </button>
+        <h1>
+          {d.name || d.slug} <ApprovalBadge approved={d.approved} drift={d.drift} />
+        </h1>
+      </div>
+
+      {d.milestones.length > 0 && (
+        <div className="card">
+          <div className="card-title">Milestones</div>
+          {d.milestones.map((m) => (
+            <MilestoneRow key={m.name || '—'} m={m} />
+          ))}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-title">Feats ({d.feats.length})</div>
+        <div className="feat-table">
+          {d.feats.map((f) => (
+            <FeatRow key={f.slug} f={f} />
+          ))}
+        </div>
+      </div>
+
+      {journal.trim() !== '' && (
+        <div className="card">
+          <div className="card-title">Run journal (log.md)</div>
+          <pre className="codeblock">
+            <code>{journal}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FeatRow({ f }: { f: PlanFeat }) {
+  return (
+    <div className="feat-row" title={f.objective}>
+      <span className="feat-num muted">{f.num}</span>
+      <span className="feat-slug">
+        {f.slug}
+        {f.parallel && <span className="badge muted" title="may run in parallel with milestone siblings">P</span>}
+      </span>
+      <span className="feat-objective muted">{f.objective}</span>
+      <StateBadge state={f.state} />
+      <span className="feat-progress muted small">
+        {f.tasks_total > 0 ? `${f.tasks_checked}/${f.tasks_total} tasks` : ''}
+        {f.block_reason ? f.block_reason : ''}
+      </span>
+    </div>
+  )
+}
+
+function MilestoneRow({ m }: { m: MilestoneProgress }) {
+  const pct = m.total > 0 ? Math.round((m.done * 100) / m.total) : 0
+  return (
+    <div className="cov-bar-row">
+      <span className="feat-slug">{m.name || '—'}</span>
+      <ProgressBar pct={pct} />
+      <span className="muted small">
+        {m.done}/{m.total}
+      </span>
+    </div>
+  )
+}
+
+function ApprovalBadge({ approved, drift }: { approved: boolean; drift: boolean }) {
+  if (drift) return <span className="badge warn">drift</span>
+  if (approved) return <span className="badge ready">approved</span>
+  return <span className="badge muted">draft</span>
+}
+
+function StateBadge({ state }: { state: string }) {
+  const tone =
+    state === 'done' ? 'ready' : state === 'blocked' ? 'warn' : state === 'implementing' || state === 'ready' ? 'info' : 'muted'
+  return <span className={`badge ${tone}`}>{state}</span>
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone?: 'ok' | 'bad' }) {
+  const color = tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--bad)' : undefined
+  return (
+    <div className="stat">
+      <div className="stat-val" style={color ? { color } : undefined}>
+        {value}
+      </div>
+      <div className="stat-label">{label}</div>
+    </div>
+  )
+}
+
+function NoPlans() {
+  return (
+    <div className="empty">
+      <h2>No plans yet</h2>
+      <p className="muted">
+        A plan decomposes an initiative into feats (each becomes one spec). Author one with the
+        <code> /prd </code> skill, or scaffold directly:
+      </p>
+      <pre className="codeblock" style={{ textAlign: 'left', maxWidth: 480, margin: '12px auto' }}>
+        <code>{`npx @protonspy/csdd plan init <slug>
+# author the feat table, then:
+npx @protonspy/csdd plan validate <slug>
+npx @protonspy/csdd plan approve <slug>`}</code>
+      </pre>
+    </div>
+  )
+}

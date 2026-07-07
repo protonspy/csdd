@@ -1,0 +1,109 @@
+---
+name: glossary
+description: Own the project's ubiquitous language — the canonical terms and their banned synonyms in docs/glossary.md. Use when a domain term is coined, contested, fuzzy, or renamed; when naming a feat/spec/wiki identifier; or when another skill (prd, quick-prd, wiki) surfaces a terminology conflict. You author the contract; the CLI parses, lints identifiers, and graphs it. Invoked by /glossary.
+---
+
+# Glossary — the ubiquitous-language contract
+
+## Goal
+
+Keep the project speaking **one language**: every domain concept has exactly one
+**canonical term** with a tight definition and an `_Avoid_` list of the synonyms it
+bans, recorded in `docs/glossary.md`. Terminology drift is the quietest project
+rot — the plan says "customer", a spec says "client", a wiki page says "account",
+and the graph (which links by name) sees three unrelated things. You author the
+contract; the **CLI parses and lints** it (`csdd plan validate` on feat/plan
+slugs, `csdd graph analyze` / `csdd wiki lint` on spec dirs and wiki pages) and
+graphs terms as `term` nodes — it never writes prose.
+
+## The Iron Law
+
+> **The glossary is a contract, not documentation.** One canonical term per
+> concept, a one-or-two-sentence definition of what it **IS** (never what it does),
+> project-specific terms only, **zero implementation details**. Identifiers are
+> minted from canonical terms; a renamed term always leaves a tombstone. Record
+> the term the moment it resolves — never batch, never guess.
+
+## When to Use
+
+- A domain term is **coined, contested, or fuzzy** — challenge and sharpen it here.
+- You are **naming** a feat slug, spec directory, or wiki page — mint it from a
+  canonical term (validate/analyze enforce this).
+- Another skill (`prd`, `quick-prd`, `wiki`) surfaces a terminology conflict and
+  routes it here.
+- A canonical term is being **renamed** — apply the tombstone rule.
+
+## Execution Workflow
+
+The four moves. Judgment is yours; the CLI supplies the structure and the lint.
+
+1. **Challenge.** The moment a term appears that conflicts with an existing entry
+   (a synonym for a canonical term, or a second meaning for one word), stop and
+   name the conflict. Do not let two words for one concept coexist.
+2. **Sharpen.** For a vague or overloaded term, propose a single canonical form
+   with a **recommended answer** (the decision-grill interaction form: one term, a
+   recommendation, the human decides) and a one-or-two-sentence definition of what
+   it IS. Push synonyms onto its `_Avoid_` list.
+3. **Stress-test.** Probe the boundary with concrete edge-case scenarios ("is a
+   cancelled order still an Order?") until the definition holds or splits into two
+   canonical terms.
+4. **Cross-reference before asking.** Run `csdd graph query "<term>"` (the graph
+   already indexes the workspace) to see where a concept is used before asking the
+   user — source facts, grill only the genuine ambiguity.
+
+**Record inline, create lazily.** When a term resolves, update `docs/glossary.md`
+**immediately** (never batched), creating the file on the first entry — `csdd`
+scaffolds nothing. An entry is:
+
+```
+## Language
+
+**<Canonical Term>**: One or two sentences — what it IS, not what it does.
+_Avoid_: synonym-one, synonym-two
+```
+
+Use `###` subheadings to cluster entries when natural groups emerge.
+
+**The tombstone rule (the term lifecycle).** When a canonical term is renamed,
+append the **old** term to the **successor's** `_Avoid_` list in the **same edit**.
+The lint then patrols the old name forever — the rename is mechanically permanent,
+no state machine required.
+
+**Hand off gate-positive naming.** When a naming choice is itself a decision that
+passes the triple gate — a deliberate concept split, or diverging from industry
+vocabulary on purpose (hard to reverse + surprising + a real trade-off) — hand it
+to the **decision grill** (`prd`/`quick-prd`) and let the ADR **cite the term**.
+The two contracts compose: *what we call it* → glossary; *why we chose it* → ADR.
+
+## Gotchas
+
+- **Not documentation.** General programming concepts and how-things-work prose do
+  not belong — only terms unique to this project's domain, defined as what they are.
+- **Whole-token lint, identifiers only.** The linter bites on feat/spec/wiki
+  identifiers where matching is deterministic; prose drift is **your** job
+  (challenge/sharpen), never the linter's. An alias too generic to ban (it would
+  cry wolf) should be deleted, not tolerated.
+- **Never rename without a tombstone.** A rename that skips the `_Avoid_` append
+  lets the old name creep back in silently.
+- **Never batch.** A glossary written at the end of a session is a glossary of
+  guesses; record each term the moment it resolves.
+- **The CLI owns `docs/graph/`.** Rebuild with `csdd graph build` after editing the
+  glossary so term nodes reflect the change.
+
+## Verification Before Reporting
+
+- `csdd plan validate <slug>` (if a plan is in play) and `csdd graph analyze` are
+  clean of avoided-term and glossary well-formedness findings, or every finding is
+  explicitly acknowledged to the human.
+- Every new/renamed term has a one-or-two-sentence definition of what it IS, an
+  `_Avoid_` list where synonyms exist, and — for a rename — the old term
+  tombstoned onto the successor.
+- No entry carries implementation detail or restates a general programming concept.
+
+## Completion Criteria
+
+- [ ] Every contested/fuzzy term was challenged and sharpened to one canonical form; conflicts were resolved, not left coexisting.
+- [ ] `docs/glossary.md` was updated inline the moment each term resolved (created lazily on the first entry), with tight what-it-IS definitions and `_Avoid_` lists.
+- [ ] Every rename left a tombstone (old term appended to the successor's `_Avoid_`).
+- [ ] `csdd graph query` was consulted before asking the user; gate-positive naming was handed to the decision grill with the ADR citing the term.
+- [ ] `csdd plan validate` / `csdd graph analyze` / `csdd wiki lint` are clean of avoided-term and glossary findings (or acknowledged).

@@ -1,0 +1,22 @@
+---
+description: Own the project's ubiquitous language — challenge, sharpen, and record canonical domain terms (and their banned synonyms) in docs/glossary.md, so identifiers and prose speak one language.
+argument-hint: <the term or terminology question, e.g. "is it customer or client?">
+allowed-tools: Read, Edit, Write, Bash(csdd graph:*), Bash(csdd plan:*), Bash(csdd wiki:*), Bash(npx @protonspy/csdd:*)
+---
+
+## Task
+
+Use the **glossary** skill to resolve the terminology in `$ARGUMENTS` into the
+project's ubiquitous-language contract at `docs/glossary.md`.
+
+Apply its four moves — **challenge** a term that conflicts with an existing entry,
+**sharpen** a vague or overloaded term to one canonical form (recommend, the human
+decides), **stress-test** the boundary with concrete scenarios, and
+**cross-reference** via `csdd graph query` before asking. Record each resolved term
+**inline the moment it resolves** (creating `docs/glossary.md` lazily on the first
+entry) with a tight what-it-IS definition and an `_Avoid_` list; on a rename,
+append the old term to the successor's `_Avoid_` (the tombstone rule).
+
+Keep it a contract, not documentation: project-specific terms only, zero
+implementation detail. When a naming choice is itself a gate-positive decision,
+hand it to the decision grill (`/prd` or `quick-prd`) and let the ADR cite the term.

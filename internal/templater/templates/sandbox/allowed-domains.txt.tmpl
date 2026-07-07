@@ -1,0 +1,36 @@
+# csdd sandbox — egress allow-list.
+# One host per line; blank lines and #-comments are ignored. init-firewall.sh
+# resolves each host to its current IPv4 addresses and permits ONLY those.
+# Keep this list minimal: every entry widens what a bypass-mode session can reach.
+
+# --- Anthropic / Claude Code ---
+api.anthropic.com
+statsig.anthropic.com
+sentry.io
+
+# --- GitHub ---
+github.com
+api.github.com
+codeload.github.com
+objects.githubusercontent.com
+ghcr.io
+
+# --- npm (Claude Code runtime + tooling) ---
+registry.npmjs.org
+
+# --- VS Code / devcontainers ---
+update.code.visualstudio.com
+marketplace.visualstudio.com
+
+# --- Ubuntu apt ---
+archive.ubuntu.com
+security.ubuntu.com
+ports.ubuntu.com
+
+# --- Language registry presets ---
+# `csdd sandbox init --feature <name>` un-comments the matching registries below
+# (or add hosts with --allow-domain). Left commented, they stay blocked.
+# [go]     proxy.golang.org sum.golang.org
+# [python] pypi.org files.pythonhosted.org
+# [rust]   static.crates.io crates.io index.crates.io
+# [java]   repo.maven.apache.org
