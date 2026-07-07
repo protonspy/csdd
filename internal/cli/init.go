@@ -2,6 +2,7 @@ package cli
 
 import (
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -21,10 +22,14 @@ func runInit(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	var root string
 	var withBaseline, noMCP bool
-	var exclude stringSliceFlag
+	var exclude, include stringSliceFlag
+	var withHooks, withPrePush bool
 	fs.StringVar(&root, "root", "", "Target directory (default: cwd).")
 	fs.BoolVar(&withBaseline, "with-baseline", false, "Also scaffold product.md, tech.md, structure.md.")
 	fs.Var(&exclude, "exclude", "Scaffold components to skip (comma-separated, repeatable), e.g. --exclude agents,skills. Valid: "+strings.Join(excludableKeys(), ", ")+".")
+	fs.Var(&include, "include", "Opt-in components to scaffold — OFF by default (comma-separated, repeatable): "+strings.Join(includableKeys(), ", ")+".")
+	fs.BoolVar(&withHooks, "hooks", false, "Scaffold the Claude Code hooks (.claude/hooks/) and wire them in settings.json (alias for --include hooks).")
+	fs.BoolVar(&withPrePush, "prepush", false, "Scaffold the .githooks/pre-push test gate (alias for --include pre-push).")
 	fs.BoolVar(&noMCP, "no-mcp", false, "Do not register the csdd MCP server in .mcp.json.")
 	if err := fs.Parse(args); err != nil {
 		return failOnFlagParse(err)
@@ -38,7 +43,19 @@ func runInit(args []string, templates embed.FS) int {
 		render.Err(err.Error())
 		return 1
 	}
-	opts := initOptions{withBaseline: withBaseline, exclude: exSet}
+	incSet, err := parseInclusions(include.values)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	// The dedicated booleans are just conveniences for the common opt-ins.
+	if withHooks {
+		incSet["hooks"] = true
+	}
+	if withPrePush {
+		incSet["pre-push"] = true
+	}
+	opts := initOptions{withBaseline: withBaseline, exclude: exSet, include: incSet}
 	if root == "" {
 		var err error
 		root, err = filepath.Abs(".")
@@ -66,9 +83,12 @@ func runInit(args []string, templates embed.FS) int {
 	if len(exSet) > 0 {
 		render.Info("excluded: " + strings.Join(excludedList(exSet), ", "))
 	}
+	if len(incSet) > 0 {
+		render.Info("included (opt-in): " + strings.Join(includedList(incSet), ", "))
+	}
 	// Post-scaffold chores only fire for the components that were actually laid
-	// down, so `--exclude mcp` / `--exclude pre-push` don't advertise things that
-	// aren't there.
+	// down, so `--exclude mcp` / a not-opted-in pre-push don't advertise things
+	// that aren't there.
 	if !noMCP && !opts.skip("mcp") {
 		if added, err := ensureCsddMCPServer(root); err != nil {
 			render.Warn("could not register csdd MCP server: " + err.Error())
@@ -79,6 +99,9 @@ func runInit(args []string, templates embed.FS) int {
 	offerGitignore(root)
 	if !opts.skip("pre-push") {
 		render.Info("Enable the pre-push test gate: `git config core.hooksPath .githooks`")
+	}
+	if opts.skip("hooks") && opts.skip("pre-push") {
+		render.Info("Claude Code hooks and the pre-push gate are opt-in — add them with `--hooks --prepush` (or `--include hooks,pre-push`).")
 	}
 	if !opts.withBaseline && !opts.skip("steering") {
 		render.Info("Run `" + prog() + " steering init` to scaffold standard steering files.")
@@ -148,16 +171,35 @@ var excludable = []struct{ key, desc string }{
 	{"mcp", ".mcp.json + csdd MCP server registration"},
 	{"settings", ".claude/settings.json"},
 	{"pr-template", ".github/pull_request_template.md"},
-	{"pre-push", ".githooks/pre-push test gate"},
 	{"rules", ".claude/rules/"},
 	{"templates", ".claude/templates/"},
 	{"steering", ".claude/steering/"},
 	{"agents", ".claude/agents/"},
 	{"skills", ".claude/skills/"},
 	{"commands", ".claude/commands/"},
-	{"hooks", ".claude/hooks/"},
 	{"specs", "specs/"},
 	{"knowledge", "docs/ knowledge base (plans/raw/wiki/graph) + docs/stack.md tech contract"},
+}
+
+// includable is the set of OPT-IN components: off by default, scaffolded only
+// when named via --include (or the --hooks/--prepush conveniences). They carry
+// side effects a fresh clone usually doesn't want unprompted — Claude Code hooks
+// that gate every tool call, and a git hook that runs the whole suite on push.
+var includable = []struct{ key, desc string }{
+	{"hooks", ".claude/hooks/ + settings.json wiring"},
+	{"pre-push", ".githooks/pre-push test gate"},
+}
+
+// includeAliases maps user-friendly spellings to the canonical component key.
+var includeAliases = map[string]string{"prepush": "pre-push"}
+
+// includableKeys returns the valid --include component keys in canonical order.
+func includableKeys() []string {
+	keys := make([]string, len(includable))
+	for i, comp := range includable {
+		keys[i] = comp.key
+	}
+	return keys
 }
 
 // excludableKeys returns the valid --exclude component keys in canonical order.
@@ -204,18 +246,97 @@ func excludedList(set map[string]bool) []string {
 	return out
 }
 
+// parseInclusions flattens the (repeatable, comma-separated) --include values
+// into a validated set of opt-in component keys, folding aliases (e.g. "prepush"
+// → "pre-push") to their canonical form. Unknown keys are rejected loudly.
+func parseInclusions(raw []string) (map[string]bool, error) {
+	valid := map[string]bool{}
+	for _, k := range includableKeys() {
+		valid[k] = true
+	}
+	set := map[string]bool{}
+	for _, chunk := range raw {
+		for _, part := range strings.Split(chunk, ",") {
+			key := strings.ToLower(strings.TrimSpace(part))
+			if key == "" {
+				continue
+			}
+			if canon, ok := includeAliases[key]; ok {
+				key = canon
+			}
+			if !valid[key] {
+				return nil, fmt.Errorf("unknown --include component %q; valid: %s", key, strings.Join(includableKeys(), ", "))
+			}
+			set[key] = true
+		}
+	}
+	return set, nil
+}
+
+// includedList returns the included keys present in set, in canonical order.
+func includedList(set map[string]bool) []string {
+	var out []string
+	for _, k := range includableKeys() {
+		if set[k] {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
 // initOptions controls what `csdd init` scaffolds.
 type initOptions struct {
 	// withBaseline also writes the standard steering files (product/tech/…) and
 	// imports them into CLAUDE.md.
 	withBaseline bool
-	// exclude is the set of scaffold components (see excludable) to skip, so csdd
+	// exclude is the set of opt-out components (see excludable) to skip, so csdd
 	// can be dropped into a project that already has parts of a Claude Code setup.
 	exclude map[string]bool
+	// include is the set of opt-in components (see includable) to scaffold; these
+	// are OFF unless explicitly requested.
+	include map[string]bool
 }
 
-// skip reports whether the given scaffold component was excluded.
-func (o initOptions) skip(component string) bool { return o.exclude[component] }
+// optInComponents are scaffolded only when named in initOptions.include.
+var optInComponents = map[string]bool{"hooks": true, "pre-push": true}
+
+// skip reports whether the given scaffold component should be left out: opt-in
+// components are skipped unless explicitly included; every other component is on
+// unless it was excluded.
+func (o initOptions) skip(component string) bool {
+	if optInComponents[component] {
+		return !o.include[component]
+	}
+	return o.exclude[component]
+}
+
+// settingsWithHooks merges the Claude Code hook wiring (PreToolUse/PostToolUse/
+// Stop → the .claude/hooks scripts) into the base settings.json. The base ships
+// without any hooks block so a default workspace never points at hook scripts it
+// didn't scaffold; the wiring lives in its own template and is folded in only
+// when the hooks component is opted into. Top-level keys are re-emitted sorted,
+// which is fine for a generated file.
+func settingsWithHooks(templates embed.FS, base string) (string, error) {
+	hooks, err := templater.Static(templates, "templates/root/settings-hooks.json.tmpl")
+	if err != nil {
+		return "", err
+	}
+	var b, h map[string]any
+	if err := json.Unmarshal([]byte(base), &b); err != nil {
+		return "", fmt.Errorf("parse settings.json template: %w", err)
+	}
+	if err := json.Unmarshal([]byte(hooks), &h); err != nil {
+		return "", fmt.Errorf("parse settings-hooks.json template: %w", err)
+	}
+	for k, v := range h {
+		b[k] = v
+	}
+	out, err := json.MarshalIndent(b, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(out) + "\n", nil
+}
 
 // initWorkspace is exported semantically so the TUI can call the same logic.
 // It creates the standard Claude Code layout idempotently, honoring opts.exclude,
@@ -273,6 +394,15 @@ func initWorkspace(root string, opts initOptions, templates embed.FS) (initCount
 		content, err := templater.Static(templates, rf.tpl)
 		if err != nil {
 			return c, err
+		}
+		// The Claude Code hooks are opt-in: only wire them into settings.json when
+		// the hook scripts are actually being scaffolded, so a default workspace
+		// never references commands that aren't on disk.
+		if rf.comp == "settings" && !opts.skip("hooks") {
+			content, err = settingsWithHooks(templates, content)
+			if err != nil {
+				return c, err
+			}
 		}
 		created, err := workspace.SafeWrite(rf.path, content)
 		if err != nil {

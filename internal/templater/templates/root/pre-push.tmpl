@@ -19,6 +19,12 @@ elif [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.cfg ]; then
   python -m pytest
 elif [ -f Cargo.toml ]; then
   cargo test
+elif [ -f pom.xml ]; then
+  # Maven — prefer the project's wrapper when it's checked in.
+  if [ -x ./mvnw ]; then ./mvnw test; else mvn test; fi
+elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
+  # Gradle — prefer the project's wrapper when it's checked in.
+  if [ -x ./gradlew ]; then ./gradlew test; else gradle test; fi
 else
   echo "pre-push: no known test command detected — adapt .githooks/pre-push for this project." >&2
   exit 0

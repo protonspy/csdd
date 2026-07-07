@@ -53,7 +53,7 @@ csdd spec generate my-feature --artifact requirements   # → validate → appro
 
 | Command | What it does |
 |---|---|
-| `csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks · docs) |
+| `csdd init [--with-baseline] [--hooks] [--prepush]` | bootstrap the workspace (steering · skills · agents · commands · docs); the Claude Code hooks and the pre-push gate are opt-in via `--hooks`/`--prepush` (or `--include hooks,pre-push`) |
 | `csdd update [--dry-run]` · `clean` · `destroy` | upgrade managed artifacts (keeping your edits as `.old`) · sweep `.old` backups · tear the workspace back down |
 | `csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) — the complement of `init --exclude` |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
@@ -487,7 +487,7 @@ CLAUDE.md             # entry point + steering imports + knowledge-base workflow
 .claude/agents/*.md   # sub-agents (implementer, code-reviewer, …)
 .claude/skills/<n>/   # skill bundles
 .claude/commands/     # slash commands (/csdd-setup-init, /csdd-commit, /prd, /csdd-graph-query, …)
-.claude/hooks/        # deterministic automation (format-after-edit, pre-push test gate, …)
+.claude/hooks/        # deterministic automation (format-after-edit, …) — opt-in via `init --hooks`
 .csdd/                # csdd's operational state (the workspace marker + manifest.json) — the csdd analog of .git/
 specs/<feature>/      # SDD contracts
 docs/                 # knowledge base: plans/ · adr/ · wiki/ · graph/ · raw/ · glossary.md · stack.md · product/
