@@ -44,7 +44,9 @@ func run(t *testing.T, args ...string) (int, string, string) {
 func freshWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if code, _, errOut := run(t, "init", "--root", dir, "--with-baseline"); code != 0 {
+	// A complete workspace for tests exercises every tree, so opt into the
+	// hooks and pre-push components that a bare `csdd init` now leaves out.
+	if code, _, errOut := run(t, "init", "--root", dir, "--with-baseline", "--hooks", "--prepush"); code != 0 {
 		t.Fatalf("init failed (code=%d): %s", code, errOut)
 	}
 	return dir
@@ -186,7 +188,8 @@ func TestInitExcludeAgentsSkills(t *testing.T) {
 			t.Errorf("--exclude should have skipped %s", p)
 		}
 	}
-	// Still present: the rest of the full workspace.
+	// Still present: the rest of the full workspace. (hooks and pre-push are
+	// opt-in, so they are absent here — see TestInitDefaultOmitsOptInComponents.)
 	for _, p := range []string{
 		"CLAUDE.md",
 		".mcp.json",
@@ -194,8 +197,6 @@ func TestInitExcludeAgentsSkills(t *testing.T) {
 		".claude/rules/ears-format.md",
 		".claude/templates/specs/requirements.md",
 		".claude/commands",
-		".claude/hooks",
-		".githooks/pre-push",
 		"specs",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
@@ -208,10 +209,10 @@ func TestInitExcludeAgentsSkills(t *testing.T) {
 // comma lists, and that both forms compose.
 func TestInitExcludeRepeatableFlag(t *testing.T) {
 	dir := t.TempDir()
-	if code, _, errOut := run(t, "init", "--root", dir, "--exclude", "agents", "--exclude", "hooks,commands"); code != 0 {
+	if code, _, errOut := run(t, "init", "--root", dir, "--exclude", "agents", "--exclude", "rules,commands"); code != 0 {
 		t.Fatalf("init failed (code=%d): %s", code, errOut)
 	}
-	for _, p := range []string{".claude/agents", ".claude/hooks", ".claude/commands"} {
+	for _, p := range []string{".claude/agents", ".claude/rules", ".claude/commands"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
 			t.Errorf("repeated/comma --exclude should have skipped %s", p)
 		}

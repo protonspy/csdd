@@ -73,7 +73,17 @@ func collectManagedFiles(root string, templates embed.FS) ([]managedFile, error)
 		{paths.Skills(root), templater.SkillFiles, false, managedExecutionOverrideKeys},
 		{paths.Agents(root), templater.AgentFiles, false, managedExecutionOverrideKeys},
 		{paths.Commands(root), templater.CommandFiles, false, nil},
-		{paths.Hooks(root), templater.HookFiles, true, nil},
+	}
+	// Hooks are opt-in at init time, so only manage/refresh them when the
+	// workspace actually has them — otherwise `csdd update` would silently re-add
+	// hooks a project deliberately omitted.
+	if pathExists(paths.Hooks(root)) {
+		trees = append(trees, struct {
+			base                string
+			fn                  func(fs.FS) (map[string]string, error)
+			exec                bool
+			preserveFrontmatter []string
+		}{paths.Hooks(root), templater.HookFiles, true, nil})
 	}
 	for _, t := range trees {
 		entries, err := t.fn(templates)

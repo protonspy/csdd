@@ -12,8 +12,9 @@ import (
 func bareWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	// hooks are opt-in (absent unless --include hooks), so they need no exclude.
 	if code, _, errOut := run(t, "init", "--root", dir,
-		"--exclude", "skills,agents,rules,commands,hooks,templates,steering"); code != 0 {
+		"--exclude", "skills,agents,rules,commands,templates,steering"); code != 0 {
 		t.Fatalf("init --exclude failed (code=%d): %s", code, errOut)
 	}
 	return dir

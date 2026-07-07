@@ -767,6 +767,109 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 	}
 }
 
+// TestInitDefaultOmitsOptInComponents asserts a bare `csdd init` leaves out the
+// opt-in components (Claude Code hooks + the pre-push gate) and that the default
+// settings.json therefore carries no hook wiring.
+func TestInitDefaultOmitsOptInComponents(t *testing.T) {
+	dir := t.TempDir()
+	if code, _, errOut := run(t, "init", "--root", dir); code != 0 {
+		t.Fatalf("init failed (code=%d): %s", code, errOut)
+	}
+	for _, p := range []string{
+		".claude/hooks",
+		".claude/hooks/block-destructive.sh",
+		".githooks/pre-push",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("default init should NOT scaffold opt-in component %s", p)
+		}
+	}
+	var parsed map[string]any
+	raw := readFile(t, filepath.Join(dir, ".claude", "settings.json"))
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("default settings.json is not valid JSON: %v", err)
+	}
+	if _, ok := parsed["hooks"]; ok {
+		t.Errorf("default settings.json must not wire hooks:\n%s", raw)
+	}
+	if _, ok := parsed["permissions"]; !ok {
+		t.Errorf("default settings.json should keep the permissions block:\n%s", raw)
+	}
+}
+
+// TestInitOptInHooksAndPrePush covers the --include spelling (with the "prepush"
+// alias) scaffolding the hook scripts and pre-push gate as executables and
+// wiring the hooks into settings.json, which must stay valid JSON.
+func TestInitOptInHooksAndPrePush(t *testing.T) {
+	dir := t.TempDir()
+	code, out, errOut := run(t, "init", "--root", dir, "--include", "hooks,prepush")
+	if code != 0 {
+		t.Fatalf("init --include failed (code=%d): %s", code, errOut)
+	}
+	if !strings.Contains(out, "included (opt-in): hooks, pre-push") {
+		t.Errorf("expected an opt-in summary, got:\n%s", out)
+	}
+	for _, exe := range []string{
+		".claude/hooks/block-destructive.sh",
+		".claude/hooks/format-after-edit.sh",
+		".claude/hooks/test-before-stop.sh",
+		".githooks/pre-push",
+	} {
+		info, err := os.Stat(filepath.Join(dir, exe))
+		if err != nil {
+			t.Errorf("--include should have scaffolded %s: %v", exe, err)
+			continue
+		}
+		if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
+			t.Errorf("%s must be executable, mode=%v", exe, info.Mode())
+		}
+	}
+	var parsed map[string]any
+	raw := readFile(t, filepath.Join(dir, ".claude", "settings.json"))
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("merged settings.json is not valid JSON: %v", err)
+	}
+	if _, ok := parsed["hooks"]; !ok {
+		t.Errorf("opted-in settings.json must wire the hooks:\n%s", raw)
+	}
+	if _, ok := parsed["permissions"]; !ok {
+		t.Errorf("merged settings.json dropped the permissions block:\n%s", raw)
+	}
+	if !strings.Contains(raw, "block-destructive.sh") {
+		t.Errorf("opted-in settings.json must reference the hook scripts:\n%s", raw)
+	}
+}
+
+// TestInitHooksBooleanFlag asserts the --hooks convenience flag scaffolds the
+// hooks (and wires settings.json) without dragging in the pre-push gate.
+func TestInitHooksBooleanFlag(t *testing.T) {
+	dir := t.TempDir()
+	if code, _, errOut := run(t, "init", "--root", dir, "--hooks"); code != 0 {
+		t.Fatalf("init --hooks failed (code=%d): %s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude/hooks/block-destructive.sh")); err != nil {
+		t.Errorf("--hooks should scaffold the hook scripts: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".githooks/pre-push")); err == nil {
+		t.Error("--hooks alone must NOT scaffold the pre-push gate")
+	}
+}
+
+// TestInitRejectsExcludedOptInKeys makes sure the now opt-in keys are no longer
+// accepted by --exclude (they are off by default; --include turns them on).
+func TestInitRejectsExcludedOptInKeys(t *testing.T) {
+	for _, key := range []string{"hooks", "pre-push"} {
+		dir := t.TempDir()
+		code, _, errOut := run(t, "init", "--root", dir, "--exclude", key)
+		if code == 0 {
+			t.Errorf("--exclude %s should be rejected now that it is opt-in", key)
+		}
+		if !strings.Contains(errOut, "unknown --exclude component") {
+			t.Errorf("--exclude %s: expected an unknown-component error, got: %s", key, errOut)
+		}
+	}
+}
+
 // TestInitWithBaselineImportsSteering asserts CLAUDE.md imports the baseline
 // steering files as always-on @-references.
 func TestInitWithBaselineImportsSteering(t *testing.T) {

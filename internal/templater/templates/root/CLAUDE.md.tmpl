@@ -146,9 +146,9 @@ requirements ──approve──▶ design ──approve──▶ tasks ──ap
 1. **Start each feature on a clean context:** `/clear`, then `npx @protonspy/csdd spec init <feature>`.
 2. **Generate → review → approve, one phase at a time:** `spec generate --artifact requirements` → human reviews → `spec approve --phase requirements`; then `design`, then `tasks`. The gate refuses the next `generate` until the current phase is approved.
 3. `ready_for_implementation` flips to `true` only after all three phases are approved — and only csdd flips it. Do not set it yourself.
-4. **Branch before the first task:** `git switch -c <type>/<feature>` in kebab-case (`feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, `perf/`). The PreToolUse hook blocks commits on the default branch.
+4. **Branch before the first task:** `git switch -c <type>/<feature>` in kebab-case (`feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `test/`, `perf/`). With the Claude Code hooks enabled (`csdd init --hooks`), a PreToolUse hook enforces this by blocking commits on the default branch.
 5. Implementation runs one task per iteration with fresh-context sub-agents (`test-designer` enumerates the cases → `implementer` builds them → `code-reviewer`, plus `security-reviewer` when auth/secrets/input are touched), TDD red→green per task. Stay inside the approved design boundary. Independent `(P)` tasks in *different* `_Boundary:_` groups may run as parallel `implementer` sub-agents in isolated git worktrees; same-boundary tasks stay ordered and every `_Depends:_` is honored first.
-6. Commit a slice only after review is clean, then push — the `pre-push` hook runs the test gate and blocks a red push.
+6. Commit a slice only after review is clean, then push — with the pre-push gate installed (`csdd init --prepush`, then `git config core.hooksPath .githooks`), it runs the test gate and blocks a red push.
 7. **Close each feature with a `/clear`** once its PR ships, so context does not accumulate across features.
 8. Steering is updated only when a new pattern emerges that the agent could not derive from the code.
 
@@ -254,7 +254,7 @@ between the markers.
 - `.claude/skills/<skill-name>/` — executable workflow skills.
 - `.claude/agents/<name>.md` — custom sub-agents with least-privilege tool scope.
 - `.claude/commands/<name>.md` — slash commands (`/csdd-commit` generates the commit message from the diff + active spec).
-- `.claude/hooks/` + `.claude/settings.json` — deterministic automation (format on edit, command safety, stop reminder).
-- `.githooks/pre-push` — the test gate at push time. Enable once: `git config core.hooksPath .githooks`.
+- `.claude/settings.json` — permission guards; and, when `.claude/hooks/` is opted in (`csdd init --hooks`), the deterministic automation wiring (format on edit, command safety, stop reminder).
+- `.githooks/pre-push` — the test gate at push time (opt-in: `csdd init --prepush`). Enable once: `git config core.hooksPath .githooks`.
 - `.github/pull_request_template.md` — evidence-bearing PR body.
 - `.mcp.json` — Model Context Protocol servers.
