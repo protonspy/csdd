@@ -25,23 +25,37 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=delegated",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 
-  // --- Add language runtimes / tools here (optional) -------------------------
-  // Devcontainer features layer on top of the image without editing the Dockerfile.
-  // Examples (uncomment what you need):
-  // "features": {
-  //   "ghcr.io/devcontainers/features/python:1": { "version": "3.13" },
-  //   "ghcr.io/devcontainers/features/go:1": {},
-  //   "ghcr.io/devcontainers/features/rust:1": {}
-  // },
+  // --- Language runtimes / tools --------------------------------------------
+  // Devcontainer features layer on top of the base image without editing the
+  // Dockerfile. Go is this repo's primary toolchain: pin it to the version CI
+  // builds/tests with (.github/workflows/ci.yml) plus the golangci-lint the lint
+  // job runs. "1.25" resolves to the latest 1.25.x patch. (Node comes from the
+  // base node:24 image, so it needs no feature here.)
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.25",
+      "golangciLintVersion": "2.12.2"
+    }
+  },
 
   "customizations": {
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
-        "eamodio.gitlens"
+        "eamodio.gitlens",
+        "golang.go"
       ],
       "settings": {
-        "terminal.integrated.defaultProfile.linux": "zsh"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "go.useLanguageServer": true,
+        // Keep files gofmt-clean and imports tidy — the CI lint job gates on
+        // `gofmt -l`, so match it on save.
+        "[go]": {
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        }
       }
     }
   },
@@ -64,6 +78,13 @@
     "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   },
+
+  // Runs once at create, while egress is still wide open (before postStartCommand
+  // programs the firewall): warm the module cache, install the local csdd binary
+  // onto PATH (${GOPATH}/bin) so `csdd` works in the sandbox, and grab
+  // govulncheck (matching CI's lint job). The web dashboard stays a placeholder
+  // until `make web-build`. Best-effort: a hiccup here must never block creation.
+  "postCreateCommand": "go mod download && go install golang.org/x/vuln/cmd/govulncheck@latest || true",
 
   // Program the egress firewall on every start (needs the caps above). Wait for
   // it before handing over the container so nothing escapes the default-deny.

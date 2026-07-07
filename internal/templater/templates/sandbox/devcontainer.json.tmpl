@@ -17,8 +17,10 @@
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/node:1": {}{{.ExtraFeatures}}
   },
-  // Install Claude Code (Node feature provides the runtime).
-  "postCreateCommand": "npm install -g @anthropic-ai/claude-code",
+  // Install Claude Code + the csdd CLI (the Node feature provides the runtime).
+  // csdd ships as an npm package wrapping the Go binary, so `csdd …` is on PATH
+  // without `npx`. Runs at create, before the firewall, while egress is open.
+  "postCreateCommand": "npm install -g @anthropic-ai/claude-code @protonspy/csdd",
   // Bring up the default-deny egress firewall on every start; it self-verifies
   // and exits non-zero if isolation is not enforced.
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"
