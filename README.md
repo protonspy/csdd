@@ -4,7 +4,9 @@
 
 `csdd` is a single Go binary that makes **Spec-Driven Development (SDD) + Test-Driven Development (TDD)** the native, *enforced* workflow inside a [Claude Code](https://claude.com/claude-code) repository. It turns the SDD lifecycle — `requirements → design → tasks → implementation` — from "good intentions in markdown" into a contract that is **validated mechanically and gated by human approval at every phase**, so neither a human nor an AI agent can skip a step, ship a requirement without a testable criterion, or mark a parallel task without declaring its boundary.
 
-It owns five artifact types — **steering** (project memory), **specs** (per-feature contracts), **skills** (executable workflow bundles), **agents** (scoped sub-agents), and **MCP servers** — and is their only sanctioned author, so their structure stays machine-checkable instead of drifting into free-form prose. There's no server and no database: the plain Markdown/JSON files under `.claude/` and `specs/` *are* the API, reviewable in any pull request.
+Around that spec core it adds two more layers: **plan mode** (`docs/plans/`), which decomposes a multi-feature initiative into feats that a runner drives to shipped code, and a **knowledge base** (`docs/`) — a graph "brain", an LLM-authored wiki, decision records, a glossary, and a tech contract — that keeps the *why* consultable instead of re-derived. There's no server and no database: the plain Markdown/JSON files under `.claude/`, `specs/`, and `docs/` *are* the API, reviewable in any pull request.
+
+> **Convention in this README:** commands are written `csdd …`. Zero install? The exact equivalent is `npx @protonspy/csdd …` — or alias it: `alias csdd='npx @protonspy/csdd'`.
 
 ## Install & run
 
@@ -15,7 +17,7 @@ npx @protonspy/csdd --help    # run instantly
 npx @protonspy/csdd           # no args → interactive TUI
 ```
 
-**Global install** — prefer a short `csdd` on your `PATH`:
+**Global install** — a short `csdd` on your `PATH`:
 
 ```bash
 npm install -g @protonspy/csdd
@@ -24,14 +26,13 @@ csdd --help
 
 **Other ways in:** grab a prebuilt archive from the [releases page](https://github.com/protonspy/csdd/releases) and put `csdd` on your `PATH`, or build from source with `go install github.com/protonspy/csdd@latest`.
 
-> The examples below use `npx @protonspy/csdd`. Installed globally or from source? Drop the prefix and call `csdd` directly — or alias it: `alias csdd='npx @protonspy/csdd'`.
-
 ---
 
-## Quickstart — set up csdd in your project
+## Quickstart
 
 ```bash
-npx @protonspy/csdd init --with-baseline   # bootstrap this repo into a csdd workspace (no install)
+# 1 · bootstrap this repo into a csdd workspace (no install)
+npx @protonspy/csdd init --with-baseline
 ```
 
 Then, **inside Claude Code**, adapt the workspace to *this* project's stack in one step:
@@ -44,21 +45,25 @@ Then, **inside Claude Code**, adapt the workspace to *this* project's stack in o
 Take your first feature from idea to ready-to-implement:
 
 ```bash
-npx @protonspy/csdd spec init my-feature
-npx @protonspy/csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
+csdd spec init my-feature
+csdd spec generate my-feature --artifact requirements   # → validate → approve → design → tasks → implement
 ```
 
 ### Commands at a glance
 
 | Command | What it does |
 |---|---|
-| `npx @protonspy/csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks) |
-| `npx @protonspy/csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) into the workspace — the complement of `init --exclude` |
+| `csdd init [--with-baseline]` | bootstrap the workspace (steering · skills · agents · commands · hooks · docs) |
+| `csdd update [--dry-run]` · `clean` · `destroy` | upgrade managed artifacts (keeping your edits as `.old`) · sweep `.old` backups · tear the workspace back down |
+| `csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) — the complement of `init --exclude` |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
-| `npx @protonspy/csdd spec init · generate · validate · approve · status` | the requirements → design → tasks gated lifecycle |
-| `npx @protonspy/csdd steering · skill · agent · mcp …` | author the 5 governed resources (`create · list · show · delete`, plus `validate` where applicable) |
-| `npx @protonspy/csdd update [--dry-run]` | upgrade managed artifacts, preserving your edits (`.old` backups) |
-| `npx @protonspy/csdd web` | read-only live dashboard — spec progress, task board, file viewer |
+| `csdd spec init · generate · validate · approve · status · test-report` | the requirements → design → tasks gated lifecycle |
+| `csdd plan init · validate · approve · status · next · brief · generate · run` | decompose an initiative into feats; drive each feat → spec → shipped code |
+| `csdd sandbox init · doctor` | scaffold a default-deny-egress devcontainer and prove its isolation |
+| `csdd graph build · query · path · explain · analyze · export` | the knowledge-base **brain** — a structured index over the whole workspace |
+| `csdd wiki init · lint` | the LLM-authored knowledge base under `docs/` |
+| `csdd steering · skill · agent · mcp …` | author the governed resources (`create · list · show · delete`, plus `validate`) |
+| `csdd web` | read-only live dashboard — spec progress, task board, file viewer |
 | `/csdd-commit` | Conventional-Commit the reviewed slice, written from the diff + active spec |
 
 > New to the flow? Read on for the *why*. In a hurry? The three blocks above are the whole loop.
@@ -79,14 +84,14 @@ The answer is **SDD — Spec-Driven Development**: a contract layer (requirement
 
 ## What csdd is
 
-A **CLI + TUI** in a single Go binary — the only sanctioned author of the workflow's artifacts. You don't hand-edit frontmatter, `spec.json`, or task annotations — you generate from a template, edit the body, and validate.
+A **CLI + TUI + Web** in a single Go binary — the only sanctioned author of the workflow's artifacts. You don't hand-edit frontmatter, `spec.json`, or task annotations — you generate from a template, edit the body, and validate.
 
 ### 🖥️ CLI — for agents & automation
 
 Flag-driven, headless. Exposes **100% of the functionality** so Claude Code, Cursor, Codex, or CI can drive the binary without reading the source.
 
 ```bash
-npx @protonspy/csdd spec generate photo-albums --artifact requirements
+csdd spec generate photo-albums --artifact requirements
 ```
 
 ### ⌨️ TUI — for humans
@@ -94,85 +99,24 @@ npx @protonspy/csdd spec generate photo-albums --artifact requirements
 Interactive interface (Bubble Tea). Running `csdd` with no arguments opens wizards and an artifact browser. Same operations, same rules.
 
 ```bash
-npx @protonspy/csdd   # no args → interactive TUI
+csdd   # no args → interactive TUI
 ```
-
-> 🔑 **Core principle:** both surfaces call the **same operation helpers**. A single source of truth — what a human does in the TUI, an agent does identically via the CLI.
 
 ### 🌐 Web — live dashboard
 
-`csdd web` serves a **read-only** dashboard in your browser: spec progress (phase,
-approvals, % of tasks done, validation status), navigable requirements / design /
-tasks (Markdown + Mermaid Boundary Maps), a **live task board** that updates as
-files change on disk, and a VS Code-style file viewer (Monaco) for the whole
-workspace — specs, steering, skills, agents, MCP, hooks and commands.
+`csdd web` serves a **read-only** dashboard in your browser: spec progress (phase, approvals, % of tasks done, validation status), navigable requirements / design / tasks (Markdown + Mermaid Boundary Maps), a **live task board** that updates as files change on disk, and a VS Code-style file viewer (Monaco) for the whole workspace.
 
 ```bash
-npx @protonspy/csdd web              # serve the dashboard and print its URL
-npx @protonspy/csdd web --port 8080  # custom port
-npx @protonspy/csdd web --tunnel     # expose it publicly via a tunnel (forces auth)
+csdd web              # serve the dashboard and print its URL
+csdd web --port 8080  # custom port
+csdd web --tunnel     # expose it publicly via a tunnel (forces auth)
 ```
 
-It is a *view*, not an author — the CLI stays the only thing that writes
-artifacts. And it's still a single binary: the React/Vite/Monaco UI is built
-ahead of time and embedded, so it runs **offline** with no extra runtime
-dependency. Binds to `127.0.0.1` by default.
+It's a *view*, not an author — the CLI stays the only thing that writes artifacts. And it's still a single binary: the React/Vite/Monaco UI is built ahead of time and embedded, so it runs **offline** with no extra runtime dependency. Binds to `127.0.0.1` by default.
 
-> The prebuilt binaries (npm / releases) embed the dashboard. Building from
-> source (`go install …` or `go build`)? Run `make web-build` first to embed the
-> UI — otherwise `csdd web` serves a placeholder page (the API still works).
-
----
-
-## Upgrading safely — `csdd update`
-
-A new csdd version ships new and improved managed artifacts (rules, templates, the shipped skills/agents/commands/hooks, the guide). `csdd update` brings your workspace up to that version **without ever losing your setup**:
-
-```bash
-npx @protonspy/csdd update --dry-run   # preview exactly what would change
-npx @protonspy/csdd update             # apply it
-```
-
-It tracks what it wrote in `.claude/.csdd-manifest.json` (a content-hash baseline) and, for each csdd-managed file, decides:
-
-| On disk vs. shipped | What update does |
-|---|---|
-| missing | **adds** it (new in this version) |
-| identical | leaves it (already current) |
-| pristine but outdated | **refreshes** it in place — you never touched it |
-| **edited by you** | writes the new version **and** keeps your copy as `<file>-1.old` (then `-2.old`, …) |
-
-So nothing is silently overwritten: any file you customized is preserved as a numbered `.old` backup beside it for you (or an agent) to diff and fold in. `--force` overwrites in place without the backup.
-
-> 🔒 **Never touched by update:** your `specs/`, your filled `.claude/steering/*.md`, custom (non-shipped) skills/agents, `.mcp.json`, `.claude/settings.json`, and `CLAUDE.md`. Update reconciles only the pure-csdd artifacts.
-
----
-
-## The 5 resources csdd governs
-
-| Resource | What it is | Location |
-|----------|-----------|----------|
-| 🧭 **steering** | Project memory loaded into every agent interaction. Standards and the *why* behind decisions. | `.claude/steering/*.md` |
-| 📐 **spec** | Per-feature contract: `spec.json` + requirements + design + tasks (+ research/bugfix). | `specs/<feature>/` |
-| 🛠️ **skill** | Executable workflow bundle: `SKILL.md` + references + assets + scripts. | `.claude/skills/<name>/` |
-| 🤖 **agent** | Custom sub-agent with a **least-privilege** tool scope (reviewer, debugger…). | `.claude/agents/<name>.md` |
-| 🔌 **mcp** | Model Context Protocol servers the agent can connect to. stdio or remote, never both. | `.mcp.json` |
-
-**Verbs per resource.** Common base: `create/init · list · show · delete`. `spec` adds `generate · approve · validate · status`; `mcp` uses `add · remove · enable · disable · validate`; `skill` adds `add-reference/script/asset · validate`.
-
----
-
-## Mental model — read this first
-
-Two distinctions matter more than anything else.
-
-### 📜 Specification — the contract
-The requirements, the File Structure Plan in the design, and the `_Boundary:_` / `_Depends:_` annotations on the tasks. 👤 **Humans review and approve this.**
-
-### 🧩 Design — the implementation space
-Components, internals, sequencing *within* each task. How the contract is fulfilled. 🤖 **The agent is free here, after approval.**
-
-The second distinction is the **phase gates**: no phase is generated before the previous one is approved by a human — and that is **enforced mechanically**, not by convention.
+> 🔑 **Core principle:** every surface calls the **same operation helpers**. A single source of truth — what a human does in the TUI, an agent does identically via the CLI.
+>
+> The prebuilt binaries (npm / releases) embed the dashboard. Building from source? Run `make web-build` first to embed the UI — otherwise `csdd web` serves a placeholder page (the API still works).
 
 ---
 
@@ -187,50 +131,50 @@ Discovery → [gate] Requirements → [gate] Design → [gate] Tasks → Impleme
 State lives in `spec.json`. Generating `design` while `requirements` is not approved **fails** — it's not a warning, it's exit code **2**.
 
 - `ready_for_implementation` only becomes `true` after all 3 approvals.
-- `--force` breaks the gate — only with explicit human authorization (Quick Plan), and it shows up in history.
+- `--force` breaks the gate — only with explicit human authorization, and it shows up in history.
 
 ```bash
-npx @protonspy/csdd spec generate albums --artifact design
+csdd spec generate albums --artifact design
 ✗ phase gate: 'requirements' must be
   approved before generating 'design'.
 
 # the right path:
-npx @protonspy/csdd spec approve albums --phase requirements
+csdd spec approve albums --phase requirements
 ✓ requirements approved
 ```
+
+### 📜 Specification vs. 🧩 Design — the distinction that matters most
+
+- **📜 Specification — the contract.** The requirements, the File Structure Plan in the design, and the `_Boundary:_` / `_Depends:_` annotations on the tasks. 👤 **Humans review and approve this.**
+- **🧩 Design — the implementation space.** Components, internals, sequencing *within* each task. How the contract is fulfilled. 🤖 **The agent is free here, after approval.**
+
+No phase is generated before the previous one is approved by a human — **enforced mechanically**, not by convention.
 
 ---
 
 ## Feature lifecycle — from idea to ready-to-implement
 
 ```bash
-# 1 · bootstrap (once per repo)
-npx @protonspy/csdd init --with-baseline
+# 1 · create the feature workspace
+csdd spec init photo-albums
 
-# 2 · create the feature workspace
-npx @protonspy/csdd spec init photo-albums
+# 2 · requirements → edit in EARS → validate → approve
+csdd spec generate photo-albums --artifact requirements
+csdd spec validate photo-albums   # exit 2 = fix what it flags
+csdd spec approve  photo-albums --phase requirements
 
-# 3 · requirements → edit in EARS → validate → approve
-npx @protonspy/csdd spec generate photo-albums --artifact requirements
-npx @protonspy/csdd spec validate photo-albums   # exit 2 = fix what it flags
-npx @protonspy/csdd spec approve  photo-albums --phase requirements
-
-# 4 · design (blocked until step 3 passes)  → 5 · tasks (same)
-npx @protonspy/csdd spec generate photo-albums --artifact design   # ... validate, approve
-npx @protonspy/csdd spec generate photo-albums --artifact tasks    # ... validate, approve
+# 3 · design (blocked until step 2 passes)  → 4 · tasks (same)
+csdd spec generate photo-albums --artifact design   # ... validate, approve
+csdd spec generate photo-albums --artifact tasks    # ... validate, approve
 
 ✓ spec.json: ready_for_implementation = true   # implementation can begin
 ```
 
-> 💡 `npx @protonspy/csdd spec status <feature>` between any two steps: phase + approvals + validation issues on a single screen.
+> 💡 `csdd spec status <feature>` between any two steps: phase + approvals + validation issues on a single screen.
 
----
+### Conventions the validator enforces
 
-## Conventions the validator enforces
-
-### 📝 Requirements in EARS
-
-Fixed, testable syntax, one behavior per criterion. `SHALL` — never `should`. Unique `N.M` IDs.
+**📝 Requirements in EARS.** Fixed, testable syntax, one behavior per criterion. `SHALL` — never `should`. Unique `N.M` IDs.
 
 ```
 ### Requirement 1: Album Management
@@ -238,13 +182,9 @@ Fixed, testable syntax, one behavior per criterion. `SHALL` — never `should`. 
    THEN the system SHALL persist it <500ms.
 2. IF the name is empty
    THEN the system SHALL return 400.
-3. WHILE deleting THE SYSTEM SHALL
-   block new uploads.
 ```
 
-### ✅ Annotated tasks (not a todo-list)
-
-Each leaf traces requirements; parallelism is declared and verified.
+**✅ Annotated tasks (not a todo-list).** Each leaf traces requirements; parallelism is declared and verified.
 
 ```
 - [ ] 2. AlbumService _Boundary: AlbumService_
@@ -256,11 +196,8 @@ Each leaf traces requirements; parallelism is declared and verified.
     _Depends: 1.2_
 ```
 
-- `_Requirements:_` on every leaf
-- `_Boundary:_` on every `(P)`
-- `_Depends:_` between boundaries
-
-`(P)` = runs in parallel. **Two `(P)` tasks cannot share a boundary** — the validator rejects it, guaranteeing safe parallel execution by agents.
+- `_Requirements:_` on every leaf · `_Boundary:_` on every `(P)` · `_Depends:_` between boundaries.
+- `(P)` = runs in parallel. **Two `(P)` tasks cannot share a boundary** — the validator rejects it, guaranteeing safe parallel execution by agents.
 
 ---
 
@@ -290,7 +227,7 @@ typecheck       ✓
 build           ✓
 ```
 
-Each leaf traces `_Requirements:_` → the test proves the requirement. **Evidence beats assertion.**
+Each leaf traces `_Requirements:_` → the test proves the requirement. **Evidence beats assertion.** Capture it into `specs/<f>/test-report.json` with `csdd spec test-report` (parses JUnit/coverage, or auto-discovers reports for go/python/typescript/java/rust).
 
 ---
 
@@ -322,9 +259,89 @@ git push
 
 ---
 
+## Plan mode — orchestrate many specs
+
+One spec is one feature. A real initiative spans several, with dependencies and a why. **Plan mode is the layer *above* specs:** a plan at `docs/plans/<slug>/` decomposes an initiative into **feats**, where **each feat becomes exactly one spec**.
+
+```
+initiative ──▶ plan (docs/plans/<slug>/) ──▶ feats ──▶ one spec each ──▶ shipped code
+```
+
+A `plan.md` carries three machine-parsed sections that `csdd plan validate` checks:
+
+| Section | What it declares |
+|---------|------------------|
+| `## Feats` | one row per feat: `Feat` (kebab slug → spec dir) · `Objective` · `Depends` (feat slugs, no cycles) · `Milestone` · `(P)` · `Refs` |
+| `## Quality Gates` | `- <label>: <command>` lines the runner executes after each step; ≥1 required |
+| `## Executor Notes` | opaque guidance inlined verbatim into every session brief |
+
+The `Refs` column is how a feat cites its *why*: `[[wiki-page]]`, `stack:<name>`, and `adr:<slug>` tokens — each must resolve, or validation breaks. Cited decision records are inlined **in full** into that feat's run brief.
+
+### Two human gates, machine work between
+
+```
+csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
+   (human gate)         (csdd-controlled)     (human gate)
+```
+
+`csdd plan run <slug>` is the **runner**: it owns `csdd spec approve`, the commits, and every write to `plan.md` / `plan.json` / `docs/graph/` / `.csdd/`. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval. A step that hits an unforeseen problem returns a `blocked` verdict with a revision proposal; folding it back in and re-approving is a human act (the PRD skill's **Revise** workflow), never a silent workaround.
+
+```bash
+csdd plan status <slug>                    # feats, milestones, what's next
+csdd plan run    <slug>                     # drive the next ready feat(s)
+csdd plan run    <slug> --autonomous        # bypass-mode loop — requires a verified sandbox
+                        --session-budget 5   # per-session USD cap · --max-iterations · --max-retries
+```
+
+### 🔒 `sandbox` — isolation before autonomy
+
+`--autonomous` runs Claude in bypass mode (`--dangerously-skip-permissions`), so csdd refuses to start one without a **proven** sandbox:
+
+```bash
+csdd sandbox init --hardened   # scaffold a default-deny-egress devcontainer (--feature, --allow-domain)
+csdd sandbox doctor            # prove the isolation holds before bypass mode is allowed
+```
+
+> Plans are authored by the **`/prd`** skill (interview → research → stack → decompose into feats → `csdd plan validate`). A single feature stays on the lighter **`quick-prd`** on-ramp.
+
+---
+
+## Knowledge base — the *why*, consultable
+
+`csdd init` seeds a knowledge base under `docs/`. It exists so understanding comes from **traversing relationships**, not re-reading source; and so decisions and vocabulary are recorded once, not re-litigated.
+
+### 🧠 Graph — a structured brain over the workspace
+
+`csdd graph` builds a deterministic index (`docs/graph/graph.json`, byte-stable — commit it with the change) linking specs, tasks, `.claude/` artifacts, `docs/`, and source. **Consult it before you grep:**
+
+```bash
+csdd graph build              # rebuild the index (+ appends docs/graph/log.md)
+csdd graph query "<terms>"    # find nodes by label tier + their neighborhood
+csdd graph path "<A>" "<B>"   # shortest path between two nodes
+csdd graph explain "<label>"  # a node plus its connections, by neighbor degree
+csdd graph analyze --strict   # traceability gaps + tech/wiki lints (non-zero exit)
+csdd graph export             # a self-contained docs/graph/graph.html visualization
+```
+
+### 📚 Wiki — LLM-authored, provenance-tracked
+
+`csdd wiki init` scaffolds `docs/raw/` (a dropzone the CLI never edits) and `docs/wiki/` (index, log, pages). When a source lands in `docs/raw/`, the **`wiki`** skill's *Ingest* workflow reads it and writes cross-linked pages under `docs/wiki/pages/` with `sources:` provenance. `csdd wiki lint` reports broken wikilinks, orphan pages, index/log desync, and unprocessed sources.
+
+### 🧾 Decision records · 📖 glossary · 🧱 tech contract
+
+| Artifact | Location | The rule |
+|----------|----------|----------|
+| **Decision records (ADR)** | `docs/adr/NNNN-<slug>.md` | A decision that passes the **triple gate** — hard to reverse · surprising without context · a real trade-off — becomes an append-only ADR. Feats cite it as `adr:<slug>`; a broken/superseded citation breaks `csdd plan validate`. Never edit a superseded record — mark it and write its successor. |
+| **Glossary** | `docs/glossary.md` | Each domain concept has one **canonical term** + an `_Avoid_` list of banned synonyms. Slugs and page names are minted from canonical terms; using an avoided term as a whole token is a lint. Renaming a term appends the old name to the successor's `_Avoid_` (a tombstone). |
+| **Tech contract** | `docs/stack.md` | Any technology **not** listed is an **open decision** — propose options and ask the human, never adopt a dependency silently. The **`stack`** skill refines each library against current docs before first use. |
+
+> Skills own the authoring: **`graph`**, **`wiki`**, **`glossary`**, **`stack`** (plus slash commands like `/csdd-graph-query`, `/csdd-wiki-ingest`, `/csdd-stack-refine`). The CLI is the only author of `docs/graph/` and `.csdd/`, and nothing ever edits `docs/raw/`.
+
+---
+
 ## Workflows — upstream & downstream (BMAD-style)
 
-Everything above is the *downstream* contract: requirements → design → tasks → code. But where do the requirements come from, and who decides *what* to build? `csdd init` ships two orchestrator workflows — modeled on the [BMAD Method](https://github.com/bmadcode/BMAD-METHOD)'s phase-gated lifecycle — that bracket the SDD core. Each is an **agent** (the lead) fronting a set of phase **skills**, and the seam between them is a normal, validated csdd spec.
+Everything above is the *downstream* contract: requirements → design → tasks → code. But where do the requirements come from, and who decides *what* to build? `csdd init` ships two orchestrator workflows — modeled on the [BMAD Method](https://github.com/bmadcode/BMAD-METHOD)'s phase-gated lifecycle — that bracket the SDD core. Each is an **agent** (the lead) fronting a set of phase **skills**, and the seam between them is a normal, validated csdd spec (or plan).
 
 ```
 wf:product/discovery  ──(handoff: steering + spec requirements)──▶  wf:development
@@ -334,7 +351,7 @@ wf:product/discovery  ──(handoff: steering + spec requirements)──▶  wf
 
 ### 🧭 `wf-product-discovery` — *what & why* (upstream)
 
-Agent that drives a raw idea to a decision-ready PRD, one optional phase at a time, then lands it into csdd:
+Drives a raw idea to a decision-ready PRD, one optional phase at a time, then lands it into csdd:
 
 | Skill | Produces |
 |-------|----------|
@@ -347,7 +364,7 @@ Agent that drives a raw idea to a decision-ready PRD, one optional phase at a ti
 
 ### 🏗️ `wf-development` — *how, built & verified* (downstream)
 
-Agent that takes an approved spec and drives it to shipped code — **reusing** the existing `tdd-cycle`, `verify-change`, `code-reviewer`/`security-reviewer`, `pr-review`, and the `csdd spec` gates rather than duplicating them. The `dev-*` skills add only the planning layer BMAD covers that csdd did not:
+Takes an approved spec and drives it to shipped code — **reusing** the existing `tdd-cycle`, `verify-change`, `code-reviewer`/`security-reviewer`, `pr-review`, and the `csdd spec` gates rather than duplicating them. The `dev-*` skills add only the planning layer BMAD covers that csdd did not:
 
 | Skill | Produces | Feeds csdd gate |
 |-------|----------|-----------------|
@@ -358,6 +375,64 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
 | `dev-retrospective` | `retrospective.md` | folds durable lessons into steering |
 
 > 🔑 The workflows never bypass the contract. Discovery output becomes a real EARS spec; architecture and stories become a real `design.md`/`tasks.md`. The phase gates stay mechanical — the workflows just decide *which* gate to open next.
+
+---
+
+## The resources csdd governs
+
+csdd is the only sanctioned author of these artifacts, so their structure stays machine-checkable instead of drifting into free-form prose.
+
+| Resource | What it is | Location |
+|----------|-----------|----------|
+| 🧭 **steering** | Project memory loaded into every agent interaction. Standards and the *why* behind decisions. | `.claude/steering/*.md` |
+| 📐 **spec** | Per-feature contract: `spec.json` + requirements + design + tasks (+ research/bugfix). | `specs/<feature>/` |
+| 🗺️ **plan** | Multi-feature initiative decomposed into feats, each feat → one spec. | `docs/plans/<slug>/` |
+| 🛠️ **skill** | Executable workflow bundle: `SKILL.md` + references + assets + scripts. | `.claude/skills/<name>/` |
+| 🤖 **agent** | Custom sub-agent with a **least-privilege** tool scope (reviewer, debugger…). | `.claude/agents/<name>.md` |
+| 🔌 **mcp** | Model Context Protocol servers the agent can connect to. stdio or remote, never both. | `.mcp.json` |
+| 📚 **knowledge base** | Graph, wiki, decision records, glossary, tech contract. | `docs/` |
+
+**Verbs per resource.** Common base: `create/init · list · show · delete`. `spec` adds `generate · approve · validate · status · test-report`; `plan` adds `validate · approve · status · next · brief · generate · run`; `mcp` uses `add · install · presets · remove · enable · disable · validate`; `skill` adds `add-reference/script/asset · validate`; `graph` and `wiki` are CLI-only builders/linters.
+
+---
+
+## Upgrading safely — `update`, `clean`, `destroy`
+
+A new csdd version ships new and improved managed artifacts. `csdd update` brings your workspace up to that version **without ever losing your setup**:
+
+```bash
+csdd update --dry-run   # preview exactly what would change
+csdd update             # apply it
+```
+
+It tracks what it wrote in `.csdd/manifest.json` (a content-hash baseline) and, for each csdd-managed file, decides:
+
+| On disk vs. shipped | What update does |
+|---|---|
+| missing | **adds** it (new in this version) |
+| identical | leaves it (already current) |
+| pristine but outdated | **refreshes** it in place — you never touched it |
+| **edited by you** | writes the new version **and** keeps your copy as `<file>-1.old` (then `-2.old`, …) |
+
+So nothing is silently overwritten: any file you customized is preserved as a numbered `.old` backup beside it to diff and fold in. `--force` overwrites in place without the backup. When you're done reconciling, `csdd clean` sweeps the `*-N.old` backups; `csdd destroy` tears the workspace back down (`.claude/`, `CLAUDE.md`, `.mcp.json`, the pre-push hook) for a fresh re-install — **keeping your `specs/`**.
+
+> 🔒 **Never touched by update:** your `specs/`, your filled `.claude/steering/*.md`, custom (non-shipped) skills/agents, `.mcp.json`, `.claude/settings.json`, `docs/` you authored, and `CLAUDE.md`. Update reconciles only the pure-csdd artifacts.
+
+---
+
+## What the validator catches
+
+| Gate | Checks |
+|------|--------|
+| **spec · requirements** | Every criterion starts with WHEN/WHILE/IF/WHERE/THE SYSTEM · none uses `should` · `### Requirement N:` headers unique |
+| **spec · design** | Boundary Map and File Structure Plan sections present · every requirement ID appears in the traceability table · `design.md` ≤ 1000 lines (else split the spec) |
+| **spec · tasks** | Every leaf has `_Requirements:_` with real IDs · every `(P)` has a `_Boundary:_` that matches the design · no `(P)` pair shares a boundary |
+| **plan** | Feats table well-formed · `Depends` resolve with no cycles · every `Refs` token (`[[wiki]]` · `stack:` · `adr:`) resolves · ≥1 quality gate · no avoided glossary terms |
+| **graph · analyze** | Traceability gaps + tech lints (`undeclared`/`phantom`/`unrefined`) + wiki lints · `--strict` exits non-zero |
+| **wiki · lint** | Broken wikilinks · orphan pages · index/log desync · unprocessed `docs/raw/` sources |
+| **skill · mcp · steering** | `SKILL.md` ≤ 500 lines / ~5k tokens, refs cited · mcp: exactly 1 transport (stdio **or** url) · steering: valid `inclusion`, fileMatch has a pattern |
+
+**Exit codes:** `0` ok · `1` usage error · `2` validation failure. Scriptable in CI.
 
 ---
 
@@ -372,9 +447,9 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
   dispatcher, 1 file/resource           Bubble Tea · wizards + browser
         └──── both call the SAME operation helpers ────┘
                              │
-   workspace · paths · validator · templater · frontmatter · render
+   workspace · paths · validator · templater · plan · graph · frontmatter · render
                              │
-   artifacts on disk: .claude/ · specs/ · CLAUDE.md · .mcp.json
+   artifacts on disk: .claude/ · specs/ · docs/ · CLAUDE.md · .mcp.json
               (plain text, reviewable in a PR)
 ```
 
@@ -382,36 +457,23 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
 |---------|---------------|----------------|
 | `internal/cli` | **CLI surface.** Dispatches `resource action`, flag parsing, 1 file per resource. Includes `CLAUDE.md` and `.gitignore` wiring. | The public contract — 100% of functionality, headless. |
 | `internal/tui` | **Interactive front-end** (Bubble Tea): menu, wizards, artifact browser. | Calls the same helpers as `cli`. No duplicated logic. |
-| `internal/workspace` | Resolves the `.claude/` root by walking up the tree; validates kebab-case; enumerates phases and artifacts. | Defines what a workspace *is* and the valid names. |
-| `internal/paths` | Centralizes the on-disk layout: `.claude/`, `CLAUDE.md`, `.mcp.json`, `specs/`. | The layout lives in *exactly one* place. |
+| `internal/workspace` | Resolves the workspace root (the `.csdd/` marker) by walking up the tree; validates kebab-case; enumerates phases and artifacts. | Defines what a workspace *is* and the valid names. |
+| `internal/paths` | Centralizes the on-disk layout: `.claude/`, `.csdd/`, `docs/`, `specs/`, `CLAUDE.md`, `.mcp.json`. | The layout lives in *exactly one* place. |
 | `internal/validator` | **The mechanical checks:** EARS, unique IDs, traceability, annotations, parallelism safety, skill structure. | The agent's "friend." Never asks for judgment — only true/false. Exit 2. |
+| `internal/plan` | Plans, feats, the run loop, ADR parsing, and the sandbox scaffold. | Turns a multi-feature initiative into gated, runnable work. |
+| `internal/graph` | Builds the deterministic knowledge graph and runs its analyses/lints. | The structured brain — consult over re-reading. |
 | `internal/templater` | Renders templates **embedded at compile time** (`go:embed`). | A fully self-contained binary — zero runtime dependencies. |
 | `internal/frontmatter` | Parser for a minimal subset of YAML (scalars, bool, inline arrays). | Does only what's needed — small, predictable surface. |
 | `internal/render` | Terminal output helpers with color (respects `NO_COLOR`/TTY). | Consistent `✓ ✗ ! •` messages in the CLI. |
 
----
-
-## Design principles — four deliberate choices
+### Design principles — four deliberate choices
 
 1. **CLI = TUI, always.** Both surfaces converge on the same helpers. There is no function only the TUI can do — which is why a headless agent has 100% of the power.
 2. **Embedded templates.** `go:embed all:templates` compiles the templates into the binary. You download one file and it works offline, with nothing to install.
 3. **Mechanical, not opinionated, validation.** The validator never asks for judgment: either the criterion starts with `WHEN` or it doesn't. Deterministic → an agent can trust the exit code.
-4. **Artifacts are plain text.** Everything becomes versionable markdown/JSON in `.claude/` and `specs/`. Review happens in the PR, with the tools the team already uses.
+4. **Artifacts are plain text.** Everything becomes versionable markdown/JSON in `.claude/`, `specs/`, and `docs/`. Review happens in the PR, with the tools the team already uses.
 
 > The result: **the CLI never stops you from doing the right thing** — it stops you from doing the wrong thing *without making the decision visible*. Breaking a gate requires an explicit `--force`, and that shows up in history.
-
----
-
-## What the validator catches
-
-| Gate | Checks |
-|------|--------|
-| **spec · requirements** | Every criterion starts with WHEN/WHILE/IF/WHERE/THE SYSTEM · none uses `should` · `### Requirement N:` headers unique |
-| **spec · design** | Boundary Map and File Structure Plan sections present · every requirement ID appears in the traceability table · `design.md` ≤ 1000 lines (else split the spec) |
-| **spec · tasks** | Every leaf has `_Requirements:_` with real IDs · every `(P)` has a `_Boundary:_` that matches the design · no `(P)` pair shares a boundary |
-| **skill · mcp · steering** | `SKILL.md` ≤ 500 lines / ~5k tokens, refs cited · mcp: exactly 1 transport (stdio **or** url) · steering: valid `inclusion`, fileMatch has a pattern |
-
-**Exit codes:** `0` ok · `1` usage error · `2` validation failure. Scriptable in CI.
 
 ---
 
@@ -420,13 +482,15 @@ Agent that takes an approved spec and drives it to shipped code — **reusing** 
 The workspace `csdd` writes **is** the layout Claude Code expects. `csdd init` bootstraps it and handles the wiring:
 
 ```
-CLAUDE.md             # entry point + steering imports
+CLAUDE.md             # entry point + steering imports + knowledge-base workflow
 .claude/steering/*.md # @-referenced from CLAUDE.md
 .claude/agents/*.md   # sub-agents (implementer, code-reviewer, …)
 .claude/skills/<n>/   # skill bundles
-.claude/commands/     # slash commands (/csdd-setup-init, /csdd-setup-update, /csdd-commit)
-.claude/hooks/        # deterministic automation
+.claude/commands/     # slash commands (/csdd-setup-init, /csdd-commit, /prd, /csdd-graph-query, …)
+.claude/hooks/        # deterministic automation (format-after-edit, pre-push test gate, …)
+.csdd/                # csdd's operational state (the workspace marker + manifest.json) — the csdd analog of .git/
 specs/<feature>/      # SDD contracts
+docs/                 # knowledge base: plans/ · adr/ · wiki/ · graph/ · raw/ · glossary.md · stack.md · product/
 .mcp.json             # MCP servers
 ```
 
@@ -434,22 +498,15 @@ Creating a steering automatically inserts `@.claude/steering/<name>` into a mana
 
 **What the team gains:**
 - **Zero friction with Claude Code.** Artifacts are read natively — no exporting or converting.
-- **Review where we already work.** Specs and steering are text in a PR — diff, comment, approve.
+- **Review where we already work.** Specs, steering, and docs are text in a PR — diff, comment, approve.
 - **Least privilege by default.** Sub-agents are born with `Read, Grep`; MCP with a restricted scope.
-- **CI validates the contract.** A `csdd spec validate` in the pipeline blocks a broken spec before merge.
+- **CI validates the contract.** `csdd spec validate` (and `plan validate` / `graph analyze --strict` / `wiki lint`) in the pipeline blocks a broken contract before merge.
 
 ---
 
 ## 🔌 MCP server — drive csdd as native tools
 
-Prefer your agent to call **tools** over shelling out to a terminal?
-[`@protonspy/csdd-mcp`](mcp-server/) is an MCP server (stdio) that exposes the csdd
-**development flow** as tools — `csdd_spec_generate`, `csdd_steering_create`,
-`csdd_spec_approve`, … **27 in total.** It wraps the same CLI, so the contract is
-intact: phase gates still block, the validator still runs, and **exit 2 surfaces
-as a distinct "validation failed" result** the agent can branch on. Typed
-parameters (enums for `artifact`/`phase`/`inclusion`) mean the agent picks valid
-inputs and the server builds the argv — more precise than hand-written commands.
+Prefer your agent to call **tools** over shelling out to a terminal? [`@protonspy/csdd-mcp`](mcp-server/) is an MCP server (stdio) that exposes the csdd **development flow** as tools — `csdd_spec_generate`, `csdd_steering_create`, `csdd_spec_approve`, … **27 in total.** It wraps the same CLI, so the contract is intact: phase gates still block, the validator still runs, and **exit 2 surfaces as a distinct "validation failed" result** the agent can branch on. Typed parameters (enums for `artifact`/`phase`/`inclusion`) mean the agent picks valid inputs and the server builds the argv — more precise than hand-written commands.
 
 `csdd init` registers the server in `.mcp.json` for you (pass `--no-mcp` to skip):
 
@@ -468,14 +525,12 @@ Full tool reference and configuration: [`mcp-server/README.md`](mcp-server/READM
 
 ## Interop — export to Kiro / Codex
 
-`csdd` is Claude Code-native, but the SDD artifacts aren't locked in. `csdd export`
-converts the workspace to other agentic toolchains — a one-way, **additive** export
-that lives alongside `.claude/` (nothing is overwritten in place):
+`csdd` is Claude Code-native, but the SDD artifacts aren't locked in. `csdd export` converts the workspace to other agentic toolchains — a one-way, **additive** export that lives alongside `.claude/` (nothing is overwritten in place):
 
 ```bash
-npx @protonspy/csdd export kiro     # → .kiro/steering/*.md + .kiro/specs/<feature>/{requirements,design,tasks}.md
-npx @protonspy/csdd export codex    # → AGENTS.md (CLAUDE.md + steering inlined) + .codex/config.toml (MCP)
-npx @protonspy/csdd export kiro --out ./build --force
+csdd export kiro     # → .kiro/steering/*.md + .kiro/specs/<feature>/{requirements,design,tasks}.md
+csdd export codex    # → AGENTS.md (CLAUDE.md + steering inlined) + .codex/config.toml (MCP)
+csdd export kiro --out ./build --force
 ```
 
 - **Kiro** — steering frontmatter (`inclusion: always|fileMatch|manual|auto`, `fileMatchPattern`) is already Kiro-compatible, so steering copies verbatim; specs copy their SDD markdown (`spec.json` is dropped — Kiro tracks phase state in-IDE).
@@ -483,15 +538,4 @@ npx @protonspy/csdd export kiro --out ./build --force
 
 ---
 
-## Getting started
-
-```bash
-# bootstrap a repo with baseline steering
-npx @protonspy/csdd init --with-baseline
-
-# take your first feature through to ready_for_implementation
-npx @protonspy/csdd spec init my-feature
-npx @protonspy/csdd spec generate my-feature --artifact requirements
-```
-
-**Takeaways:** The validator is your friend. The gate makes the decision *visible*. Contract before code — requirements → design → tasks, each approved by a human before the next. Always generate from a template; never hand-write frontmatter or `spec.json`. Least privilege everywhere.
+**Takeaways:** The validator is your friend. The gate makes the decision *visible*. Contract before code — requirements → design → tasks, each approved by a human before the next. Plan mode scales that from one feature to a whole initiative; the knowledge base keeps the *why* consultable. Always generate from a template; never hand-write frontmatter or `spec.json`. Least privilege everywhere.
