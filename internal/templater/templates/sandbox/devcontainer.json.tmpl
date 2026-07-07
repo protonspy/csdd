@@ -1,0 +1,25 @@
+// csdd sandbox — devcontainer definition (JSONC; comments are allowed).
+// Open with your IDE's "Reopen in Container", or `devcontainer up`. Inside,
+// bypass-mode Claude is safe: `csdd sandbox doctor` proves isolation and
+// `csdd plan run --autonomous` refuses to pass --dangerously-skip-permissions
+// unless it does.
+{
+  "name": "csdd-sandbox",
+  "build": {
+    "dockerfile": "Dockerfile",
+    // HARDENED=true limits the vscode user's sudo to the firewall script only.
+    "args": { "HARDENED": "{{.Hardened}}" }
+  },
+  // NET_ADMIN/NET_RAW let init-firewall.sh program iptables/ipset at start.
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {}{{.ExtraFeatures}}
+  },
+  // Install Claude Code (Node feature provides the runtime).
+  "postCreateCommand": "npm install -g @anthropic-ai/claude-code",
+  // Bring up the default-deny egress firewall on every start; it self-verifies
+  // and exits non-zero if isolation is not enforced.
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh"
+}

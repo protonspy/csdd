@@ -40,6 +40,11 @@ type SpecJSON struct {
 	ReadyForImplementation bool                    `json:"ready_for_implementation"`
 	CreatedAt              string                  `json:"created_at"`
 
+	// Plan records the plan slug this spec was generated from (`csdd plan
+	// generate`), the provenance the graph turns into a `plans` edge. Absent for
+	// specs created directly via `csdd spec init`.
+	Plan string `json:"plan,omitempty"`
+
 	// extra preserves any keys a newer csdd wrote that this binary does not model,
 	// so round-tripping spec.json through an older binary never silently drops
 	// them. Unexported ⇒ ignored by encoding/json; merged back in saveSpecJSON.
@@ -50,7 +55,7 @@ type SpecJSON struct {
 // on disk is captured into SpecJSON.extra and round-tripped untouched.
 var knownSpecKeys = []string{
 	"schema_version", "feature_name", "language", "phase", "development_flow",
-	"approvals", "ready_for_implementation", "created_at",
+	"approvals", "ready_for_implementation", "created_at", "plan",
 }
 
 // defaultDevelopmentFlow is the flow assumed when none is selected and steering

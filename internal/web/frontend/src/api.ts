@@ -1,4 +1,12 @@
-import type { Overview, SpecDetail, WorkspaceTree, FileContent, TestReport } from './types'
+import type {
+  Overview,
+  SpecDetail,
+  WorkspaceTree,
+  FileContent,
+  TestReport,
+  PlanSummary,
+  PlanDetail,
+} from './types'
 import { authHeader, requireAuth } from './auth'
 
 async function get<T>(url: string): Promise<T> {
@@ -19,4 +27,6 @@ export const api = {
   tree: () => get<WorkspaceTree>('/api/tree'),
   file: (path: string) => get<FileContent>(`/api/file?path=${encodeURIComponent(path)}`),
   tests: () => get<TestReport>('/api/tests'),
+  plans: () => get<PlanSummary[]>('/api/plans'),
+  plan: (slug: string) => get<PlanDetail>(`/api/plan/${encodeURIComponent(slug)}`),
 }

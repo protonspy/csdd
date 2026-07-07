@@ -89,6 +89,8 @@ func assemble(root string, nodes []Node, edges []Edge) *Graph {
 	g.Nodes = dedupNodes(nodes)
 	g.Links = dedupEdges(edges)
 	assembleSpecOwnership(g)
+	resolveADRSupersession(g)
+	resolveGlossaryRefs(g, root)
 	resolveCitedPaths(g, root)
 	resolveGoImports(g, root)
 	g.Pending = resolveReferences(g)

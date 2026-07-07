@@ -211,3 +211,45 @@ export interface TestReport {
   tests: TestSummary | null
   sources: string[]
 }
+
+// Plans — the layer above specs. A plan (docs/plans/<slug>/) decomposes an
+// initiative into feats, each becoming one spec; all state is derived read-only.
+export interface PlanSummary {
+  slug: string
+  name: string
+  approved: boolean
+  drift: boolean
+  deviations: number
+  feats: number
+  done: number
+  blocked: number
+}
+
+export interface PlanFeat {
+  slug: string
+  num: string
+  objective: string
+  milestone: string
+  depends: string[]
+  parallel: boolean
+  state: string
+  tasks_total: number
+  tasks_checked: number
+  block_reason?: string
+}
+
+export interface MilestoneProgress {
+  name: string
+  total: number
+  done: number
+}
+
+export interface PlanDetail {
+  slug: string
+  name: string
+  approved: boolean
+  drift: boolean
+  deviations: number
+  feats: PlanFeat[]
+  milestones: MilestoneProgress[]
+}

@@ -1,0 +1,177 @@
+---
+name: prd
+description: Turn an initiative that spans MULTIPLE features into an approved csdd plan (docs/plans/<slug>/) — a feat table where each feat becomes exactly one spec. Runs the whole authoring pipeline through the CLI (Draft → Research → Stack consult → Decompose → lint), scaffolding with `csdd plan init` and linting with `csdd plan validate` after every pass, and ends by presenting a validated plan for the human `csdd plan approve`. Use for big work that decomposes into many specs; use quick-prd for a single feature.
+---
+
+# PRD — author a csdd plan
+
+## Goal
+
+Turn a multi-feature initiative into a **validated plan** at
+`docs/plans/<slug>/plan.md`: a `## Feats` table where each feat becomes exactly
+one spec, with explicit dependencies, milestones, quality gates, and per-feat
+seeds. You author the prose and the feat table; the **CLI owns every mechanical
+step** (`csdd plan init` / `validate`, or `npx @protonspy/csdd plan …`). You never
+write `plan.json`, `docs/graph/`, or `.csdd/`, and you never approve — the skill
+ends by handing a lint-clean plan to the human for `csdd plan approve`.
+
+## The Iron Law
+
+> **The plan is a contract. Every feat is one spec-sized chunk, every dependency
+> is explicit, every technology is a `docs/stack.md` Decided row, and the plan
+> lints clean before you present it. Author only — never approve, never run the
+> loop, never write plan.json/graph/state.**
+
+## When to Use
+
+- **Use** for an initiative that decomposes into **multiple specs** (a subsystem,
+  a milestone-sized effort, anything a single `requirements.md` can't hold).
+- **Not** for one feature — use `quick-prd` (its `docs/product/prd-<feature>.md`
+  is an accepted *input* to this skill's Draft step).
+- **Not** to execute the plan — that is `csdd plan run` (supervised or, inside a
+  sandbox, `--autonomous`), which this skill never triggers.
+
+## Collect Inputs First
+
+- The initiative in the user's words, plus any `quick-prd` PRD under
+  `docs/product/` that seeds it.
+- Steering (`product.md`, `tech.md`, `structure.md`), `docs/stack.md`, and the
+  existing `specs/` — source facts; do not re-ask what is recorded.
+- The workspace marker: run inside a `csdd init`-ed project (`.csdd/` present).
+
+## Execution Workflow
+
+Run the five passes in order. **After every pass that edits `plan.md` or seeds,
+run `csdd plan validate <slug>` and fix findings before continuing.**
+
+### 1) Draft — interview in two tiers, then frame
+Scaffold first: `csdd plan init <slug>` (kebab-case). Draft runs in **two tiers**:
+first batch the scope facts, then grill the load-bearing decisions.
+
+**Tier 1 — scope facts (batched).** Interview the user with **batched, lettered
+multiple-choice questions** (via the harness question tool) so they answer fast
+("1B, 2A, 3C"). Cover: the outcome (problem, not solution), primary users and
+non-users, the core capabilities v1 must deliver, scope boundaries, and success
+criteria. Write the plan's **Context and vision** prose and the goals/non-goals
+from the *recorded answers* — mark every gap `[ASSUMPTION]`.
+
+**Tier 2 — the Decision grill (one at a time).** Some choices are not scope facts
+but **decisions**. Put every candidate through the **triple gate** — record it as
+an ADR only when **all three** hold:
+
+> 1. **Hard to reverse** — the cost of changing your mind later is meaningful.
+> 2. **Surprising without context** — a future reader will ask "why this way?".
+> 3. **The result of a real trade-off** — there were genuine alternatives.
+>
+> If any one is missing it is prose or a cheap `[ASSUMPTION]`, never an ADR.
+> (Contrapositive: if it's easy to reverse you'll just reverse it; if it's not
+> surprising nobody will wonder; if there was no alternative there's nothing to
+> record.) This gate is what designs out ADR spam.
+
+For every gate-positive candidate, run the **grill**:
+- **One decision per exchange.** Never bundle decisions into the batch — scope
+  facts are batched, decisions are grilled.
+- **Recommendation first.** State your recommended answer and the trade-off, then
+  let the **human decide** (grilling's form; facts come from the repo, decisions
+  from the user).
+- **Dependency order.** Order the grill so a decision that unblocks other
+  decisions is asked first.
+- **Write the ADR the moment it resolves.** Scan `docs/adr/` for the highest
+  number, add 1, and write `docs/adr/NNNN-<slug>.md` immediately — a `# <title>`
+  heading then 1–3 sentences (context, decision, why). Never batch the writes;
+  never renumber an existing record.
+- **Look up, don't ask.** Anything recoverable from steering, `docs/stack.md`,
+  `specs/`, or code is a fact you source — never a grill question.
+
+The citation is wired in Decompose (each affected feat's `Refs` gets `adr:<slug>`).
+
+**Terminology hook.** When the interview surfaces a **contested or fuzzy domain
+term** (two words for one concept, or one word for two), route it through the
+**glossary skill** — it owns challenge/sharpen/record. Do not settle terminology
+inline here; a canonical term recorded in `docs/glossary.md` is what Decompose
+mints slugs from.
+
+### 2) Research — verify against current docs
+For each unfamiliar library, API, or pattern the initiative leans on, check
+**current documentation** (Context7 MCP when configured, else web search — never
+training data for API/config/version details). File findings as wiki pages under
+`docs/wiki/pages/` (use the `wiki` skill's Ingest workflow) and reference them
+from the relevant feat's `Refs` as `[[page-name]]`.
+
+### 3) Stack consult — decide the tech
+For any technology **not** already a `docs/stack.md` Decided row, invoke the
+`stack` skill's **Propose** workflow: present 2–3 options with trade-offs and let
+the **human decide**. Only after a decision, add it (via the stack skill) and cite
+it from the feat's `Refs` as `stack:<name>`. Never adopt tech silently.
+
+### 4) Decompose — the feat table
+Fill the `## Feats` table applying the **right-sizing rule**:
+- **One feat = one spec = a short session chain.** If a feat wouldn't fit a
+  requirements→design→tasks→implement pass, split it.
+- **Mint feat slugs from canonical terms** (per `docs/glossary.md`, via the
+  glossary skill) — never an avoided synonym; `csdd plan validate` reports an
+  avoided term in a slug.
+- **Dependencies are explicit** feat slugs in `Depends` (never a range like
+  `1-3`); order feats by `Milestone` then table order.
+- **Refs** carry the `stack:<name>`, `[[wiki-page]]`, and `adr:<slug>` tokens from
+  steps 1–3 — cite every decision record on the feat(s) it governs so the why is
+  inlined into that feat's run brief.
+- **Seeds (optional):** pre-author `docs/plans/<slug>/seeds/<feat>/requirements.md`
+  (etc.) to hand the eventual spec a head start.
+Also fill **## Quality Gates** (`- <label>: <command>` — at least one) and
+**## Executor Notes** (repo conventions passed verbatim into every run brief).
+
+### 5) Present — sweep assumptions, then hand off for approval
+**First, the assumption sweep.** Walk every remaining `[ASSUMPTION]` in `plan.md`.
+Put each through the triple gate: a gate-positive assumption is an unowned
+decision, so **grill it into an ADR** (§1 tier 2) or have the **human explicitly
+defer it** — re-mark it `[DEFERRED-BY-HUMAN]` in `plan.md`. **Never present a plan
+for approval while a gate-positive `[ASSUMPTION]` survives unmarked** — that is a
+decision made by nobody.
+
+Then run `csdd plan validate <slug>` one last time; it must be clean. Show the
+user the feat table and its `csdd plan status <slug>`, and tell them to review and
+run **`csdd plan approve <slug>`** themselves. Do not approve, generate specs, or
+start the runner.
+
+### Revise (later) — fold deviations back in
+When a run records `blocked` deviations in `docs/plans/<slug>/log.md`
+(surfaced by `csdd plan status`), re-open this skill: read each deviation's
+revision proposal. **If the proposal embodies a gate-positive decision, grill it
+and write a new ADR — or, when it overturns a recorded one, mark the superseded
+record (`status: superseded`, `superseded-by: <NNNN>`) and write its successor —
+BEFORE amending `plan.md`.** Then amend `plan.md`, re-`validate`, and hand back to
+the human for a fresh `csdd plan approve` (re-approval clears the drift). Editing
+an approved plan and its decisions is always a human-gated act, never done mid-run.
+
+## Gotchas
+
+- **Author only.** Never run `csdd plan approve`, `csdd plan generate`, or
+  `csdd plan run`; never write `plan.json`, `docs/graph/`, or `.csdd/`. The plan
+  is presented for the human to approve.
+- **Range shorthand in Depends is a lint error** — list feat slugs explicitly.
+- **Undeclared tech and broken `[[refs]]` fail `plan validate`** — do steps 2–3
+  before wiring them into the table.
+- **Feats too big are the common failure.** If a feat's objective needs "and" to
+  describe, it is probably two feats.
+- **quick-prd is the single-feature on-ramp**, not a replacement: its PRD feeds
+  Draft; it does not produce a plan.
+
+## Verification Before Reporting
+
+- Run: `csdd plan validate <slug>` — it must exit clean (no findings).
+- Check: every feat is one spec-sized chunk with an explicit objective; every
+  `Depends` names a real feat; every `stack:`/`[[…]]` ref resolves; `## Quality
+  Gates` is non-empty; `## Executor Notes` states the repo's verify command and
+  conventions.
+- If blocked: if the user cannot name the milestone-level outcome, stop and say
+  so — do not invent a feat table over an undefined initiative.
+
+## Completion Criteria
+- [ ] `csdd plan init <slug>` scaffolded the plan; prose came from recorded answers.
+- [ ] Unfamiliar tech/APIs were researched against current docs and filed as wiki pages, cited in `Refs`.
+- [ ] Every new technology went through the `stack` skill's Propose (human-decided) and is a `docs/stack.md` Decided row.
+- [ ] Every gate-positive decision (triple gate: hard to reverse + surprising + real trade-off) was grilled one-at-a-time, recorded as a `docs/adr/NNNN-<slug>.md` the moment it resolved, and cited from its feat(s) as `adr:<slug>`. No gate-negative record was written (ADR spam is a review finding).
+- [ ] The Present sweep resolved every gate-positive `[ASSUMPTION]` — grilled into an ADR or `[DEFERRED-BY-HUMAN]`; none survive unmarked.
+- [ ] The `## Feats` table right-sizes each feat to one spec, with explicit deps, milestones, and refs; `## Quality Gates` and `## Executor Notes` are filled.
+- [ ] `csdd plan validate <slug>` is clean and the plan was presented for the human `csdd plan approve` — nothing approved, generated, or run here.

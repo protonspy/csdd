@@ -89,6 +89,22 @@ func newMux(root string, h *hub, a *auth, allowedHosts ...string) http.Handler {
 		writeJSON(w, http.StatusOK, session.LoadTestReport(root))
 	}))
 
+	mux.HandleFunc("GET /api/plans", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		writeJSON(w, http.StatusOK, loadPlansList(root))
+	}))
+
+	mux.HandleFunc("GET /api/plan/{slug}", a.protect(func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		d, err := loadPlanDetail(root, slug)
+		if err != nil {
+			// Opaque: the raw error may embed a filesystem path.
+			writeError(w, http.StatusNotFound, planNotFound(slug))
+			return
+		}
+		writeJSON(w, http.StatusOK, d)
+	}))
+
 	mux.HandleFunc("GET /api/events", a.protect(h.sseHandler))
 
 	// Everything else is the embedded SPA (with index.html fallback). Public so

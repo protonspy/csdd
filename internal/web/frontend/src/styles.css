@@ -506,6 +506,55 @@ code {
   background: rgba(84, 192, 138, 0.16);
   color: var(--ok);
 }
+.badge.info {
+  background: rgba(90, 166, 230, 0.16);
+  color: var(--info);
+}
+
+/* ---- Plans tab ------------------------------------------------------- */
+.plan-card {
+  text-align: left;
+  cursor: pointer;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--info);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  margin-bottom: 4px;
+}
+.feat-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.feat-row {
+  display: grid;
+  grid-template-columns: 2.2em minmax(9em, 1.4fr) 2.2fr auto minmax(6em, 0.9fr);
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px;
+  border-top: 1px solid var(--bg-3);
+}
+.feat-row:first-child {
+  border-top: none;
+}
+.feat-slug {
+  font-weight: 600;
+}
+.feat-slug .badge {
+  margin-left: 6px;
+}
+.feat-objective {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feat-progress {
+  text-align: right;
+}
 
 /* ---- Top tabs (header) ----------------------------------------------- */
 .top-tabs {

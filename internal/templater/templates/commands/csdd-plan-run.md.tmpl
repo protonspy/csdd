@@ -1,0 +1,23 @@
+---
+description: Drive a csdd plan's autonomous loop — fresh sessions per step, gated and committed by the runner. Requires an approved, drift-free plan.
+argument-hint: <plan-slug> [--autonomous]
+allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(npx @protonspy/csdd plan:*)
+---
+
+## Task
+
+Drive the plan in `$ARGUMENTS` through `csdd plan run`.
+
+Preflight first: `csdd plan status <slug>` must show the plan **approved** and
+**drift-free** (no unprocessed deviations you haven't reviewed). Then:
+
+- **Supervised (default):** `csdd plan run <slug>` — the runner spawns a session
+  per step with `--permission-mode acceptEdits`, runs the gates, and approves/
+  commits only on green.
+- **Autonomous:** `csdd plan run <slug> --autonomous` — ONLY inside the hardened
+  sandbox. `csdd sandbox doctor` must pass first; the runner refuses to pass
+  `--dangerously-skip-permissions` otherwise.
+
+The runner owns approvals and commits. If it records a `blocked` deviation, do not
+patch the plan mid-run — take it to the `prd` skill's Revise workflow and
+re-approve.

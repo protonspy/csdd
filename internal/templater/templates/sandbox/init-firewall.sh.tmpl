@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# csdd sandbox — default-deny egress firewall with self-verification.
+#
+# Resolves every host in the allow-list to its current IPv4 addresses and permits
+# ONLY those (plus loopback, DNS, and established return traffic); all other
+# outbound traffic is dropped. It then PROVES isolation: a control host must be
+# unreachable and api.anthropic.com reachable, or it exits non-zero so
+# `csdd sandbox doctor` (and `plan run --autonomous`) refuse to proceed.
+set -euo pipefail
+
+ALLOWLIST="${1:-/etc/csdd/allowed-domains.txt}"
+CONTROL_HOST="${CSDD_FIREWALL_CONTROL_HOST:-example.com}"  # not allow-listed → must be blocked
+
+log() { echo "[csdd-firewall] $*"; }
+
+if [ ! -r "$ALLOWLIST" ]; then
+  echo "[csdd-firewall] FAIL: allow-list not found: $ALLOWLIST" >&2
+  exit 1
+fi
+
+log "flushing existing rules"
+iptables -F
+iptables -X 2>/dev/null || true
+ipset destroy csdd-allow 2>/dev/null || true
+ipset create csdd-allow hash:ip
+
+# Loopback and DNS first — DNS is needed to resolve the allow-list itself.
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A INPUT  -i lo -j ACCEPT
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+# Established/related return traffic.
+iptables -A INPUT  -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+log "resolving allow-list -> ipset"
+while IFS= read -r raw; do
+  host="${raw%%#*}"                       # strip inline comments
+  host="$(echo "$host" | tr -d '[:space:]')"
+  [ -z "$host" ] && continue
+  for ip in $(getent ahostsv4 "$host" | awk '{print $1}' | sort -u); do
+    ipset add csdd-allow "$ip" 2>/dev/null || true
+  done
+done < "$ALLOWLIST"
+
+iptables -A OUTPUT -m set --match-set csdd-allow dst -j ACCEPT
+
+# Default-deny everything else.
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+
+log "verifying isolation"
+if curl -sS --max-time 5 "https://${CONTROL_HOST}" >/dev/null 2>&1; then
+  echo "[csdd-firewall] FAIL: control host ${CONTROL_HOST} reachable — egress not enforced" >&2
+  exit 1
+fi
+if ! curl -sS --max-time 5 https://api.anthropic.com >/dev/null 2>&1; then
+  echo "[csdd-firewall] FAIL: api.anthropic.com unreachable — allow-list too strict" >&2
+  exit 1
+fi
+log "OK: egress restricted to the allow-list"

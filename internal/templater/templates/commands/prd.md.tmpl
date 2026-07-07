@@ -1,0 +1,29 @@
+---
+description: Author a csdd plan for a multi-feature initiative — runs the PRD skill (Draft → Research → Stack → Decompose → validate) and ends at a lint-clean plan for you to approve.
+argument-hint: <the initiative, e.g. "photo albums with sharing and search">
+allowed-tools: Read, Edit, Write, Bash(csdd plan:*), Bash(csdd graph:*), Bash(csdd wiki:*), Bash(npx @protonspy/csdd:*)
+---
+
+## Task
+
+Use the **prd** skill to turn the initiative in `$ARGUMENTS` into an approved csdd
+plan under `docs/plans/<slug>/`.
+
+Run its five passes in order — **Draft** (a **two-tier** interview: batched
+multiple-choice for scope facts, then a one-at-a-time **Decision grill** for every
+load-bearing decision that passes the triple gate — hard to reverse + surprising +
+real trade-off — each recorded the moment it resolves as `docs/adr/NNNN-<slug>.md`),
+**Research** (current docs → wiki pages, cited in Refs), **Stack consult** (the
+`stack` skill's Propose for any new tech — the human decides), **Decompose** (the
+`## Feats` table, one feat = one spec, citing decisions as `adr:<slug>`), and
+**Present** (sweep every gate-positive `[ASSUMPTION]` into an ADR or
+`[DEFERRED-BY-HUMAN]`) — scaffolding with `csdd plan init` and running
+`csdd plan validate` after every authoring pass.
+
+Author only. Do **not** run `csdd plan approve`, `csdd plan generate`, or
+`csdd plan run`, and do not write `plan.json`, `docs/graph/`, or `.csdd/`. End by
+showing the validated feat table and telling the user to run
+`csdd plan approve <slug>` themselves.
+
+For a single feature, use `/quick-prd` instead — its PRD is an input to Draft, not
+a plan.

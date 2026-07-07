@@ -48,6 +48,10 @@ const (
 	TypeRawSource = "raw_source"
 	TypeTech      = "tech"
 	TypeCode      = "code"
+	TypePlan      = "plan"
+	TypeFeat      = "feat"
+	TypeADR       = "adr"
+	TypeTerm      = "term"
 )
 
 // Edge relation values — the canonical edge vocabulary (PLAN §5.5).
@@ -71,6 +75,9 @@ const (
 	RelUsesTech     = "uses_tech"
 	RelContains     = "contains"
 	RelImports      = "imports"
+	RelPlans        = "plans"
+	RelCites        = "cites"
+	RelSupersededBy = "superseded_by"
 )
 
 // NodeTypes and EdgeRelations mirror the seed graph.json meta block so the
@@ -79,14 +86,16 @@ const (
 var NodeTypes = []string{
 	TypeSpec, TypeRequire, TypeCriterion, TypeDesign, TypeInterface, TypeFlow,
 	TypeTask, TypeSteering, TypeSkill, TypeAgent, TypeMCP, TypeCodeRef,
-	TypeWikiPage, TypeRawSource, TypeTech, TypeCode,
+	TypeWikiPage, TypeRawSource, TypeTech, TypeCode, TypePlan, TypeFeat,
+	TypeADR, TypeTerm,
 }
 
 var EdgeRelations = []string{
 	RelOwns, RelHasCriterion, RelRealizes, RelTracedTo, RelImplements,
 	RelExercises, RelRefinedBy, RelInBoundary, RelDependsOn, RelComponentDep,
 	RelReferences, RelReuses, RelGoverns, RelRelatedTo, RelLinksTo,
-	RelDerivedFrom, RelUsesTech, RelContains, RelImports,
+	RelDerivedFrom, RelUsesTech, RelContains, RelImports, RelPlans,
+	RelCites, RelSupersededBy,
 }
 
 // Node is one artifact or entity. The five fixed fields are always present;
