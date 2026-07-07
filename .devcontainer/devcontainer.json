@@ -1,0 +1,72 @@
+{
+  // Generic Claude Code sandbox devcontainer.
+  // A non-root container with a default-deny egress firewall, so Claude Code can
+  // run isolated (and --dangerously-skip-permissions is safe to use).
+  //
+  // Drop this .devcontainer/ folder into any repo. Nothing here is project-
+  // specific: the workspace path adapts to the repo name via
+  // ${localWorkspaceFolderBasename}. Customize the marked spots below.
+  "name": "Claude Code sandbox",
+
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      // Host timezone (falls back to UTC). Override with a TZ env var on the host.
+      "TZ": "${localEnv:TZ:Etc/UTC}",
+      // Pin a specific Claude Code version here if you want reproducible builds.
+      "CLAUDE_CODE_VERSION": "latest"
+    }
+  },
+
+  // NET_ADMIN/NET_RAW are required so init-firewall.sh can program iptables/ipset.
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+
+  // Mount the repo at a path derived from its folder name.
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/${localWorkspaceFolderBasename},type=bind,consistency=delegated",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+
+  // --- Add language runtimes / tools here (optional) -------------------------
+  // Devcontainer features layer on top of the image without editing the Dockerfile.
+  // Examples (uncomment what you need):
+  // "features": {
+  //   "ghcr.io/devcontainers/features/python:1": { "version": "3.13" },
+  //   "ghcr.io/devcontainers/features/go:1": {},
+  //   "ghcr.io/devcontainers/features/rust:1": {}
+  // },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+
+  // Non-root: required for Claude Code.
+  "remoteUser": "node",
+
+  // Forward any dev servers you run inside the sandbox, e.g. [3000, 8000].
+  "forwardPorts": [],
+
+  // Persist auth/settings + shell history across rebuilds, isolated per devcontainer.
+  "mounts": [
+    "source=claude-code-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
+  ],
+
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+
+  // Program the egress firewall on every start (needs the caps above). Wait for
+  // it before handing over the container so nothing escapes the default-deny.
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand"
+}
