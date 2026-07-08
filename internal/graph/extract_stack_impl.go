@@ -149,6 +149,24 @@ func stackManifest(src Source) []Fragment {
 		Attrs: map[string]any{"kind": "manifest", "ecosystem": eco},
 	}}}
 	seen := map[string]bool{}
+	// The manifest itself declares the project language (go.mod's `go` directive,
+	// a Python manifest's ecosystem). Emit it as a used tech so a `| Language | Go |`
+	// contract row resolves instead of being flagged phantom. is_language exempts it
+	// from the undeclared-tech lint (the language is implicit, not a dependency you
+	// list in the contract).
+	if lang := ecosystemLanguage(eco); lang != "" {
+		lid := techID(lang)
+		seen[lid] = true
+		frag.Nodes = append(frag.Nodes, Node{
+			ID: lid, Label: lang, FileType: TypeTech,
+			SourceFile: src.Path, SourceLocation: "L1",
+			Attrs: map[string]any{"status": "used", "from_manifest": true, "is_language": true, "ecosystem": eco},
+		})
+		frag.Edges = append(frag.Edges, Edge{
+			Source: manifestID, Target: lid, Relation: RelUsesTech,
+			Confidence: Extracted, ConfidenceScore: 1.0, SourceFile: src.Path,
+		})
+	}
 	for _, dep := range deps {
 		id := techID(dep)
 		if seen[id] {
@@ -166,6 +184,20 @@ func stackManifest(src Source) []Fragment {
 		})
 	}
 	return []Fragment{frag}
+}
+
+// ecosystemLanguage maps a manifest ecosystem to the programming language it
+// implies, or "" when the mapping is ambiguous (npm can be JS or TS, so it is left
+// undeclared). Used to satisfy a `| Language | ... |` contract row.
+func ecosystemLanguage(eco string) string {
+	switch eco {
+	case "go":
+		return "Go"
+	case "python":
+		return "Python"
+	default:
+		return ""
+	}
 }
 
 var reGoRequireLine = regexp.MustCompile(`^\s*([a-zA-Z0-9.\-/]+)\s+v[0-9]`)

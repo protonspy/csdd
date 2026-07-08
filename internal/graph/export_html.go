@@ -73,7 +73,8 @@ const palette = {
   spec:"#6C8EBF", requirement:"#B85450", criterion:"#D79B00", design:"#9673A6",
   interface:"#82B366", flow:"#3A9CA6", task:"#D6B656", steering:"#647687",
   skill:"#4C8C5A", agent:"#B46EAB", mcp:"#8C6D46", code_ref:"#999999",
-  wiki_page:"#5A7DBE", raw_source:"#B0B0B0", tech:"#C97B2C", code:"#4E79A7"
+  wiki_page:"#5A7DBE", raw_source:"#B0B0B0", tech:"#C97B2C", code:"#4E79A7",
+  plan:"#7E57C2", feat:"#26A69A", adr:"#A1887F", term:"#EC407A"
 };
 function colorFor(t){ return palette[t] || "#888"; }
 const canvas = document.getElementById("c"), ctx = canvas.getContext("2d");

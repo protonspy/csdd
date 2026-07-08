@@ -13,8 +13,11 @@ import (
 )
 
 // runGraph dispatches `csdd graph <action>`. The graph is a structured brain for
-// fast, token-cheap, precise consultation of the workspace: build persists the
-// index, query/path/explain traverse it, analyze lints the SDD contract.
+// fast, token-cheap, precise consultation of the workspace. build persists the
+// index to docs/graph/graph.json (for humans, PR review, and the web dashboard);
+// query/path/explain/analyze each rebuild the graph in memory from the corpus (a
+// full build is milliseconds at this scale) rather than reading the persisted
+// file, so their answers are always fresh even if graph.json is stale.
 func runGraph(args []string) int {
 	action, rest, err := parseAction("graph", args)
 	if err != nil {
@@ -89,8 +92,13 @@ func graphBuild(args []string) int {
 	addRoot(fs, &root)
 	addJSON(fs, &jsonOut)
 	fs.BoolVar(&full, "full", false, "Force a complete rebuild instead of the incremental default.")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseFlags(fs, args)
+	if err != nil {
 		return failOnFlagParse(err)
+	}
+	if err := rejectExtraPositionals("graph build", pos, 0); err != nil {
+		render.Err(err.Error())
+		return 1
 	}
 	r, err := resolveGraphRoot(root)
 	if err != nil {
@@ -113,13 +121,20 @@ func graphBuild(args []string) int {
 		return 1
 	}
 	if jsonOut {
-		return emitJSON(map[string]any{
+		out := map[string]any{
 			"ok": true, "nodes": len(g.Nodes), "edges": len(g.Links),
 			"pending": len(g.Pending), "output": graph.GraphJSONRel,
-		})
+		}
+		if len(g.Warnings) > 0 {
+			out["warnings"] = g.Warnings
+		}
+		return emitJSON(out)
 	}
 	render.OK(fmt.Sprintf("Built graph: %d nodes, %d edges (%d pending references).", len(g.Nodes), len(g.Links), len(g.Pending)))
 	render.Info("Wrote " + graph.GraphJSONRel)
+	for _, w := range g.Warnings {
+		render.Warn(w)
+	}
 	return 0
 }
 
@@ -140,6 +155,10 @@ func graphQuery(args []string) int {
 		render.Err("usage: " + prog() + " graph query \"<terms>\"")
 		return 1
 	}
+	if err := rejectExtraPositionals("graph query", pos, 1); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	terms := pos[0]
 	g, r, code := loadGraph(root)
 	if code != 0 {
@@ -148,6 +167,9 @@ func graphQuery(args []string) int {
 	_ = r
 	matches := graph.Query(g, terms, graph.QueryOptions{Hops: hops, Budget: budget})
 	if jsonOut {
+		if matches == nil {
+			matches = []graph.Match{}
+		}
 		return emitJSON(map[string]any{"query": terms, "matches": matches})
 	}
 	if len(matches) == 0 {
@@ -183,6 +205,10 @@ func graphPath(args []string) int {
 		render.Err("usage: " + prog() + " graph path <A> <B>")
 		return 1
 	}
+	if err := rejectExtraPositionals("graph path", pos, 2); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	g, _, code := loadGraph(root)
 	if code != 0 {
 		return code
@@ -195,13 +221,19 @@ func graphPath(args []string) int {
 	if jsonOut {
 		return emitJSON(pr)
 	}
-	fmt.Printf("%s\n", render.Bold(pr.From.Label))
+	fmt.Printf("%s  [%s, %s]\n", render.Bold(pr.From.Label), pr.From.FileType, pr.FromTier)
 	for _, s := range pr.Steps {
 		arrow := "──" + s.Relation + "──▶"
 		if s.Direction == "backward" {
 			arrow = "◀──" + s.Relation + "──"
 		}
 		fmt.Printf("  %s %s\n", arrow, s.Node.Label)
+	}
+	// Surface a fuzzy endpoint resolution so a substring match (e.g. "does-not-exist"
+	// landing on a criterion) is never mistaken for an exact hit.
+	if pr.FromTier != "exact" || pr.ToTier != "exact" {
+		render.Info(fmt.Sprintf("endpoints resolved by fuzzy match: %q → %s [%s], %q → %s [%s]",
+			pos[0], pr.From.Label, pr.FromTier, pos[1], pr.To.Label, pr.ToTier))
 	}
 	return 0
 }
@@ -220,6 +252,10 @@ func graphExplain(args []string) int {
 		render.Err("usage: " + prog() + " graph explain <label>")
 		return 1
 	}
+	if err := rejectExtraPositionals("graph explain", pos, 1); err != nil {
+		render.Err(err.Error())
+		return 1
+	}
 	g, _, code := loadGraph(root)
 	if code != 0 {
 		return code
@@ -232,7 +268,7 @@ func graphExplain(args []string) int {
 	if jsonOut {
 		return emitJSON(er)
 	}
-	fmt.Printf("%s  %s  [%s]\n", render.Bold(er.Node.Label), render.Cyan(er.Node.ID), er.Node.FileType)
+	fmt.Printf("%s  %s  [%s, %s]\n", render.Bold(er.Node.Label), render.Cyan(er.Node.ID), er.Node.FileType, er.Tier)
 	for _, c := range er.Connections {
 		arrow := "→"
 		if c.Direction == "in" {
@@ -250,8 +286,13 @@ func graphAnalyze(args []string) int {
 	addRoot(fs, &root)
 	addJSON(fs, &jsonOut)
 	fs.BoolVar(&strict, "strict", false, "Exit non-zero when any finding is reported (CI gate).")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseFlags(fs, args)
+	if err != nil {
 		return failOnFlagParse(err)
+	}
+	if err := rejectExtraPositionals("graph analyze", pos, 0); err != nil {
+		render.Err(err.Error())
+		return 1
 	}
 	g, r, code := loadGraph(root)
 	if code != 0 {
@@ -259,12 +300,21 @@ func graphAnalyze(args []string) int {
 	}
 	report := graph.Analyze(g, r)
 	if jsonOut {
-		exit := 0
-		if strict && len(report.Findings) > 0 {
-			exit = 2
+		// Emit empty collections as [] (never null) so a consumer can iterate
+		// findings/god_nodes unconditionally (the documented --json shape).
+		if report.Findings == nil {
+			report.Findings = []graph.Finding{}
 		}
-		_ = emitJSON(report)
-		return exit
+		if report.GodNodes == nil {
+			report.GodNodes = []graph.GodNode{}
+		}
+		if code := emitJSON(report); code != 0 {
+			return code
+		}
+		if strict && len(report.Findings) > 0 {
+			return 2
+		}
+		return 0
 	}
 	if len(report.Findings) == 0 {
 		render.OK("No findings. Traceability contract is clean.")
@@ -284,10 +334,17 @@ func graphAnalyze(args []string) int {
 func graphExport(args []string) int {
 	fs := flag.NewFlagSet("graph export", flag.ContinueOnError)
 	var root, out string
+	var jsonOut bool
 	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
 	fs.StringVar(&out, "out", "", "Output path (default: docs/graph/graph.html).")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseFlags(fs, args)
+	if err != nil {
 		return failOnFlagParse(err)
+	}
+	if err := rejectExtraPositionals("graph export", pos, 0); err != nil {
+		render.Err(err.Error())
+		return 1
 	}
 	r, err := resolveGraphRoot(root)
 	if err != nil {
@@ -303,6 +360,9 @@ func graphExport(args []string) int {
 	if err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	if jsonOut {
+		return emitJSON(map[string]any{"ok": true, "output": workspace.Relative(r, path)})
 	}
 	render.OK("Wrote " + workspace.Relative(r, path))
 	return 0

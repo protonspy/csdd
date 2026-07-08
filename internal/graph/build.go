@@ -17,7 +17,7 @@ func Build(root string) (*Graph, error) {
 
 // BuildWith is Build with an explicit extractor set, so tests can drive a subset.
 func BuildWith(root string, extractors []Extractor) (*Graph, error) {
-	sources, err := collectSources(root, extractors)
+	sources, warnings, err := collectSources(root, extractors)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,9 @@ func BuildWith(root string, extractors []Extractor) (*Graph, error) {
 			edges = append(edges, f.Edges...)
 		}
 	}
-	return assemble(root, nodes, edges), nil
+	g := assemble(root, nodes, edges)
+	g.Warnings = warnings
+	return g, nil
 }
 
 // dedupNodes merges nodes by ID. Identity fields take the last writer; Attrs are
@@ -51,6 +53,54 @@ func dedupNodes(in []Node) []Node {
 		idx[n.ID] = len(out)
 		out = append(out, n)
 	}
+	return out
+}
+
+// detectCollisions scans the raw (pre-dedup) nodes for a single ID that carries
+// two or more distinct labels — the signature of an accidental ID collision (e.g.
+// spec "foo-bar" and "foo_bar", or criterion 1.1 of spec "a-1" and 1.1.1 of spec
+// "a") where dedup silently keeps one artifact and drops the other. Tech nodes are
+// exempt: they merge across the contract, manifests, and design refs by design,
+// legitimately carrying different labels (contract "chi" vs "github.com/go-chi/chi/v5")
+// for the same normalized node. Results are deterministically ordered.
+func detectCollisions(nodes []Node) []NodeCollision {
+	labelSet := map[string]map[string]bool{}
+	fileSet := map[string]map[string]bool{}
+	ftype := map[string]string{}
+	var ids []string
+	for _, n := range nodes {
+		if n.FileType == TypeTech {
+			continue
+		}
+		if labelSet[n.ID] == nil {
+			labelSet[n.ID] = map[string]bool{}
+			fileSet[n.ID] = map[string]bool{}
+			ids = append(ids, n.ID)
+		}
+		labelSet[n.ID][n.Label] = true
+		fileSet[n.ID][n.SourceFile] = true
+		ftype[n.ID] = n.FileType
+	}
+	var out []NodeCollision
+	for _, id := range ids {
+		if len(labelSet[id]) < 2 {
+			continue
+		}
+		out = append(out, NodeCollision{
+			ID: id, FileType: ftype[id],
+			Labels: sortedKeys(labelSet[id]), Files: sortedKeys(fileSet[id]),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -285,9 +335,17 @@ func resolveReferences(g *Graph) []PendingRef {
 				FromID: e.Source, FromLabel: labels[e.Source], Relation: e.Relation,
 				TargetID: e.Target, Ref: e.Ref, SourceFile: e.SourceFile,
 			})
+		case e.Relation == RelDerivedFrom && srcOK:
+			// A page's `sources:` provenance that names no raw_source under docs/raw/
+			// (a typo, or the `docs/raw/` prefix left on) is a broken provenance link,
+			// not a silent drop — the gap is the product.
+			pending = append(pending, PendingRef{
+				FromID: e.Source, FromLabel: labels[e.Source], Relation: e.Relation,
+				TargetID: e.Target, Ref: e.Ref, SourceFile: e.SourceFile,
+			})
 		}
-		// Non-reported danglers (component_dep, related_to, derived_from, …) are
-		// dropped: their absence is not a contract violation.
+		// Other non-reported danglers (component_dep, related_to, …) are dropped:
+		// their absence is not a contract violation.
 	}
 	g.Links = kept
 	return pending

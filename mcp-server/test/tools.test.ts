@@ -105,6 +105,28 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
   ["csdd_agent_list", {}, ["agent", "list"]],
   ["csdd_agent_show", { name: "rev" }, ["agent", "show", "rev"]],
   ["csdd_agent_delete", { name: "rev", force: true }, ["agent", "delete", "rev", "--force"]],
+
+  // graph
+  ["csdd_graph_build", {}, ["graph", "build"]],
+  ["csdd_graph_build", { full: true, json: true, root: "/p" }, ["graph", "build", "--full", "--json", "--root", "/p"]],
+  ["csdd_graph_query", { terms: "AlbumService" }, ["graph", "query", "AlbumService"]],
+  [
+    "csdd_graph_query",
+    { terms: "photo upload", hops: 2, budget: 500, json: true, root: "/p" },
+    ["graph", "query", "photo upload", "--hops", "2", "--budget", "500", "--json", "--root", "/p"],
+  ],
+  ["csdd_graph_path", { from: "a", to: "b" }, ["graph", "path", "a", "b"]],
+  [
+    "csdd_graph_path",
+    { from: "a", to: "b", maxHops: 5, json: true },
+    ["graph", "path", "a", "b", "--max-hops", "5", "--json"],
+  ],
+  ["csdd_graph_explain", { label: "AlbumService" }, ["graph", "explain", "AlbumService"]],
+  ["csdd_graph_explain", { label: "x", json: true, root: "/p" }, ["graph", "explain", "x", "--json", "--root", "/p"]],
+  ["csdd_graph_analyze", {}, ["graph", "analyze"]],
+  ["csdd_graph_analyze", { strict: true, json: true }, ["graph", "analyze", "--strict", "--json"]],
+  ["csdd_graph_export", {}, ["graph", "export"]],
+  ["csdd_graph_export", { out: "g.html", root: "/p" }, ["graph", "export", "--out", "g.html", "--root", "/p"]],
 ];
 
 for (const [name, params, expected] of CASES) {
@@ -143,7 +165,7 @@ test("miscTools are included in allTools", () => {
 });
 
 test("the first argv token is always a known csdd resource/command", () => {
-  const roots = new Set(["version", "steering", "spec", "skill", "agent"]);
+  const roots = new Set(["version", "steering", "spec", "skill", "agent", "graph"]);
   for (const t of allTools) {
     // Call with empty params; we only inspect the leading command token, which
     // never depends on user input.

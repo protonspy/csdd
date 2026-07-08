@@ -46,6 +46,37 @@ func TestParseInlineArray(t *testing.T) {
 	}
 }
 
+func TestParseBlockSequence(t *testing.T) {
+	in := "---\ntitle: Album Service\nsources:\n  - paper.pdf\n  - \"quoted item.txt\"\ntags:\n- a\n- b\n---\nbody\n"
+	fm := Parse(in)
+	if got, want := fm.AsStringSlice("sources"), []string{"paper.pdf", "quoted item.txt"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sources block sequence = %v, want %v", got, want)
+	}
+	// A same-indent sequence (items at the key's column) is also valid YAML.
+	if got, want := fm.AsStringSlice("tags"), []string{"a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tags block sequence = %v, want %v", got, want)
+	}
+	// The scalar sibling before the sequence still parses, and the body survives.
+	if got := fm.AsString("title", ""); got != "Album Service" {
+		t.Errorf("title = %q", got)
+	}
+	if fm.Body != "body\n" {
+		t.Errorf("body = %q", fm.Body)
+	}
+}
+
+// A bare `key:` with no following sequence stays an empty scalar, not a list.
+func TestParseEmptyScalarNotSequence(t *testing.T) {
+	in := "---\nempty:\nnext: value\n---\n"
+	fm := Parse(in)
+	if _, isSlice := fm.Fields["empty"].([]string); isSlice {
+		t.Errorf("empty key must not become a slice: %v", fm.Fields["empty"])
+	}
+	if got := fm.AsString("next", ""); got != "value" {
+		t.Errorf("next = %q (sibling key was consumed by sequence reader?)", got)
+	}
+}
+
 func TestParseEmptyArrayAndBool(t *testing.T) {
 	in := "---\nflag: true\nempty: []\nflag2: false\n---\n"
 	fm := Parse(in)

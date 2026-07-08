@@ -36,6 +36,7 @@ const PALETTE: Record<string, string> = {
   interface: '#82B366', flow: '#3A9CA6', task: '#D6B656', steering: '#647687',
   skill: '#4C8C5A', agent: '#B46EAB', mcp: '#8C6D46', code_ref: '#999999',
   wiki_page: '#5A7DBE', raw_source: '#B0B0B0', tech: '#C97B2C', code: '#4E79A7',
+  plan: '#7E57C2', feat: '#26A69A', adr: '#A1887F', term: '#EC407A',
 }
 const colorFor = (t: string) => PALETTE[t] ?? '#888'
 
@@ -53,7 +54,13 @@ export function GraphView({ version }: { version: number }) {
       .then((fc) => {
         if (cancelled) return
         try {
-          setGraph(JSON.parse(fc.text) as NodeLink)
+          const parsed = JSON.parse(fc.text)
+          if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.links)) {
+            setError('graph.json is not a node-link graph (missing nodes/links arrays). Re-run `csdd graph build`.')
+            setGraph(null)
+            return
+          }
+          setGraph(parsed as NodeLink)
           setError(null)
         } catch (e) {
           setError('graph.json is not valid JSON: ' + String(e))
