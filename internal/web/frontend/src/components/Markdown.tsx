@@ -1,11 +1,17 @@
+import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Mermaid } from './Mermaid'
 
-// Renders spec markdown. Fenced ```mermaid blocks become live diagrams; other
-// fenced blocks become styled code; inline code stays inline. The default <pre>
-// wrapper is flattened so our custom code renderer owns block layout.
-export function Markdown({ text }: { text: string }) {
+// Renders spec/wiki markdown. Fenced ```mermaid blocks become live diagrams;
+// other fenced blocks become styled code; inline code stays inline. The default
+// <pre> wrapper is flattened so our custom code renderer owns block layout.
+//
+// When onWikiLink is set, links with a `wiki:<slug>` href (WikiView rewrites
+// [[wikilinks]] into these) are intercepted and routed in-app instead of
+// navigating; a `wiki:` href with no slug renders as a dead "broken" link. Passing
+// nothing leaves link handling at react-markdown's default (SpecView's behavior).
+export function Markdown({ text, onWikiLink }: { text: string; onWikiLink?: (slug: string) => void }) {
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -28,6 +34,39 @@ export function Markdown({ text }: { text: string }) {
             }
             return <code className="inline-code">{children}</code>
           },
+          ...(onWikiLink
+            ? {
+                a({ href, children }: { href?: string; children?: ReactNode }) {
+                  if (href?.startsWith('wiki:')) {
+                    const slug = href.slice('wiki:'.length)
+                    if (!slug) {
+                      return (
+                        <span className="wikilink broken" title="no such page">
+                          {children}
+                        </span>
+                      )
+                    }
+                    return (
+                      <a
+                        className="wikilink"
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          onWikiLink(slug)
+                        }}
+                      >
+                        {children}
+                      </a>
+                    )
+                  }
+                  return (
+                    <a href={href} target="_blank" rel="noreferrer">
+                      {children}
+                    </a>
+                  )
+                },
+              }
+            : {}),
         }}
       >
         {text}

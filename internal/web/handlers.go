@@ -94,6 +94,11 @@ func newMux(root string, h *hub, a *auth, allowedHosts ...string) http.Handler {
 		writeJSON(w, http.StatusOK, loadPlansList(root))
 	}))
 
+	mux.HandleFunc("GET /api/wiki", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		writeJSON(w, http.StatusOK, loadWikiOverview(root))
+	}))
+
 	mux.HandleFunc("GET /api/plan/{slug}", a.protect(func(w http.ResponseWriter, r *http.Request) {
 		slug := r.PathValue("slug")
 		d, err := loadPlanDetail(root, slug)
