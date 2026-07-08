@@ -11,12 +11,13 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// forbiddenActions is the verbatim R9.6 contract every brief carries: the session
-// authors artifacts and returns a verdict, nothing more. The runner owns
-// approvals, commits, and all plan/graph/state writes.
+// forbiddenActions is the contract every brief carries: the session authors the
+// step's artifact and returns a verdict. The runner owns the phase approvals,
+// standing in for the human gate; committing, branching, and the PR are the csdd
+// dev-cycle's job (/csdd-commit, the pre-push gate), which the session drives.
 var forbiddenActions = []string{
-	"Do NOT edit plan.md, plan.json, docs/graph/, or .csdd/ — these are the runner's; touching them fails the step.",
-	"Do NOT run `csdd spec approve`, `csdd plan approve`, or `git commit` — the runner performs approvals and commits only after the gates pass.",
+	"Do NOT edit plan.md or plan.json — editing the approved plan is drift and stops the run; leave .csdd/ (the runner's operational state) alone.",
+	"Do NOT run `csdd spec approve` or `csdd plan approve` — the runner performs the phase approvals after the gates pass.",
 	"Do NOT adopt a technology that is not in docs/stack.md — that is an open decision; stop and report it in your verdict instead.",
 	"Do NOT make a decision that is hard to reverse, surprising without context, and the result of a real trade-off unless a cited ADR or stack row already covers it — that is an OPEN DECISION; return a `blocked` verdict with a revision proposal, never improvise.",
 	"If you hit an unforeseen problem you cannot solve within this step's contract, return a `blocked` verdict with a revision proposal — never improvise around the plan.",

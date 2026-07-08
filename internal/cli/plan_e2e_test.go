@@ -75,20 +75,17 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 			`"tasks":{"generated":true,"approved":true}}}`)
 	mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [ ] 1. Implement upload\n")
 
-	// 4. Run the plan with a stub runner (no real claude/git): the session reports
-	//    done, gates pass, and the commit hook closes the task so Next advances.
+	// 4. Run the plan with a stub runner (no real claude/git): the session authors
+	//    the change and checks its task box, gates pass, and Next advances. The
+	//    runner never touches git — commit/branch/PR are the session's dev-cycle.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
 		Session: func(plan.Step, string, float64) (plan.Verdict, error) {
+			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
 			return plan.Verdict{Status: plan.VerdictDone}, nil
 		},
-		CSDD:         func(string, ...string) (bool, string) { return true, "" },
-		Gate:         func(string, string) (bool, string) { return true, "" },
-		ChangedPaths: func(string) ([]string, error) { return []string{"specs/upload/impl.go"}, nil },
-		Commit: func(_ string, _ string, _ []string) error {
-			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
-			return nil
-		},
+		CSDD:            func(string, ...string) (bool, string) { return true, "" },
+		Gate:            func(string, string) (bool, string) { return true, "" },
 		Doctor:          func() plan.SandboxReport { return plan.SandboxReport{OK: true} },
 		ClaudeAvailable: func() bool { return true },
 		Now:             func() time.Time { return now },

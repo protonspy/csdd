@@ -45,14 +45,14 @@ func approvedRunnerWorkspace(t *testing.T) string {
 func fixedNow() time.Time { return time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC) }
 
 // baseHooks returns hooks that always succeed and change nothing, so the loop
-// would run to the iteration cap unless a test's stubs advance state.
+// would run to the iteration cap unless a test's stubs advance state. The runner
+// no longer touches git, so there is no commit or changed-paths seam to stub —
+// a test advances a feat by having its Session hook check the task box on disk.
 func baseHooks() Hooks {
 	return Hooks{
 		Session:         func(Step, string, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
 		CSDD:            func(string, ...string) (bool, string) { return true, "" },
 		Gate:            func(string, string) (bool, string) { return true, "" },
-		ChangedPaths:    func(string) ([]string, error) { return []string{"specs/a/foo.go"}, nil },
-		Commit:          func(string, string, []string) error { return nil },
 		Doctor:          func() SandboxReport { return SandboxReport{OK: true} },
 		Confirm:         func(string) bool { return false },
 		ClaudeAvailable: func() bool { return true },
@@ -144,108 +144,31 @@ func TestRunnerPreflight(t *testing.T) {
 	}
 }
 
-func TestRunnerPathAuditBlocks(t *testing.T) {
-	root := approvedRunnerWorkspace(t)
-	// Both feats ready with a task; the session "touches" a forbidden path.
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n") // b already done
-	h := baseHooks()
-	// The tree is clean at preflight; only after the session runs does a forbidden
-	// path appear, so it is the post-session audit — not the precondition — that
-	// blocks the feat.
-	sessionRan := false
-	h.Session = func(Step, string, float64) (Verdict, error) {
-		sessionRan = true
-		return Verdict{Status: VerdictDone}, nil
-	}
-	h.ChangedPaths = func(string) ([]string, error) {
-		if sessionRan {
-			return []string{"docs/graph/graph.json"}, nil
-		}
-		return nil, nil
-	}
-
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 1, Out: &bytes.Buffer{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum.Blocks == 0 {
-		t.Errorf("forbidden path change should block the feat")
-	}
-	if _, blocked := blockMarker(root, "p", "a"); !blocked {
-		t.Errorf("expected a block marker for feat a")
-	}
-	if sum.Steps != 0 {
-		t.Errorf("no step should have advanced, got %d", sum.Steps)
-	}
-}
-
-func TestRunnerCommitsEverySpecPhase(t *testing.T) {
-	// Every spec phase must produce its own commit, so the approval (spec.json)
-	// and journal (docs/plans/.../log.md) it writes never linger dirty to trip the
-	// next phase's forbidden-path audit. Without this, a multi-phase run stalls on
-	// the second phase.
-	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n") // b already done
-
-	var commitMsgs []string
-	approvals := map[string]bool{}
-	h := baseHooks()
-	h.Commit = func(_ string, msg string, _ []string) error {
-		commitMsgs = append(commitMsgs, msg)
-		return nil
-	}
-	h.CSDD = func(_ string, args ...string) (bool, string) {
-		switch {
-		case len(args) >= 2 && args[0] == "plan" && args[1] == "generate":
-			writeSpec(t, root, "a", map[string]bool{}, false, "")
-		case len(args) >= 4 && args[0] == "spec" && args[1] == "approve":
-			phase := args[len(args)-1]
-			approvals[phase] = true
-			ready := approvals["requirements"] && approvals["design"] && approvals["tasks"]
-			tasks := ""
-			if ready {
-				tasks = "- [x] 1. done\n"
-			}
-			writeSpec(t, root, "a", approvals, ready, tasks)
-		}
-		return true, ""
-	}
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}}); err != nil {
-		t.Fatal(err)
-	}
-	approveCommits := 0
-	for _, m := range commitMsgs {
-		if strings.HasPrefix(m, "chore(a): approve ") {
-			approveCommits++
-		}
-	}
-	if approveCommits != 3 {
-		t.Errorf("expected 3 spec-phase approval commits (requirements/design/tasks), got %d (%v)", approveCommits, commitMsgs)
-	}
-}
-
-func TestRunnerPreflightRejectsForbiddenDirt(t *testing.T) {
+func TestRunnerRunsWithDirtyRunnerOwnedTree(t *testing.T) {
+	// The runner no longer polices the working tree: it never commits and never
+	// audits forbidden paths, so a pre-existing change under a formerly runner-
+	// owned path (docs/plans/, .csdd/) must NOT stop the run or be misattributed
+	// to a session as a hard failure. Whatever is dirty is the session's git to own.
 	root := approvedRunnerWorkspace(t)
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
 	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
+	writeFile(t, filepath.Join(Dir(root, "p"), "log.md"), "pre-existing journal noise\n")
+	writeFile(t, filepath.Join(root, ".csdd", "state.json"), "{}\n")
+
 	h := baseHooks()
-	// A pre-existing change under a runner-owned path (e.g. a CRLF-renormalized
-	// state file) must fail preflight fast — before any paid session is spawned —
-	// with a message that names the offending path, not a misattributed audit.
-	sessions := 0
 	h.Session = func(Step, string, float64) (Verdict, error) {
-		sessions++
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
 		return Verdict{Status: VerdictDone}, nil
 	}
-	h.ChangedPaths = func(string) ([]string, error) { return []string{".csdd/state.json"}, nil }
-
-	_, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 2, Out: &bytes.Buffer{}})
-	if err == nil || !strings.Contains(err.Error(), ".csdd/state.json") {
-		t.Fatalf("expected preflight to reject a dirty runner-owned tree naming the path, got %v", err)
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatalf("a dirty runner-owned tree must not stop the run, got %v", err)
 	}
-	if sessions != 0 {
-		t.Errorf("no session should spawn when preflight rejects the tree, got %d", sessions)
+	if !sum.Completed {
+		t.Errorf("run should complete despite a pre-existing dirty tree, got %+v", sum)
+	}
+	if _, blocked := blockMarker(root, "p", "a"); blocked {
+		t.Errorf("feat a must not be blocked by pre-existing dirt")
 	}
 }
 
@@ -257,8 +180,11 @@ func TestRunnerRetryAppendsFailure(t *testing.T) {
 	var briefs []string
 	gateCalls := 0
 	h := baseHooks()
+	// The session authors the change and checks its task box; the runner's gate
+	// then decides pass vs. retry. No commit — git is the session's own job.
 	h.Session = func(step Step, brief string, _ float64) (Verdict, error) {
 		briefs = append(briefs, brief)
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
 		return Verdict{Status: VerdictDone}, nil
 	}
 	h.Gate = func(string, string) (bool, string) {
@@ -267,12 +193,6 @@ func TestRunnerRetryAppendsFailure(t *testing.T) {
 			return false, "FAIL: expected 3 got 4"
 		}
 		return true, ""
-	}
-	// On the successful attempt the "session" checks the task box so the feat
-	// completes and the loop terminates.
-	h.Commit = func(string, string, []string) error {
-		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return nil
 	}
 
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 2, Out: &bytes.Buffer{}})
@@ -300,12 +220,9 @@ func TestRunnerBlockedVerdictContinues(t *testing.T) {
 		if step.Feat == "a" {
 			return Verdict{Status: VerdictBlocked, Summary: "cannot resolve", Revision: "split feat a"}, nil
 		}
-		return Verdict{Status: VerdictDone}, nil
-	}
-	// b advances by checking its box on commit.
-	h.Commit = func(_ string, _ string, _ []string) error {
+		// b authors its change and checks its box, so it advances despite a blocking.
 		writeFile(t, filepath.Join(root, "specs", "b", "tasks.md"), "- [x] 1. do it\n")
-		return nil
+		return Verdict{Status: VerdictDone}, nil
 	}
 
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 8, MaxRetries: 1, Out: &bytes.Buffer{}})
@@ -334,9 +251,9 @@ func TestRunnerJournalFormat(t *testing.T) {
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
 	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
 	h := baseHooks()
-	h.Commit = func(string, string, []string) error {
+	h.Session = func(Step, string, float64) (Verdict, error) {
 		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return nil
+		return Verdict{Status: VerdictDone}, nil
 	}
 	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}}); err != nil {
 		t.Fatal(err)

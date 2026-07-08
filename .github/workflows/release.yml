@@ -69,7 +69,9 @@ jobs:
         with:
           # Ship binaries built with a current, patched toolchain (go.mod stays at
           # 1.22 for install-compatibility — do NOT switch to go-version-file).
-          go-version: '1.25'
+          # Pinned to .12 for the GO-2026-5856 crypto/tls fix (float '1.25' still
+          # resolves to .11 on hosted runners); float back once runners catch up.
+          go-version: '1.25.12'
           cache: true
 
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0

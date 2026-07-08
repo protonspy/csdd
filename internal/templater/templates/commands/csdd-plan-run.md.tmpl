@@ -1,5 +1,5 @@
 ---
-description: Drive a csdd plan's autonomous loop — fresh sessions per step, gated and committed by the runner. Requires an approved, drift-free plan.
+description: Drive a csdd plan's autonomous loop — fresh sessions per step, gated and approved by the runner. Requires an approved, drift-free plan.
 argument-hint: <plan-slug> [--yes]
 allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(npx @protonspy/csdd plan:*)
 ---
@@ -12,13 +12,15 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
 **drift-free** (no unprocessed deviations you haven't reviewed). Then:
 
 - `csdd plan run <slug>` — the runner spawns a fresh session per step with
-  `--dangerously-skip-permissions`, runs the gates, and approves/commits only on
+  `--dangerously-skip-permissions`, runs the gates, and approves each phase only on
   green. Run it inside the hardened sandbox: the runner checks `csdd sandbox
   doctor` first, and when isolation is NOT verified it alerts and asks for
   confirmation — declining closes the run.
 - `--yes` pre-accepts that alert (non-interactive runs); only pass it when the
   human has explicitly accepted running bypass-mode outside a verified sandbox.
 
-The runner owns approvals and commits. If it records a `blocked` deviation, do not
-patch the plan mid-run — take it to the `prd` skill's Revise workflow and
+The runner plays the human at each gate: it owns the phase approvals, while the
+session runs the csdd dev-cycle and owns git (branch, `/csdd-commit`, the pre-push
+gate, the PR) — the runner never commits. If it records a `blocked` deviation, do
+not patch the plan mid-run — take it to the `prd` skill's Revise workflow and
 re-approve.

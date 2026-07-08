@@ -9,16 +9,11 @@ import (
 	"time"
 )
 
-// forbiddenChangeRoots are the workspace subtrees a session must never modify
-// (R9.6). The runner owns the plan tree, the graph, and the state dir; a session
-// touching any of them is a hard step failure, verified from the git working tree
-// AFTER the session and BEFORE the runner writes its own journal/markers.
-var forbiddenChangeRoots = []string{".csdd/", "docs/graph/", "docs/plans/"}
-
 // Hooks are the runner's seams onto the outside world. Every field has a real
 // default (installed by Run); tests inject stubs so the whole loop — verdict
-// parsing, gate pipeline, retries, block markers, path audit, journal — runs with
-// no `claude`, `git`, or subprocess at all.
+// parsing, gate pipeline, retries, block markers, journal — runs with no
+// `claude`, `csdd`, or subprocess at all. The runner never touches git: branch,
+// commit, and the PR are the csdd dev-cycle's job, driven inside the session.
 type Hooks struct {
 	// Session runs one claude session for a step and returns its parsed verdict.
 	// Every session runs bypass-mode (--dangerously-skip-permissions).
@@ -27,10 +22,6 @@ type Hooks struct {
 	CSDD func(root string, args ...string) (bool, string)
 	// Gate runs a shell gate command in root, returning success and output.
 	Gate func(root, command string) (bool, string)
-	// ChangedPaths returns the workspace-relative paths dirty in the working tree.
-	ChangedPaths func(root string) ([]string, error)
-	// Commit stages paths and commits them with msg.
-	Commit func(root, msg string, paths []string) error
 	// Doctor proves sandbox isolation before the bypass-mode loop starts.
 	Doctor func() SandboxReport
 	// Confirm asks the human a yes/no question (the unverified-sandbox alert)
@@ -74,7 +65,7 @@ type RunSummary struct {
 }
 
 // Run drives the plan loop (R9): preflight, then repeatedly drift-check → next →
-// brief → session → audit → gates → advance/retry/block → journal, until the plan
+// brief → session → gates → advance/retry/block → journal, until the plan
 // completes, nothing is unblocked, drift is detected, or the iteration cap is hit.
 func Run(opts RunOptions) (RunSummary, error) {
 	fillRunDefaults(&opts)
@@ -97,18 +88,6 @@ func Run(opts RunOptions) (RunSummary, error) {
 	}
 	if drift {
 		return RunSummary{}, fmt.Errorf("plan %q has drifted since approval; re-approve before running", opts.Slug)
-	}
-	// R9.6 precondition: the runner attributes every post-session working-tree
-	// change to the session, audits it, and commits it. That only holds if the
-	// tree starts clean of the paths the runner owns. A pre-existing change under a
-	// forbidden root — e.g. a CRLF-renormalized .csdd/state.json from an editor —
-	// would otherwise be blamed on the first session as a hard failure, burning a
-	// paid session on every retry. Refuse up front with an accurate, actionable
-	// message instead of misattributing it.
-	if changed, cErr := h.ChangedPaths(opts.Root); cErr == nil {
-		if bad := firstForbidden(changed); bad != "" {
-			return RunSummary{}, fmt.Errorf("working tree has an uncommitted change under a runner-owned path (%s); commit or revert it before `plan run` — the runner owns the plan, graph, and state", bad)
-		}
 	}
 	if !h.ClaudeAvailable() {
 		return RunSummary{}, fmt.Errorf("the `claude` CLI is not available on PATH; the runner needs it to spawn sessions")
@@ -230,13 +209,6 @@ func executeStep(opts RunOptions, doc *PlanDoc, step Step, sum *RunSummary) bool
 			return false
 		}
 
-		// R9.6 path audit: the session must not have touched the plan/graph/state.
-		if bad := auditForbidden(opts); bad != "" {
-			lastFailure = "modified a forbidden path (" + bad + "); the runner owns the plan, graph, and state — revert it"
-			logf("  hard failure: %s", lastFailure)
-			continue
-		}
-
 		// Gates.
 		if ok, output := runGates(opts, step); !ok {
 			lastFailure = "gate failed:\n" + output
@@ -244,24 +216,16 @@ func executeStep(opts RunOptions, doc *PlanDoc, step Step, sum *RunSummary) bool
 			continue
 		}
 
-		// Green: the runner performs the approval a session must never do.
+		// Green: the runner performs the approval a session must never do — it
+		// stands in for the human at the phase gate. Persisting the step (branch,
+		// commit, PR) is the session's csdd dev-cycle job (/csdd-commit, pre-push),
+		// never the runner's; the runner leaves every write in the working tree.
 		if err := advance(opts, step); err != nil {
 			lastFailure = "advance failed: " + err.Error()
 			logf("  advance failed: %v", err)
 			continue
 		}
 		journal(opts, step, "done")
-		// Persist the step: the session's authored files, the phase approval, and
-		// the journal line, all in one commit. Spec phases commit too (not just
-		// implementation tasks) so no runner-owned write — the approval in spec.json
-		// or the journal in docs/plans/ — is left dirty to trip the NEXT step's
-		// forbidden-path audit. Leaving the tree clean between steps is what makes a
-		// multi-phase run progress at all.
-		if err := commitStep(opts, step); err != nil {
-			lastFailure = "commit failed: " + err.Error()
-			logf("  commit failed: %v", err)
-			continue
-		}
 		sum.Steps++
 		logf("  ✓ %s", step.Step)
 		return true
@@ -298,62 +262,17 @@ func runGates(opts RunOptions, step Step) (bool, string) {
 }
 
 // advance performs the runner-owned green-path action a session must never do:
-// approving the spec phase. Persisting the step is a separate concern handled by
-// commitStep after the journal, for every step type (R9.2).
+// approving the spec phase, standing in for the human gate (R9.2). Persisting the
+// step is not the runner's concern — the session's csdd dev-cycle commits.
 func advance(opts RunOptions, step Step) error {
 	phase, ok := specPhaseOf(step.Step)
 	if !ok {
-		return nil // implementation task: nothing to approve; commitStep persists it
+		return nil // implementation task: nothing to approve
 	}
 	if approved, o := opts.Hooks.CSDD(opts.Root, "spec", "approve", step.Feat, "--phase", phase); !approved {
 		return fmt.Errorf("spec approve %s --phase %s: %s", step.Feat, phase, firstLine(o))
 	}
 	return nil
-}
-
-// commitStep commits everything a completed step produced — the session's
-// authored files, the runner's phase approval, and the journal line — so the
-// working tree is left clean for the next step. Committing spec phases too (not
-// only implementation tasks) is what keeps a runner-owned write from lingering
-// dirty and tripping the next step's forbidden-path audit. The message reflects
-// the step type so history reads as feat work vs. spec-phase approvals.
-func commitStep(opts RunOptions, step Step) error {
-	changed, err := opts.Hooks.ChangedPaths(opts.Root)
-	if err != nil {
-		return err
-	}
-	if len(changed) == 0 {
-		return nil // nothing to persist (e.g. an idempotent re-approve)
-	}
-	msg := fmt.Sprintf("feat(%s): %s", step.Feat, step.Step)
-	if phase, ok := specPhaseOf(step.Step); ok {
-		msg = fmt.Sprintf("chore(%s): approve %s", step.Feat, phase)
-	}
-	return opts.Hooks.Commit(opts.Root, msg, changed)
-}
-
-// auditForbidden returns the first changed path under a forbidden root, or "".
-func auditForbidden(opts RunOptions) string {
-	changed, err := opts.Hooks.ChangedPaths(opts.Root)
-	if err != nil {
-		return "" // a git error is not a forbidden-change signal
-	}
-	return firstForbidden(changed)
-}
-
-// firstForbidden returns the first path in changed that lives under a forbidden
-// root, or "" if none do. Shared by the pre-run precondition and the per-session
-// audit so both agree on what "runner-owned" means.
-func firstForbidden(changed []string) string {
-	for _, p := range changed {
-		p = filepath.ToSlash(p)
-		for _, root := range forbiddenChangeRoots {
-			if strings.HasPrefix(p, root) {
-				return p
-			}
-		}
-	}
-	return ""
 }
 
 // specPhaseOf maps a spec-phase step to its phase name (requirements/design/
