@@ -59,3 +59,4 @@ internal/web/dist/*
 # csdd operational state (.csdd/): local, regenerable — but commit manifests.
 /.csdd/state.json
 /.csdd/cache/
+/.csdd/bot.json
