@@ -53,11 +53,12 @@ func runPlan(args []string, templates embed.FS) int {
 func planRun(args []string) int {
 	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
 	var root string
-	var autonomous bool
+	var autonomous, assumeYes bool
 	var sessionBudget float64
 	var maxIterations, maxRetries int
 	addRoot(fs, &root)
-	fs.BoolVar(&autonomous, "autonomous", false, "Run bypass-mode (--dangerously-skip-permissions); requires a verified sandbox (`sandbox doctor`).")
+	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
+	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
 	fs.IntVar(&maxIterations, "max-iterations", 25, "Maximum loop iterations before stopping.")
 	fs.IntVar(&maxRetries, "max-retries", 2, "Retries per step before marking the feat blocked.")
@@ -66,8 +67,11 @@ func planRun(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--autonomous] [--session-budget N] [--max-iterations N] [--max-retries N]")
+		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--max-retries N]")
 		return 1
+	}
+	if autonomous {
+		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
 	}
 	slug := positionals[0]
 	if err := workspace.SafeName(slug, "plan"); err != nil {
@@ -82,7 +86,7 @@ func planRun(args []string) int {
 	sum, err := plan.Run(plan.RunOptions{
 		Root:          r,
 		Slug:          slug,
-		Autonomous:    autonomous,
+		AssumeYes:     assumeYes,
 		SessionBudget: sessionBudget,
 		MaxIterations: maxIterations,
 		MaxRetries:    maxRetries,

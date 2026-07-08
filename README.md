@@ -288,14 +288,14 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
-csdd plan run    <slug>                     # drive the next ready feat(s)
-csdd plan run    <slug> --autonomous        # bypass-mode loop — requires a verified sandbox
+csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
+csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations · --max-retries
 ```
 
 ### 🔒 `sandbox` — isolation before autonomy
 
-`--autonomous` runs Claude in bypass mode (`--dangerously-skip-permissions`), so csdd refuses to start one without a **proven** sandbox:
+`plan run` always drives Claude in bypass mode (`--dangerously-skip-permissions`), so it wants a **proven** sandbox: when `sandbox doctor` fails, the runner shows the failing checks and asks before continuing — declining closes the run.
 
 ```bash
 csdd sandbox init --hardened   # scaffold a default-deny-egress devcontainer (--feature, --allow-domain)

@@ -48,12 +48,13 @@ func fixedNow() time.Time { return time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC) }
 // would run to the iteration cap unless a test's stubs advance state.
 func baseHooks() Hooks {
 	return Hooks{
-		Session:         func(Step, string, SessionMode, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
+		Session:         func(Step, string, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
 		CSDD:            func(string, ...string) (bool, string) { return true, "" },
 		Gate:            func(string, string) (bool, string) { return true, "" },
 		ChangedPaths:    func(string) ([]string, error) { return []string{"specs/a/foo.go"}, nil },
 		Commit:          func(string, string, []string) error { return nil },
 		Doctor:          func() SandboxReport { return SandboxReport{OK: true} },
+		Confirm:         func(string) bool { return false },
 		ClaudeAvailable: func() bool { return true },
 		Now:             fixedNow,
 	}
@@ -108,11 +109,38 @@ func TestRunnerPreflight(t *testing.T) {
 		t.Errorf("expected claude-missing failure, got %v", err)
 	}
 
-	// Autonomous with a failing sandbox doctor.
+	// Doctor fails and the human declines the alert: the run closes.
 	h2 := baseHooks()
-	h2.Doctor = func() SandboxReport { return SandboxReport{OK: false} }
-	if _, err := Run(RunOptions{Root: root2, Slug: "p", Autonomous: true, Hooks: h2, Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "sandbox") {
-		t.Errorf("expected sandbox failure for --autonomous, got %v", err)
+	h2.Doctor = func() SandboxReport {
+		return SandboxReport{OK: false, Checks: []SandboxCheck{{Name: "firewall_active", OK: false, Detail: "control reachable"}}}
+	}
+	confirms := 0
+	h2.Confirm = func(string) bool { confirms++; return false }
+	if _, err := Run(RunOptions{Root: root2, Slug: "p", Hooks: h2, Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "sandbox") {
+		t.Errorf("expected the run to close on a declined unverified-sandbox alert, got %v", err)
+	}
+	if confirms != 1 {
+		t.Errorf("expected exactly one confirmation prompt, got %d", confirms)
+	}
+
+	// Doctor fails but the human accepts: the run proceeds bypass-mode.
+	var out bytes.Buffer
+	h3 := baseHooks()
+	h3.Doctor = func() SandboxReport { return SandboxReport{OK: false} }
+	h3.Confirm = func(string) bool { return true }
+	if _, err := Run(RunOptions{Root: root2, Slug: "p", Hooks: h3, MaxIterations: 1, Out: &out}); err != nil {
+		t.Errorf("accepted alert should let the run proceed, got %v", err)
+	}
+	if !strings.Contains(out.String(), "WITHOUT") {
+		t.Errorf("run log should state it is continuing without a verified sandbox:\n%s", out.String())
+	}
+
+	// Doctor fails with --yes: no prompt at all, the run proceeds.
+	h4 := baseHooks()
+	h4.Doctor = func() SandboxReport { return SandboxReport{OK: false} }
+	h4.Confirm = func(string) bool { t.Error("Confirm must not be called when AssumeYes is set"); return false }
+	if _, err := Run(RunOptions{Root: root2, Slug: "p", AssumeYes: true, Hooks: h4, MaxIterations: 1, Out: &bytes.Buffer{}}); err != nil {
+		t.Errorf("--yes should skip the prompt and proceed, got %v", err)
 	}
 }
 
@@ -122,7 +150,20 @@ func TestRunnerPathAuditBlocks(t *testing.T) {
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
 	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n") // b already done
 	h := baseHooks()
-	h.ChangedPaths = func(string) ([]string, error) { return []string{"docs/graph/graph.json"}, nil }
+	// The tree is clean at preflight; only after the session runs does a forbidden
+	// path appear, so it is the post-session audit — not the precondition — that
+	// blocks the feat.
+	sessionRan := false
+	h.Session = func(Step, string, float64) (Verdict, error) {
+		sessionRan = true
+		return Verdict{Status: VerdictDone}, nil
+	}
+	h.ChangedPaths = func(string) ([]string, error) {
+		if sessionRan {
+			return []string{"docs/graph/graph.json"}, nil
+		}
+		return nil, nil
+	}
 
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 1, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -139,6 +180,75 @@ func TestRunnerPathAuditBlocks(t *testing.T) {
 	}
 }
 
+func TestRunnerCommitsEverySpecPhase(t *testing.T) {
+	// Every spec phase must produce its own commit, so the approval (spec.json)
+	// and journal (docs/plans/.../log.md) it writes never linger dirty to trip the
+	// next phase's forbidden-path audit. Without this, a multi-phase run stalls on
+	// the second phase.
+	root := approvedRunnerWorkspace(t)
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n") // b already done
+
+	var commitMsgs []string
+	approvals := map[string]bool{}
+	h := baseHooks()
+	h.Commit = func(_ string, msg string, _ []string) error {
+		commitMsgs = append(commitMsgs, msg)
+		return nil
+	}
+	h.CSDD = func(_ string, args ...string) (bool, string) {
+		switch {
+		case len(args) >= 2 && args[0] == "plan" && args[1] == "generate":
+			writeSpec(t, root, "a", map[string]bool{}, false, "")
+		case len(args) >= 4 && args[0] == "spec" && args[1] == "approve":
+			phase := args[len(args)-1]
+			approvals[phase] = true
+			ready := approvals["requirements"] && approvals["design"] && approvals["tasks"]
+			tasks := ""
+			if ready {
+				tasks = "- [x] 1. done\n"
+			}
+			writeSpec(t, root, "a", approvals, ready, tasks)
+		}
+		return true, ""
+	}
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	approveCommits := 0
+	for _, m := range commitMsgs {
+		if strings.HasPrefix(m, "chore(a): approve ") {
+			approveCommits++
+		}
+	}
+	if approveCommits != 3 {
+		t.Errorf("expected 3 spec-phase approval commits (requirements/design/tasks), got %d (%v)", approveCommits, commitMsgs)
+	}
+}
+
+func TestRunnerPreflightRejectsForbiddenDirt(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
+	h := baseHooks()
+	// A pre-existing change under a runner-owned path (e.g. a CRLF-renormalized
+	// state file) must fail preflight fast — before any paid session is spawned —
+	// with a message that names the offending path, not a misattributed audit.
+	sessions := 0
+	h.Session = func(Step, string, float64) (Verdict, error) {
+		sessions++
+		return Verdict{Status: VerdictDone}, nil
+	}
+	h.ChangedPaths = func(string) ([]string, error) { return []string{".csdd/state.json"}, nil }
+
+	_, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 2, Out: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), ".csdd/state.json") {
+		t.Fatalf("expected preflight to reject a dirty runner-owned tree naming the path, got %v", err)
+	}
+	if sessions != 0 {
+		t.Errorf("no session should spawn when preflight rejects the tree, got %d", sessions)
+	}
+}
+
 func TestRunnerRetryAppendsFailure(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
@@ -147,7 +257,7 @@ func TestRunnerRetryAppendsFailure(t *testing.T) {
 	var briefs []string
 	gateCalls := 0
 	h := baseHooks()
-	h.Session = func(step Step, brief string, _ SessionMode, _ float64) (Verdict, error) {
+	h.Session = func(step Step, brief string, _ float64) (Verdict, error) {
 		briefs = append(briefs, brief)
 		return Verdict{Status: VerdictDone}, nil
 	}
@@ -186,7 +296,7 @@ func TestRunnerBlockedVerdictContinues(t *testing.T) {
 	writeSpec(t, root, "b", allApproved, true, "- [ ] 1. do it\n")
 
 	h := baseHooks()
-	h.Session = func(step Step, _ string, _ SessionMode, _ float64) (Verdict, error) {
+	h.Session = func(step Step, _ string, _ float64) (Verdict, error) {
 		if step.Feat == "a" {
 			return Verdict{Status: VerdictBlocked, Summary: "cannot resolve", Revision: "split feat a"}, nil
 		}
@@ -244,7 +354,7 @@ func TestRunnerDriftStopsMidRun(t *testing.T) {
 	h := baseHooks()
 	// The "session" drifts the plan by editing plan.md — the runner must stop on
 	// the next iteration's drift check rather than keep going.
-	h.Session = func(Step, string, SessionMode, float64) (Verdict, error) {
+	h.Session = func(Step, string, float64) (Verdict, error) {
 		writeFile(t, filepath.Join(Dir(root, "p"), "plan.md"), runnerPlan+"\n<!-- drift -->\n")
 		return Verdict{Status: VerdictDone}, nil
 	}

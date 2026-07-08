@@ -630,6 +630,31 @@ func TestSpecApproveValidations(t *testing.T) {
 	}
 }
 
+func TestSpecApproveDirectlyAuthoredArtifact(t *testing.T) {
+	// A phase authored straight to disk (a human or a `plan run` session writing
+	// requirements.md without `spec generate`) must still be validatable and
+	// approvable: approval certifies the content, not the generation route.
+	dir := freshWorkspace(t)
+	_, _, _ = run(t, "spec", "init", "authored", "--root", dir)
+	valid := "# Requirements\n\n### Requirement 1: R\n\n**Acceptance Criteria**\n1. WHEN a user acts THE SYSTEM SHALL respond.\n"
+	if err := os.WriteFile(filepath.Join(dir, "specs/authored/requirements.md"), []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, e := run(t, "spec", "validate", "authored", "--root", dir); code != 0 {
+		t.Errorf("validate should scope to the authored phase, not report 'no generated artifacts': %s", e)
+	}
+	if code, _, e := run(t, "spec", "approve", "authored", "--phase", "requirements", "--root", dir); code != 0 {
+		t.Errorf("approve of a directly-authored artifact should succeed: %s", e)
+	}
+	parsed, err := loadSpecJSON(filepath.Join(dir, "specs", "authored"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := parsed.Approvals["requirements"]; !a.Approved || !a.Generated {
+		t.Errorf("approval should mark the phase approved and backfill generated, got %+v", a)
+	}
+}
+
 func TestSpecListEmpty(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, out, _ := run(t, "spec", "list", "--root", dir)

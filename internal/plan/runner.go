@@ -9,27 +9,6 @@ import (
 	"time"
 )
 
-// SessionMode is the permission posture a runner session runs under. It is part
-// of the exported Hooks contract so external drivers (and tests) can construct a
-// Session stub.
-type SessionMode int
-
-const (
-	// ModeSupervised passes --permission-mode acceptEdits: edits apply but the
-	// human is in the loop for anything riskier.
-	ModeSupervised SessionMode = iota
-	// ModeAutonomous passes --dangerously-skip-permissions; only ever selected
-	// after `sandbox doctor` proves isolation (principle 7).
-	ModeAutonomous
-)
-
-func (m SessionMode) String() string {
-	if m == ModeAutonomous {
-		return "autonomous"
-	}
-	return "supervised"
-}
-
 // forbiddenChangeRoots are the workspace subtrees a session must never modify
 // (R9.6). The runner owns the plan tree, the graph, and the state dir; a session
 // touching any of them is a hard step failure, verified from the git working tree
@@ -42,7 +21,8 @@ var forbiddenChangeRoots = []string{".csdd/", "docs/graph/", "docs/plans/"}
 // no `claude`, `git`, or subprocess at all.
 type Hooks struct {
 	// Session runs one claude session for a step and returns its parsed verdict.
-	Session func(step Step, brief string, mode SessionMode, budgetUSD float64) (Verdict, error)
+	// Every session runs bypass-mode (--dangerously-skip-permissions).
+	Session func(step Step, brief string, budgetUSD float64) (Verdict, error)
 	// CSDD runs `csdd <args...>` in root, returning success and combined output.
 	CSDD func(root string, args ...string) (bool, string)
 	// Gate runs a shell gate command in root, returning success and output.
@@ -51,8 +31,12 @@ type Hooks struct {
 	ChangedPaths func(root string) ([]string, error)
 	// Commit stages paths and commits them with msg.
 	Commit func(root, msg string, paths []string) error
-	// Doctor proves sandbox isolation (autonomous mode only).
+	// Doctor proves sandbox isolation before the bypass-mode loop starts.
 	Doctor func() SandboxReport
+	// Confirm asks the human a yes/no question (the unverified-sandbox alert)
+	// and reports whether they accepted. The real hook reads stdin, so a
+	// non-interactive run (EOF) declines by default.
+	Confirm func(prompt string) bool
 	// ClaudeAvailable reports whether the `claude` CLI is on PATH.
 	ClaudeAvailable func() bool
 	// Now returns the current time (journal timestamps; injected for determinism).
@@ -63,7 +47,7 @@ type Hooks struct {
 type RunOptions struct {
 	Root          string
 	Slug          string
-	Autonomous    bool
+	AssumeYes     bool    // accept the unverified-sandbox alert without prompting (--yes)
 	SessionBudget float64 // per-session --max-budget-usd; 0 = no cap (Claude account limits)
 	MaxIterations int     // default 25
 	MaxRetries    int     // default 2
@@ -114,18 +98,39 @@ func Run(opts RunOptions) (RunSummary, error) {
 	if drift {
 		return RunSummary{}, fmt.Errorf("plan %q has drifted since approval; re-approve before running", opts.Slug)
 	}
+	// R9.6 precondition: the runner attributes every post-session working-tree
+	// change to the session, audits it, and commits it. That only holds if the
+	// tree starts clean of the paths the runner owns. A pre-existing change under a
+	// forbidden root — e.g. a CRLF-renormalized .csdd/state.json from an editor —
+	// would otherwise be blamed on the first session as a hard failure, burning a
+	// paid session on every retry. Refuse up front with an accurate, actionable
+	// message instead of misattributing it.
+	if changed, cErr := h.ChangedPaths(opts.Root); cErr == nil {
+		if bad := firstForbidden(changed); bad != "" {
+			return RunSummary{}, fmt.Errorf("working tree has an uncommitted change under a runner-owned path (%s); commit or revert it before `plan run` — the runner owns the plan, graph, and state", bad)
+		}
+	}
 	if !h.ClaudeAvailable() {
 		return RunSummary{}, fmt.Errorf("the `claude` CLI is not available on PATH; the runner needs it to spawn sessions")
 	}
-	mode := ModeSupervised
-	if opts.Autonomous {
-		rep := h.Doctor()
-		if !rep.OK {
-			return RunSummary{}, fmt.Errorf("--autonomous requires a verified sandbox; `sandbox doctor` failed — refusing to pass --dangerously-skip-permissions")
+	// Every session runs bypass-mode (--dangerously-skip-permissions), so a
+	// verified sandbox is the expected home (principle 7). When doctor fails, the
+	// run only proceeds on an explicit human accept — declining closes the run.
+	if rep := h.Doctor(); rep.OK {
+		logf("sandbox verified: isolation is enforced")
+	} else {
+		logf("⚠ sandbox NOT verified — plan run drives every session with --dangerously-skip-permissions:")
+		for _, c := range rep.Checks {
+			if !c.OK {
+				logf("  ✗ %-18s %s", c.Name, c.Detail)
+			}
 		}
-		mode = ModeAutonomous
+		if !opts.AssumeYes && !h.Confirm("Continue WITHOUT sandbox isolation? [y/N] ") {
+			return RunSummary{}, fmt.Errorf("run closed: sandbox not verified and continuing was declined — fix isolation (`csdd sandbox init` + `csdd sandbox doctor`) or pass --yes to accept the risk")
+		}
+		logf("continuing WITHOUT a verified sandbox (explicitly accepted)")
 	}
-	logf("plan run %s (%s mode, %s, max %d iterations)", opts.Slug, mode, budgetLabel(opts.SessionBudget), opts.MaxIterations)
+	logf("plan run %s (bypass mode, %s, max %d iterations)", opts.Slug, budgetLabel(opts.SessionBudget), opts.MaxIterations)
 
 	var sum RunSummary
 	for iter := 0; iter < opts.MaxIterations; iter++ {
@@ -163,7 +168,7 @@ func Run(opts RunOptions) (RunSummary, error) {
 		}
 
 		logf("→ %s / %s", step.Feat, step.Step)
-		advanced := executeStep(opts, doc, step, mode, &sum)
+		advanced := executeStep(opts, doc, step, &sum)
 		if !advanced {
 			sum.Blocks++
 		}
@@ -178,7 +183,7 @@ func Run(opts RunOptions) (RunSummary, error) {
 // advanced (green) or was blocked (retries exhausted, forbidden change, or a
 // blocked verdict). A blocked feat gets a marker so the sequencer skips it and
 // the loop continues with other unblocked feats (R9.4).
-func executeStep(opts RunOptions, doc *PlanDoc, step Step, mode SessionMode, sum *RunSummary) bool {
+func executeStep(opts RunOptions, doc *PlanDoc, step Step, sum *RunSummary) bool {
 	h := opts.Hooks
 	out := opts.Out
 	logf := func(format string, a ...any) { _, _ = fmt.Fprintf(out, format+"\n", a...) }
@@ -212,7 +217,7 @@ func executeStep(opts RunOptions, doc *PlanDoc, step Step, mode SessionMode, sum
 			brief += "\n\n## Previous attempt failed — fix this\n\n" + lastFailure + "\n"
 		}
 
-		verdict, err := h.Session(step, brief, mode, opts.SessionBudget)
+		verdict, err := h.Session(step, brief, opts.SessionBudget)
 		if err != nil {
 			lastFailure = "session error: " + err.Error()
 			continue
@@ -239,14 +244,25 @@ func executeStep(opts RunOptions, doc *PlanDoc, step Step, mode SessionMode, sum
 			continue
 		}
 
-		// Green: the runner performs the advance (approval or commit), never the session.
+		// Green: the runner performs the approval a session must never do.
 		if err := advance(opts, step); err != nil {
 			lastFailure = "advance failed: " + err.Error()
 			logf("  advance failed: %v", err)
 			continue
 		}
-		sum.Steps++
 		journal(opts, step, "done")
+		// Persist the step: the session's authored files, the phase approval, and
+		// the journal line, all in one commit. Spec phases commit too (not just
+		// implementation tasks) so no runner-owned write — the approval in spec.json
+		// or the journal in docs/plans/ — is left dirty to trip the NEXT step's
+		// forbidden-path audit. Leaving the tree clean between steps is what makes a
+		// multi-phase run progress at all.
+		if err := commitStep(opts, step); err != nil {
+			lastFailure = "commit failed: " + err.Error()
+			logf("  commit failed: %v", err)
+			continue
+		}
+		sum.Steps++
 		logf("  ✓ %s", step.Step)
 		return true
 	}
@@ -281,25 +297,39 @@ func runGates(opts RunOptions, step Step) (bool, string) {
 	return true, ""
 }
 
-// advance performs the green-path mutation the runner (never the session) owns:
-// approve the spec phase, or commit the implementation scoped to the session's
-// changed paths (R9.2).
+// advance performs the runner-owned green-path action a session must never do:
+// approving the spec phase. Persisting the step is a separate concern handled by
+// commitStep after the journal, for every step type (R9.2).
 func advance(opts RunOptions, step Step) error {
-	h := opts.Hooks
-	if phase, ok := specPhaseOf(step.Step); ok {
-		if approved, o := h.CSDD(opts.Root, "spec", "approve", step.Feat, "--phase", phase); !approved {
-			return fmt.Errorf("spec approve %s --phase %s: %s", step.Feat, phase, firstLine(o))
-		}
-		return nil
+	phase, ok := specPhaseOf(step.Step)
+	if !ok {
+		return nil // implementation task: nothing to approve; commitStep persists it
 	}
-	changed, err := h.ChangedPaths(opts.Root)
+	if approved, o := opts.Hooks.CSDD(opts.Root, "spec", "approve", step.Feat, "--phase", phase); !approved {
+		return fmt.Errorf("spec approve %s --phase %s: %s", step.Feat, phase, firstLine(o))
+	}
+	return nil
+}
+
+// commitStep commits everything a completed step produced — the session's
+// authored files, the runner's phase approval, and the journal line — so the
+// working tree is left clean for the next step. Committing spec phases too (not
+// only implementation tasks) is what keeps a runner-owned write from lingering
+// dirty and tripping the next step's forbidden-path audit. The message reflects
+// the step type so history reads as feat work vs. spec-phase approvals.
+func commitStep(opts RunOptions, step Step) error {
+	changed, err := opts.Hooks.ChangedPaths(opts.Root)
 	if err != nil {
 		return err
 	}
 	if len(changed) == 0 {
-		return fmt.Errorf("no changes to commit for %s", step.Step)
+		return nil // nothing to persist (e.g. an idempotent re-approve)
 	}
-	return h.Commit(opts.Root, fmt.Sprintf("feat(%s): %s", step.Feat, step.Step), changed)
+	msg := fmt.Sprintf("feat(%s): %s", step.Feat, step.Step)
+	if phase, ok := specPhaseOf(step.Step); ok {
+		msg = fmt.Sprintf("chore(%s): approve %s", step.Feat, phase)
+	}
+	return opts.Hooks.Commit(opts.Root, msg, changed)
 }
 
 // auditForbidden returns the first changed path under a forbidden root, or "".
@@ -308,6 +338,13 @@ func auditForbidden(opts RunOptions) string {
 	if err != nil {
 		return "" // a git error is not a forbidden-change signal
 	}
+	return firstForbidden(changed)
+}
+
+// firstForbidden returns the first path in changed that lives under a forbidden
+// root, or "" if none do. Shared by the pre-run precondition and the per-session
+// audit so both agree on what "runner-owned" means.
+func firstForbidden(changed []string) string {
 	for _, p := range changed {
 		p = filepath.ToSlash(p)
 		for _, root := range forbiddenChangeRoots {
