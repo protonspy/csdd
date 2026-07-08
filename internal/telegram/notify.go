@@ -66,8 +66,8 @@ func NewNotifier(opts Options) *Notifier {
 // Run seeds the baselines (so startup never replays history), sends a startup
 // summary, then polls until ctx is cancelled.
 func (n *Notifier) Run(ctx context.Context) error {
-	n.planUpdates()                        // seed log offsets to EOF; discard history
-	n.lastSpec = readSpecSnapshot(n.root)  // seed spec baseline
+	n.planUpdates()                       // seed log offsets to EOF; discard history
+	n.lastSpec = readSpecSnapshot(n.root) // seed spec baseline
 
 	n.send(ctx, n.startupMessage())
 
