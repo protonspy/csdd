@@ -100,14 +100,21 @@ var EdgeRelations = []string{
 
 // Node is one artifact or entity. The five fixed fields are always present;
 // Attrs carries type-specific metadata (task status, parallel flag, frontmatter
-// tags, tech version, …) that is flattened into the node object on the wire.
+// tags, tech version, …) that is flattened into the node object in the on-disk
+// graph.json (via marshalNode).
+//
+// The snake_case json tags govern only the *default* encoding — the shape a CLI
+// `--json` node object takes (query/path/explain) and the incremental cache — so
+// those match the graph.json key convention (id, file_type, …) rather than Go
+// field names. graph.json itself is written by marshalNode with explicit keys and
+// is unaffected by these tags.
 type Node struct {
-	ID             string
-	Label          string
-	FileType       string
-	SourceFile     string
-	SourceLocation string
-	Attrs          map[string]any
+	ID             string         `json:"id"`
+	Label          string         `json:"label"`
+	FileType       string         `json:"file_type"`
+	SourceFile     string         `json:"source_file"`
+	SourceLocation string         `json:"source_location"`
+	Attrs          map[string]any `json:"attrs,omitempty"`
 }
 
 // Edge is one relationship. Endpoints are node IDs. Confidence is the tier
@@ -142,10 +149,23 @@ type PendingRef struct {
 	SourceFile string
 }
 
+// NodeCollision records two or more distinct artifacts — different labels — that
+// normalized to the same node ID and were therefore silently merged by dedup (one
+// artifact's identity is lost). It is a build-time diagnostic (not serialized),
+// surfaced by analyze so the collision is visible instead of silent.
+type NodeCollision struct {
+	ID       string
+	FileType string
+	Labels   []string // the distinct labels that collided, sorted
+	Files    []string // their source files, sorted and deduped
+}
+
 // Graph is a directed knowledge graph. Meta is the node-link "graph" block.
-// Pending holds unresolved references discovered during assembly; it is not part
-// of the node-link wire format (it is a build-time diagnostic consumed by
-// analyze), so a Graph reloaded from disk has an empty Pending slice.
+// Pending holds unresolved references discovered during assembly; Warnings holds
+// corpus-collection problems (an entry that could not be walked, a claimed file
+// that could not be read); Collisions holds distinct artifacts that shared a node
+// ID. None is part of the node-link wire format (all are build-time diagnostics),
+// so a Graph reloaded from disk carries none of them.
 type Graph struct {
 	Directed   bool
 	Multigraph bool
@@ -153,6 +173,8 @@ type Graph struct {
 	Nodes      []Node
 	Links      []Edge
 	Pending    []PendingRef
+	Warnings   []string
+	Collisions []NodeCollision
 }
 
 // New returns an empty directed graph with the canonical meta block seeded.

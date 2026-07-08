@@ -1,6 +1,7 @@
 // Package frontmatter parses the minimal YAML subset used by Claude Code
-// artifacts: scalar strings, booleans, and inline arrays like `["a", "b"]`.
-// Multi-line YAML, anchors, and nested mappings are out of scope by design.
+// artifacts: scalar strings, booleans, inline arrays like `["a", "b"]`, and
+// block sequences of scalars (a `key:` line followed by more-indented `- item`
+// lines). Anchors and nested mappings are out of scope by design.
 package frontmatter
 
 import (
@@ -60,6 +61,17 @@ func Parse(text string) Frontmatter {
 			fields[key] = folded
 			i = next
 			continue
+		}
+		// A `key:` with no inline value may head a block sequence (`- item` lines).
+		// This is the shape an LLM naturally writes for `sources:`/`tags:`; without
+		// this the items are skipped and the field silently reads as empty.
+		if value == "" {
+			keyIndent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+			if items, next := readBlockSequence(lines, i+1, end, keyIndent); len(items) > 0 {
+				fields[key] = items
+				i = next
+				continue
+			}
 		}
 		fields[key] = parseValue(stripInlineComment(value))
 		i++
@@ -133,6 +145,38 @@ func readBlockScalar(lines []string, start, end int, indicator string) (string, 
 		return strings.Join(strings.Fields(strings.Join(content, " ")), " "), i
 	}
 	return strings.Join(content, "\n"), i
+}
+
+// readBlockSequence reads a YAML block sequence (`- item` lines) that follows a
+// bare `key:` line, starting at lines[start]. Items may sit at or beyond the key's
+// indentation; a dedented line, or any non-`-` line, ends the sequence. Each item
+// is comment-stripped and unquoted. Returns the items and the index of the first
+// line after the sequence (== start when there was none).
+func readBlockSequence(lines []string, start, end, keyIndent int) ([]string, int) {
+	var items []string
+	i := start
+	for ; i < end; i++ {
+		raw := lines[i]
+		trim := strings.TrimSpace(raw)
+		if trim == "" {
+			continue // a blank line inside the sequence
+		}
+		indent := len(raw) - len(strings.TrimLeft(raw, " \t"))
+		if indent < keyIndent {
+			break // dedented to a sibling/parent key
+		}
+		if trim != "-" && !strings.HasPrefix(trim, "- ") {
+			break // not a sequence item — the block ended
+		}
+		item := stripQuotes(strings.TrimSpace(stripInlineComment(strings.TrimSpace(strings.TrimPrefix(trim, "-")))))
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	if len(items) == 0 {
+		return nil, start
+	}
+	return items, i
 }
 
 func parseValue(raw string) any {

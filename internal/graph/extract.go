@@ -67,11 +67,24 @@ var walkSkipDirs = map[string]bool{
 // claims, read and root-relative, in deterministic (lexical) order. Files under
 // docs/raw/ are returned with empty Content — they are indexed opaquely, so
 // their (possibly large, possibly binary) bytes are never read.
-func collectSources(root string, extractors []Extractor) ([]Source, error) {
+//
+// A problem reading one claimed file, or walking one subtree, does not abort the
+// build (a transient lock must not fail `graph build`), but it is never silently
+// dropped either: it is returned as a warning the caller surfaces. Only a failure
+// on the root itself aborts, since there is then nothing to index.
+func collectSources(root string, extractors []Extractor) ([]Source, []string, error) {
 	var out []Source
+	var warnings []string
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
-			// A transient stat error on one entry must not abort the whole build.
+			if p == root {
+				return err // a bad root has nothing to index — abort
+			}
+			// A stat/permission error on one entry: skip it, but report the gap.
+			warnings = append(warnings, "could not access "+filepath.ToSlash(mustRel(root, p))+": "+err.Error())
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.IsDir() {
@@ -92,16 +105,18 @@ func collectSources(root string, extractors []Extractor) ([]Source, error) {
 		}
 		content, rerr := os.ReadFile(p)
 		if rerr != nil {
+			warnings = append(warnings, "could not read "+rel+" (claimed by an extractor, so its nodes are missing): "+rerr.Error())
 			return nil
 		}
 		out = append(out, Source{Path: rel, Content: content})
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out, nil
+	sort.Strings(warnings)
+	return out, warnings, nil
 }
 
 func mustRel(root, p string) string {
@@ -144,6 +159,14 @@ func isRawSourcePath(path string) bool {
 // normLines splits content into line-ending-normalized lines.
 func normLines(content []byte) []string {
 	return strings.Split(textutil.NormalizeNewlines(string(content)), "\n")
+}
+
+// normLinesNoComments is normLines with `<!-- … -->` regions blanked first, so
+// commented-out scaffold content (draft/deferred tasks, example annotations) is
+// never parsed into real nodes and edges. stripHTMLComments preserves newlines,
+// so line indices — and the "L<n>" source_location they feed — stay accurate.
+func normLinesNoComments(content []byte) []string {
+	return strings.Split(stripHTMLComments(textutil.NormalizeNewlines(string(content))), "\n")
 }
 
 // rtrim strips trailing spaces and tabs (keeping leading indentation, which some

@@ -103,7 +103,7 @@ Every tool returns a text result. The mapping from the `csdd` exit code is:
 
 ## Tool reference
 
-**27 tools** covering the csdd **development flow**, grouped by resource.
+**35 tools** covering the csdd **development flow**, grouped by resource.
 Conventions:
 
 - Every tool accepts an optional **`root`** — the workspace root (the directory
@@ -112,11 +112,12 @@ Conventions:
   deletes are refused and phase gates hold.
 - `?` marks an optional parameter; everything else is required.
 
-> **Scope:** this server exposes only the iterative development-flow resources
-> (steering · spec · skill · agent). **Workspace setup and config management are
-> deliberately not tools** — `csdd init`, `csdd update`, `csdd mcp …`, and `csdd export …` are
-> one-time operations a human runs from the CLI, not part of the loop an agent
-> drives. (In fact, `csdd init` is what registers *this* server.)
+> **Scope:** this server exposes the iterative development-flow resources
+> (steering · spec · skill · agent) and the knowledge-graph brain (graph).
+> **Workspace setup and config management are deliberately not tools** — `csdd
+> init`, `csdd update`, `csdd mcp …`, and `csdd export …` are one-time operations a
+> human runs from the CLI, not part of the loop an agent drives. (In fact, `csdd
+> init` is what registers *this* server.)
 
 ### Diagnostic
 
@@ -151,6 +152,8 @@ matches the context).
 | `csdd_spec_approve` | `feature`, `phase`, `force?`, `root?` | Approve a phase. `phase` ∈ `requirements · design · tasks`. Validates first; `force` approves despite issues/missing prior approvals. |
 | `csdd_spec_validate` | `feature`, `root?` | Validate EARS phrasing, traceability, task annotations, parallel safety. Exit 2 on issues. |
 | `csdd_spec_delete` | `feature`, `force?`, `root?` | Delete `specs/<feature>/` recursively (`force` required). |
+| `csdd_spec_test_report` | `feature`, `run?`, `cmd?`, `lang?`, `path?`, `junit?`, `coverage?`, `root?` | Record per-spec unit-test evidence into `test-report.json`. With `run` it executes the tests (per-language default or `cmd`) and parses JUnit + coverage; `lang`/`path` auto-discover reports; a failing run exits non-zero and gates the task. |
+| `csdd_spec_diff_report` | `feature`, `base?`, `maxLines?`, `root?` | Record an auditable file diff (merge-base of the base ref → working tree) into `diff-report.json` for the dashboard's Changes view. `base` overrides auto-detection; `maxLines` caps recorded lines/file. Read-only; requires git. |
 
 > **Phase gates (enforced, not advisory):** `design` needs `requirements`
 > approved; `tasks` needs `design` approved. Generating out of order fails with
@@ -178,6 +181,21 @@ matches the context).
 | `csdd_agent_list` | `root?` | List agents with their tools and descriptions. |
 | `csdd_agent_show` | `name`, `root?` | Print an agent file. |
 | `csdd_agent_delete` | `name`, `force?`, `root?` | Delete `.claude/agents/<name>.md` (`force` required). |
+
+### 🧠 graph — the knowledge-base brain (`docs/graph/`)
+
+Consult it before you grep. `query`/`path`/`explain`/`analyze` rebuild the graph in
+memory from the corpus, so their answers are always current even if the committed
+`graph.json` is stale.
+
+| Tool | Parameters | What it does |
+|------|------------|--------------|
+| `csdd_graph_build` | `full?`, `json?`, `root?` | Rebuild `docs/graph/graph.json` from the corpus (specs, plans, ADRs, wiki, glossary, stack, CLAUDE.md, Go source). Incremental by default; `full` forces a complete rebuild. |
+| `csdd_graph_query` | `terms`, `hops?`, `budget?`, `json?`, `root?` | Find nodes matching `terms` and show their neighborhood — the fast way to locate an artifact and what connects to it. Quote multi-word queries. |
+| `csdd_graph_path` | `from`, `to`, `maxHops?`, `json?`, `root?` | Shortest path between two nodes. Reports each endpoint's match tier (exact / prefix / substring), so a fuzzy resolution is never mistaken for an exact one. |
+| `csdd_graph_explain` | `label`, `json?`, `root?` | A node and all its connections, ordered by neighbor degree. |
+| `csdd_graph_analyze` | `strict?`, `json?`, `root?` | Traceability gaps + wiki/tech/plan/glossary/collision lints. `strict` exits non-zero (2) on any finding — the CI gate. |
+| `csdd_graph_export` | `out?`, `json?`, `root?` | Write `docs/graph/graph.html` — a self-contained interactive visualization. |
 
 > **Not here:** managing the `.mcp.json` servers themselves (`csdd mcp add/list/
 > remove/enable/disable/validate`) stays on the CLI — same for `csdd init`, `csdd update`, and

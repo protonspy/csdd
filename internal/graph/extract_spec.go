@@ -102,7 +102,7 @@ var reRequirementHeading = regexp.MustCompile(`^###\s+Requirement\s+(\d+)\s*:?\s
 var reNumberedItem = regexp.MustCompile(`^(\d+)\.\s+(.*)$`)
 
 func extractRequirements(spec string, src Source) []Fragment {
-	lines := normLines(src.Content)
+	lines := normLinesNoComments(src.Content)
 	var frag Fragment
 	curReq := ""   // current requirement number
 	curReqID := "" // current requirement node ID
@@ -156,7 +156,7 @@ func extractRequirements(spec string, src Source) []Fragment {
 }
 
 func extractDesign(spec string, src Source) []Fragment {
-	lines := normLines(src.Content)
+	lines := normLinesNoComments(src.Content)
 	var frag Fragment
 	section := ""
 	inTraceTable := false
@@ -340,7 +340,7 @@ var reTaskLine = regexp.MustCompile(`^-\s*\[([ xX])\]\s+([0-9]+(?:\.[0-9]+)*)\.?
 var reAnnotation = regexp.MustCompile(`^_([A-Za-z]+):\s*(.*?)_$`)
 
 func extractTasks(spec string, src Source) []Fragment {
-	lines := normLines(src.Content)
+	lines := normLinesNoComments(src.Content)
 	var frag Fragment
 	curTaskID := ""
 	for i, raw := range lines {
@@ -366,6 +366,15 @@ func extractTasks(spec string, src Source) []Fragment {
 				frag.Edges = append(frag.Edges, Edge{
 					Source: curTaskID, Target: designID(spec, b), Relation: RelInBoundary,
 					Confidence: Extracted, ConfidenceScore: 1.0, SourceFile: src.Path, Ref: b,
+				})
+			}
+			// Inline _Depends:_ on the task line itself — same edge the annotation
+			// line "- _Depends: N_" produces, so a dependency written either way is
+			// never silently dropped (it feeds the cycle/order analysis).
+			for _, d := range inlineDepends(title) {
+				frag.Edges = append(frag.Edges, Edge{
+					Source: curTaskID, Target: taskID(spec, d), Relation: RelDependsOn,
+					Confidence: Extracted, ConfidenceScore: 1.0, SourceFile: src.Path, Ref: d,
 				})
 			}
 			// A cited path in the task title (e.g. `internal/foo/bar.go`).
@@ -434,6 +443,16 @@ func inlineBoundaries(title string) []string {
 	return out
 }
 
+// inlineDepends returns the task IDs named by an inline _Depends: N, M_ on a task
+// title (the counterpart to inlineBoundaries).
+func inlineDepends(title string) []string {
+	var out []string
+	for _, m := range reInlineDepends.FindAllStringSubmatch(title, -1) {
+		out = append(out, splitList(m[1])...)
+	}
+	return out
+}
+
 // boldField parses a "**Key**: value" line, returning the value if the key matches.
 func boldField(line, key string) (string, bool) {
 	prefix := "**" + key + "**"
@@ -451,15 +470,21 @@ func boldField(line, key string) (string, bool) {
 func depLine(line string) (names []string, kind string, ok bool) {
 	l := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
 	for _, k := range []string{"Inbound", "Outbound", "External"} {
-		if strings.HasPrefix(l, k) {
-			rest := strings.TrimSpace(strings.TrimPrefix(l, k))
-			rest = strings.TrimPrefix(rest, ":")
-			rest = strings.TrimSpace(rest)
-			if rest == "" || rest == "..." || rest == "—" {
-				return nil, k, true
-			}
-			return splitList(rest), k, true
+		if !strings.HasPrefix(l, k) {
+			continue
 		}
+		rest := strings.TrimSpace(strings.TrimPrefix(l, k))
+		// Require the "Inbound:/Outbound:/External:" label form. Prose that merely
+		// begins with the word ("External systems must be mocked in tests") is not a
+		// dependency line and must not mint tech/component nodes.
+		if !strings.HasPrefix(rest, ":") {
+			continue
+		}
+		rest = strings.TrimSpace(strings.TrimPrefix(rest, ":"))
+		if rest == "" || rest == "..." || rest == "—" {
+			return nil, k, true
+		}
+		return splitList(rest), k, true
 	}
 	return nil, "", false
 }

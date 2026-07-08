@@ -124,7 +124,7 @@ func Query(g *Graph, terms string, opts QueryOptions) []Match {
 		}
 		spent += cost
 		nbrs := neighborhoodGated(g, h.node.ID, hops, hubThreshold)
-		kept := nbrs[:0:0]
+		kept := make([]Neighbor, 0, len(nbrs))
 		for _, nb := range nbrs {
 			c := estimateTokens(nb.Node.Label) + 4
 			if spent+c > budget {
@@ -326,22 +326,27 @@ type PathStep struct {
 	Node      Node   `json:"node"`
 }
 
-// PathResult is a resolved shortest path from From to To.
+// PathResult is a resolved shortest path from From to To. FromTier and ToTier
+// record how each endpoint query matched its node (exact | prefix | substring),
+// so a caller can tell an exact hit from a fuzzy one that silently resolved to an
+// unexpected node.
 type PathResult struct {
-	From  Node       `json:"from"`
-	To    Node       `json:"to"`
-	Steps []PathStep `json:"steps"`
+	From     Node       `json:"from"`
+	To       Node       `json:"to"`
+	FromTier string     `json:"from_tier"`
+	ToTier   string     `json:"to_tier"`
+	Steps    []PathStep `json:"steps"`
 }
 
 // Path returns the shortest path between the nodes A and B resolve to, rendering
 // each edge with its real direction (R2.2). It errors when A and B resolve to the
 // same node, or when either does not resolve, or when no path exists.
 func Path(g *Graph, a, b string, maxHops int) (*PathResult, error) {
-	from, ok := resolveNode(g, a)
+	from, fromTier, ok := resolveNode(g, a)
 	if !ok {
 		return nil, fmt.Errorf("no node matches %q", a)
 	}
-	to, ok := resolveNode(g, b)
+	to, toTier, ok := resolveNode(g, b)
 	if !ok {
 		return nil, fmt.Errorf("no node matches %q", b)
 	}
@@ -394,14 +399,21 @@ func Path(g *Graph, a, b string, maxHops int) (*PathResult, error) {
 		if c.via.dir == "in" {
 			dir = "backward"
 		}
-		steps = append(steps, PathStep{Relation: c.via.relation, Direction: dir, Node: *idx[cur]})
+		// A CLI-built graph never has a dangling edge (resolveReferences prunes them),
+		// but an externally loaded NetworkX graph can — guard so Path errors instead
+		// of panicking, matching Query/Explain.
+		node := idx[cur]
+		if node == nil {
+			return nil, fmt.Errorf("path traverses an edge to a missing node %q (graph is inconsistent)", cur)
+		}
+		steps = append(steps, PathStep{Relation: c.via.relation, Direction: dir, Node: *node})
 		cur = c.prev
 	}
 	// steps were collected target→source; reverse to source→target order.
 	for i, j := 0, len(steps)-1; i < j; i, j = i+1, j-1 {
 		steps[i], steps[j] = steps[j], steps[i]
 	}
-	return &PathResult{From: *from, To: *to, Steps: steps}, nil
+	return &PathResult{From: *from, To: *to, FromTier: fromTier, ToTier: toTier, Steps: steps}, nil
 }
 
 // ExplainConnection is one neighbor in an explain result, with the neighbor's own
@@ -413,23 +425,25 @@ type ExplainConnection struct {
 	Degree    int    `json:"degree"`
 }
 
-// ExplainResult is a node plus its connections ordered by neighbor degree.
+// ExplainResult is a node plus its connections ordered by neighbor degree. Tier
+// records how the label query matched the node (exact | prefix | substring).
 type ExplainResult struct {
 	Node        Node                `json:"node"`
+	Tier        string              `json:"tier"`
 	Connections []ExplainConnection `json:"connections"`
 }
 
 // Explain returns the node label resolves to plus its connections ordered by
 // neighbor degree, descending (R2.3).
 func Explain(g *Graph, label string) (*ExplainResult, error) {
-	n, ok := resolveNode(g, label)
+	n, tier, ok := resolveNode(g, label)
 	if !ok {
 		return nil, fmt.Errorf("no node matches %q", label)
 	}
 	deg := degreeMap(g)
 	idx := g.nodeIndex()
 	adj := buildAdjacency(g)
-	var conns []ExplainConnection
+	conns := []ExplainConnection{}
 	seen := map[string]bool{}
 	for _, a := range adj[n.ID] {
 		key := a.dir + "|" + a.relation + "|" + a.to
@@ -454,7 +468,7 @@ func Explain(g *Graph, label string) (*ExplainResult, error) {
 		}
 		return conns[i].Node.ID < conns[j].Node.ID
 	})
-	return &ExplainResult{Node: *n, Connections: conns}, nil
+	return &ExplainResult{Node: *n, Tier: tier, Connections: conns}, nil
 }
 
 func degreeMap(g *Graph) map[string]int {
@@ -467,14 +481,17 @@ func degreeMap(g *Graph) map[string]int {
 }
 
 // resolveNode maps a user query (an ID or a label) to a single node, using the
-// same tiers as Query and breaking ties by ID for determinism.
-func resolveNode(g *Graph, query string) (*Node, bool) {
+// same tiers as Query and breaking ties by ID for determinism. It returns the
+// matched node and the tier (exact | prefix | substring) it matched at, so
+// callers can distinguish an exact hit from a fuzzy substring resolution.
+func resolveNode(g *Graph, query string) (*Node, string, bool) {
 	q := NormalizeID(query)
 	if q == "" {
-		return nil, false
+		return nil, "", false
 	}
 	best := -1
 	bestRank := 99
+	bestTier := ""
 	for i := range g.Nodes {
 		tier := labelTier(g.Nodes[i], q)
 		if tier == "" {
@@ -483,11 +500,12 @@ func resolveNode(g *Graph, query string) (*Node, bool) {
 		r := tierRank(tier)
 		if r < bestRank || (r == bestRank && (best < 0 || g.Nodes[i].ID < g.Nodes[best].ID)) {
 			bestRank = r
+			bestTier = tier
 			best = i
 		}
 	}
 	if best < 0 {
-		return nil, false
+		return nil, "", false
 	}
-	return &g.Nodes[best], true
+	return &g.Nodes[best], bestTier, true
 }

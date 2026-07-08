@@ -255,6 +255,19 @@ func rejectPositionals(cmd string, fs *flag.FlagSet) error {
 	return nil
 }
 
+// rejectExtraPositionals errors when more than max positional arguments were
+// collected by parseFlags. Unlike rejectPositionals (which reads fs.Args()), it
+// inspects the slice parseFlags returns, so it works with the interleaved
+// positional/flag parsing the graph commands use. A stray token here is almost
+// always a quoting mistake (`graph query auth login` → two positionals) or a typo
+// that would otherwise silently swallow the flags that follow it.
+func rejectExtraPositionals(cmd string, pos []string, max int) error {
+	if len(pos) > max {
+		return fmt.Errorf("`%s %s` got an unexpected extra argument %q — quote multi-word values (e.g. `%s graph query \"a b\"`) and put flags before positionals", prog(), cmd, pos[max], prog())
+	}
+	return nil
+}
+
 // failOnFlagParse short-circuits when a flag parse fails.
 func failOnFlagParse(err error) int {
 	if err == nil {

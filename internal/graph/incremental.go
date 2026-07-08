@@ -14,6 +14,13 @@ import (
 // and regenerable, and is not committed (§5.9).
 const StateRel = ".csdd/state.json"
 
+// stateVersion is the incremental-cache schema/semantics version. A cache written
+// by a different version is discarded (forcing a full re-extraction) rather than
+// reused, so a change to extraction logic or the cached fragment shape can never
+// serve stale fragments for a file whose content hash is unchanged. Bump it
+// whenever extraction output changes for identical input.
+const stateVersion = 2
+
 // sourceCache is one source's cached contribution: the content hash it was
 // extracted at and the fragments that extraction produced. Reusing it skips
 // re-parsing an unchanged file (R13.2 "skip its re-extraction").
@@ -39,12 +46,12 @@ func BuildIncremental(root string) (*Graph, error) {
 }
 
 func buildIncrementalWith(root string, extractors []Extractor) (*Graph, error) {
-	sources, err := collectSources(root, extractors)
+	sources, warnings, err := collectSources(root, extractors)
 	if err != nil {
 		return nil, err
 	}
 	state := loadState(root)
-	next := &buildState{Version: 1, Sources: map[string]sourceCache{}}
+	next := &buildState{Version: stateVersion, Sources: map[string]sourceCache{}}
 
 	var nodes []Node
 	var edges []Edge
@@ -75,6 +82,7 @@ func buildIncrementalWith(root string, extractors []Extractor) (*Graph, error) {
 	// Deleted sources simply vanish: next only contains current paths.
 
 	g := assemble(root, nodes, edges)
+	g.Warnings = warnings
 	if err := saveState(root, next); err != nil {
 		return nil, err
 	}
@@ -86,6 +94,7 @@ func buildIncrementalWith(root string, extractors []Extractor) (*Graph, error) {
 // identical assembly and therefore produce identical output.
 func assemble(root string, nodes []Node, edges []Edge) *Graph {
 	g := New()
+	g.Collisions = detectCollisions(nodes)
 	g.Nodes = dedupNodes(nodes)
 	g.Links = dedupEdges(edges)
 	assembleSpecOwnership(g)
@@ -106,13 +115,20 @@ func statePath(root string) string {
 // loadState reads the incremental cache, returning an empty state when it is
 // absent or unreadable (a corrupt cache just forces a full re-extraction).
 func loadState(root string) *buildState {
+	empty := &buildState{Version: stateVersion, Sources: map[string]sourceCache{}}
 	data, err := os.ReadFile(statePath(root))
 	if err != nil {
-		return &buildState{Version: 1, Sources: map[string]sourceCache{}}
+		return empty
 	}
 	var st buildState
 	if err := json.Unmarshal(data, &st); err != nil || st.Sources == nil {
-		return &buildState{Version: 1, Sources: map[string]sourceCache{}}
+		return empty
+	}
+	// A cache from a different schema version is discarded — its fragments may have
+	// been extracted with different logic or a different shape, and reusing them
+	// would serve stale results for unchanged files.
+	if st.Version != stateVersion {
+		return empty
 	}
 	return &st
 }

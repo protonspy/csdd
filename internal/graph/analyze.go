@@ -30,10 +30,12 @@ type GodNode struct {
 	Degree int    `json:"degree"`
 }
 
-// GapReport is the full analysis: every finding plus the god-node hubs.
+// GapReport is the full analysis: every finding plus the god-node hubs. Both
+// slices always serialize (as [] when empty, never null or absent) so a --json
+// consumer can iterate them unconditionally.
 type GapReport struct {
 	Findings []Finding `json:"findings"`
-	GodNodes []GodNode `json:"god_nodes,omitempty"`
+	GodNodes []GodNode `json:"god_nodes"`
 }
 
 // Corpus tags.
@@ -43,6 +45,7 @@ const (
 	corpusTech     = "tech"
 	corpusPlan     = "plan"
 	corpusGlossary = "glossary"
+	corpusGraph    = "graph"
 )
 
 // Finding kinds.
@@ -59,6 +62,7 @@ const (
 	kindIndexDanglingEntry  = "index_dangling_entry"
 	kindLogFormat           = "log_format"
 	kindUnprocessedSource   = "unprocessed_source"
+	kindBrokenSource        = "broken_source"
 	kindUndeclaredTech      = "undeclared_tech"
 	kindPhantomTech         = "phantom_tech"
 	kindUnrefinedTech       = "unrefined_tech"
@@ -70,6 +74,7 @@ const (
 	kindOrphanDecision      = "orphan_decision"
 	kindAvoidedTerm         = "avoided_term"
 	kindOrphanTerm          = "orphan_term"
+	kindIDCollision         = "id_collision"
 )
 
 // Analyze runs every mechanical check over an assembled graph. root is used only
@@ -82,9 +87,34 @@ func Analyze(g *Graph, root string) GapReport {
 	r.Findings = append(r.Findings, techFindings(g, root)...)
 	r.Findings = append(r.Findings, planFindings(g)...)
 	r.Findings = append(r.Findings, glossaryFindings(g, root)...)
+	r.Findings = append(r.Findings, collisionFindings(g)...)
 	r.GodNodes = godNodes(g)
 	sortFindings(r.Findings)
 	return r
+}
+
+// collisionFindings surfaces the build-time NodeCollision diagnostics: distinct
+// artifacts that normalized to one node ID and were silently merged. Reported so
+// the lost artifact is visible instead of vanishing (the gap is the product).
+func collisionFindings(g *Graph) []Finding {
+	var out []Finding
+	for _, c := range g.Collisions {
+		out = append(out, Finding{
+			Kind: kindIDCollision, Corpus: corpusGraph, NodeID: c.ID, Label: strings.Join(c.Labels, " / "),
+			Message: "id collision: node ID \"" + c.ID + "\" is shared by " + itoa(len(c.Labels)) +
+				" distinct artifacts (" + strings.Join(c.Labels, " | ") + ") across " + strings.Join(c.Files, ", ") +
+				" — one was silently dropped; rename to disambiguate",
+			File: firstOr(c.Files, ""),
+		})
+	}
+	return out
+}
+
+func firstOr(s []string, def string) string {
+	if len(s) > 0 {
+		return s[0]
+	}
+	return def
 }
 
 // WikiFindings returns the wiki-corpus subset of a report — exactly what
@@ -213,6 +243,17 @@ func wikiFindings(g *Graph, root string) []Finding {
 		})
 	}
 
+	// Broken `sources:` provenance: a derived_from that resolved to no raw_source.
+	for _, p := range g.Pending {
+		if p.Relation != RelDerivedFrom {
+			continue
+		}
+		out = append(out, Finding{
+			Kind: kindBrokenSource, Corpus: corpusWiki, NodeID: p.FromID, Label: p.FromLabel,
+			Message: "broken source: `sources:` names \"" + p.Ref + "\" but no such raw source exists under docs/raw/", File: p.SourceFile,
+		})
+	}
+
 	indexed := readIndexEntries(root)
 	// R10.2 orphan pages; R10.3a pages missing from index.md.
 	for _, n := range g.Nodes {
@@ -299,8 +340,9 @@ func techFindings(g *Graph, root string) []Finding {
 		}
 		declared := asBool(n.Attrs["from_contract"])
 		used := es.hasIn(RelUsesTech, n.ID)
+		isLanguage := asBool(n.Attrs["is_language"])
 		switch {
-		case usedByManifest[n.ID] && !declared:
+		case usedByManifest[n.ID] && !declared && !isLanguage:
 			out = append(out, Finding{
 				Kind: kindUndeclaredTech, Corpus: corpusTech, NodeID: n.ID, Label: n.Label,
 				Message: "undeclared tech decision: \"" + n.Label + "\" is used but absent from the contract", File: n.SourceFile,
