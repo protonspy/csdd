@@ -10,19 +10,21 @@ import { TestsView } from './components/TestsView'
 import { ResourceView } from './components/ResourceView'
 import { GraphView } from './components/GraphView'
 import { PlansView } from './components/PlansView'
+import { WikiView } from './components/WikiView'
 import { AuthScreen } from './components/AuthScreen'
 import { resourceKindsHint } from './resources'
 import type { ResourceKind } from './resources'
 
 // View is the top-level workspace area chosen from the header tabs. Specs and
 // Tests are full-width pages; Resources and Files use the contextual sidebar.
-export type View = 'specs' | 'plans' | 'resources' | 'files' | 'tests' | 'graph'
+export type View = 'specs' | 'plans' | 'resources' | 'files' | 'tests' | 'graph' | 'wiki'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'specs', label: 'Specs' },
   { id: 'plans', label: 'Plans' },
   { id: 'resources', label: 'Resources' },
   { id: 'files', label: 'Files' },
   { id: 'tests', label: 'Tests' },
+  { id: 'wiki', label: 'Wiki' },
   { id: 'graph', label: 'Graph' },
 ]
 
@@ -164,6 +166,8 @@ export function App() {
           {view === 'plans' && <PlansView version={version} />}
 
           {view === 'tests' && <TestsView version={version} />}
+
+          {view === 'wiki' && <WikiView version={version} />}
 
           {view === 'graph' && <GraphView version={version} />}
         </main>

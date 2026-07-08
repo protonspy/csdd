@@ -6,6 +6,7 @@ import type {
   TestReport,
   PlanSummary,
   PlanDetail,
+  WikiOverview,
 } from './types'
 import { authHeader, requireAuth } from './auth'
 
@@ -29,4 +30,5 @@ export const api = {
   tests: () => get<TestReport>('/api/tests'),
   plans: () => get<PlanSummary[]>('/api/plans'),
   plan: (slug: string) => get<PlanDetail>(`/api/plan/${encodeURIComponent(slug)}`),
+  wiki: () => get<WikiOverview>('/api/wiki'),
 }

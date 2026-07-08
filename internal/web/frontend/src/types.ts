@@ -253,3 +253,30 @@ export interface PlanDetail {
   feats: PlanFeat[]
   milestones: MilestoneProgress[]
 }
+
+// Wiki — the LLM-authored knowledge base under docs/wiki/. docs/wiki/index.md is
+// the structuring catalog (categories + order); pages/ holds the content.
+export interface WikiLink {
+  text: string
+  target: string // resolved page slug, or "" when broken
+  broken: boolean
+}
+
+export interface WikiPage {
+  slug: string
+  title: string
+  path: string
+  category: string
+  tags?: string[]
+  sources?: string[]
+  links: WikiLink[]
+  in_index: boolean
+}
+
+export interface WikiOverview {
+  present: boolean
+  has_index: boolean
+  categories: string[]
+  pages: WikiPage[]
+  raw_sources: string[]
+}
