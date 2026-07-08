@@ -579,7 +579,14 @@ func SpecApprove(opts SpecApproveOptions) error {
 		return fmt.Errorf("approvals[%s] not present in spec.json", opts.Phase)
 	}
 	if !state.Generated {
-		return fmt.Errorf("cannot approve '%s': not generated yet", opts.Phase)
+		// The generated flag is bookkeeping from `spec generate`; what an approval
+		// certifies is the artifact content. A phase authored directly — by a human
+		// or a `plan run` session — is just as approvable, so only a missing
+		// artifact blocks here.
+		if !phaseAuthored(sdir, data, opts.Phase) {
+			return fmt.Errorf("cannot approve '%s': %s not found — generate or author it first", opts.Phase, phaseArtifact(opts.Phase))
+		}
+		state.Generated = true
 	}
 	if prev := previousPhase(opts.Phase); prev != "" && !phaseApprovedAndCurrent(sdir, data, prev) {
 		if !opts.Force {
@@ -619,6 +626,18 @@ func SpecApprove(opts SpecApproveOptions) error {
 		render.OK(opts.Feature + ": ready_for_implementation = true")
 	}
 	return nil
+}
+
+// phaseAuthored reports whether a phase has an artifact to validate or approve:
+// either `spec generate` marked it generated, or the artifact file itself exists
+// (authored directly by a human or a plan-run session). Approval and validation
+// certify content, not the route it was produced by.
+func phaseAuthored(specDir string, data SpecJSON, phase string) bool {
+	if data.Approvals[phase].Generated {
+		return true
+	}
+	name := phaseArtifact(phase)
+	return name != "" && pathExists(filepath.Join(specDir, name))
 }
 
 // phaseArtifact maps an approvable phase to the artifact whose content its
@@ -762,13 +781,13 @@ func validationScope(specDir string, data SpecJSON) (validator.Phase, []validato
 	if strings.HasPrefix(data.Phase, "bugfix") || pathExists(filepath.Join(specDir, "bugfix.md")) {
 		return validator.PhaseAll, nil
 	}
-	if data.Approvals["tasks"].Generated {
+	if phaseAuthored(specDir, data, "tasks") {
 		return validator.PhaseTasks, nil
 	}
-	if data.Approvals["design"].Generated {
+	if phaseAuthored(specDir, data, "design") {
 		return validator.PhaseDesign, nil
 	}
-	if data.Approvals["requirements"].Generated {
+	if phaseAuthored(specDir, data, "requirements") {
 		return validator.PhaseRequirements, nil
 	}
 	return validator.PhaseAll, []validator.Issue{{

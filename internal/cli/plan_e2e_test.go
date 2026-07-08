@@ -79,7 +79,7 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 	//    done, gates pass, and the commit hook closes the task so Next advances.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
-		Session: func(plan.Step, string, plan.SessionMode, float64) (plan.Verdict, error) {
+		Session: func(plan.Step, string, float64) (plan.Verdict, error) {
 			return plan.Verdict{Status: plan.VerdictDone}, nil
 		},
 		CSDD:         func(string, ...string) (bool, string) { return true, "" },

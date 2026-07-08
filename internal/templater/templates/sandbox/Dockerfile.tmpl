@@ -8,7 +8,7 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # HARDENED restricts the vscode user's sudo to ONLY the firewall script (no
 # general root). It is the recommended build for unattended
-# `csdd plan run --autonomous`; the default keeps broad sudo for interactive use.
+# `csdd plan run`; the default keeps broad sudo for interactive use.
 ARG HARDENED=false
 
 # Firewall + resolver tooling. iptables/ipset enforce the default-deny egress;

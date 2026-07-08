@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -30,6 +31,9 @@ func installRealHooks(h *Hooks) {
 	if h.Doctor == nil {
 		h.Doctor = func() SandboxReport { return Doctor(DoctorProbes{}) }
 	}
+	if h.Confirm == nil {
+		h.Confirm = stdinConfirm
+	}
 	if h.Session == nil {
 		h.Session = execClaudeSession
 	}
@@ -55,19 +59,19 @@ const verdictSchema = `{"type":"object","required":["status","summary"],` +
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
 var claudeFlags = struct {
-	print, outputFormat, jsonSchema, maxBudget, permissionMode, bypass string
+	print, outputFormat, jsonSchema, maxBudget, bypass string
 }{
-	print:          "-p",
-	outputFormat:   "--output-format",
-	jsonSchema:     "--json-schema",
-	maxBudget:      "--max-budget-usd",
-	permissionMode: "--permission-mode",
-	bypass:         "--dangerously-skip-permissions",
+	print:        "-p",
+	outputFormat: "--output-format",
+	jsonSchema:   "--json-schema",
+	maxBudget:    "--max-budget-usd",
+	bypass:       "--dangerously-skip-permissions",
 }
 
 // execClaudeSession spawns a fresh `claude -p` session for a step and parses its
-// verdict from the JSON output envelope.
-func execClaudeSession(step Step, brief string, mode SessionMode, budgetUSD float64) (Verdict, error) {
+// verdict from the JSON output envelope. Every session runs bypass-mode; the
+// runner's preflight (sandbox doctor + human accept) is the gate in front of it.
+func execClaudeSession(step Step, brief string, budgetUSD float64) (Verdict, error) {
 	args := []string{
 		claudeFlags.print, brief,
 		claudeFlags.outputFormat, "json",
@@ -78,11 +82,7 @@ func execClaudeSession(step Step, brief string, mode SessionMode, budgetUSD floa
 	if budgetUSD > 0 {
 		args = append(args, claudeFlags.maxBudget, fmt.Sprintf("%.2f", budgetUSD))
 	}
-	if mode == ModeAutonomous {
-		args = append(args, claudeFlags.bypass)
-	} else {
-		args = append(args, claudeFlags.permissionMode, "acceptEdits")
-	}
+	args = append(args, claudeFlags.bypass)
 	cmd := exec.Command("claude", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -151,6 +151,22 @@ func execCSDD(root string, args ...string) (bool, string) {
 	cmd := exec.Command(csddBinary(), full...)
 	out, err := cmd.CombinedOutput()
 	return err == nil, string(out)
+}
+
+// stdinConfirm prompts on stderr and reads one line from stdin; only an explicit
+// "y"/"yes" accepts. A non-interactive stdin (EOF) therefore declines, which is
+// the safe default for the unverified-sandbox alert.
+func stdinConfirm(prompt string) bool {
+	fmt.Fprint(os.Stderr, prompt)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return true
+	}
+	return false
 }
 
 // execShellGate runs a gate command through the platform shell in root.
