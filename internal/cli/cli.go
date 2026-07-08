@@ -74,6 +74,8 @@ func Run(args []string, templates embed.FS) int {
 		return runExport(rest)
 	case "web", "--web":
 		return runWeb(rest)
+	case "telegram":
+		return runTelegram(rest)
 	case "tui":
 		// main.go intercepts this so the TUI can be wired without a cmd → tui cycle.
 		render.Err("internal: 'tui' must be handled by main")
@@ -153,6 +155,7 @@ RESOURCES
   wiki     {init,lint}                 The LLM-authored knowledge base under docs/ (scaffold + health lint).
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
   web                         Launch a read-only web dashboard (live spec progress + file viewer).
+  telegram {init,run}         Relay plan-run progress + spec-status changes to a Telegram chat (read-only, outbound-only).
 
 GLOBAL FLAGS
   --root PATH        Project root (default: nearest enclosing .claude/).
@@ -190,6 +193,8 @@ EXAMPLES
   %[1]s export codex --out ./build                           # AGENTS.md + .codex/config.toml
   %[1]s web                                                  # serve the live dashboard; prints the local URL
   %[1]s web --tunnel                                         # expose it publicly (pinggy by default; forces auth)
+  %[1]s telegram init                                        # save bot token + chat_id to .csdd/bot.json (gitignored)
+  %[1]s telegram run                                         # relay plan-run + spec-status updates to Telegram
 `, prog())
 }
 
