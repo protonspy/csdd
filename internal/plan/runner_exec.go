@@ -16,8 +16,8 @@ import (
 // installRealHooks fills any nil hook with its production implementation, so
 // tests can inject just the seams they care about and get real behavior for the
 // rest (in practice tests inject them all). The real hooks shell out to `claude`,
-// `csdd`, `git`, and the shell — the runner's process performs every gate and
-// approval; the session only authors (principle 3).
+// `csdd`, and the shell — the runner's process performs every gate and approval,
+// standing in for the human; the session authors and owns git (principle 3).
 func installRealHooks(h *Hooks) {
 	if h.Now == nil {
 		h.Now = time.Now
@@ -42,12 +42,6 @@ func installRealHooks(h *Hooks) {
 	}
 	if h.Gate == nil {
 		h.Gate = execShellGate
-	}
-	if h.ChangedPaths == nil {
-		h.ChangedPaths = gitChangedPaths
-	}
-	if h.Commit == nil {
-		h.Commit = gitCommit
 	}
 }
 
@@ -180,47 +174,4 @@ func execShellGate(root, command string) (bool, string) {
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	return err == nil, string(out)
-}
-
-// gitChangedPaths returns the workspace-relative paths dirty in the working tree
-// (staged, unstaged, and untracked), via `git status --porcelain`.
-func gitChangedPaths(root string) ([]string, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = root
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		// Format: "XY <path>" (or "XY <old> -> <new>" for renames).
-		p := strings.TrimSpace(line[3:])
-		if i := strings.Index(p, " -> "); i >= 0 {
-			p = p[i+4:]
-		}
-		paths = append(paths, strings.Trim(p, `"`))
-	}
-	return paths, nil
-}
-
-// gitCommit stages the given paths and commits them with msg.
-func gitCommit(root, msg string, paths []string) error {
-	addArgs := append([]string{"add", "--"}, paths...)
-	if out, err := runGit(root, addArgs...); err != nil {
-		return fmt.Errorf("git add: %v: %s", err, out)
-	}
-	if out, err := runGit(root, "commit", "-m", msg); err != nil {
-		return fmt.Errorf("git commit: %v: %s", err, out)
-	}
-	return nil
-}
-
-func runGit(root string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	return string(out), err
 }

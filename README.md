@@ -284,7 +284,7 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
    (human gate)         (csdd-controlled)     (human gate)
 ```
 
-`csdd plan run <slug>` is the **runner**: it owns `csdd spec approve`, the commits, and every write to `plan.md` / `plan.json` / `docs/graph/` / `.csdd/`. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval. A step that hits an unforeseen problem returns a `blocked` verdict with a revision proposal; folding it back in and re-approving is a human act (the PRD skill's **Revise** workflow), never a silent workaround.
+`csdd plan run <slug>` is the **runner**: autonomous development that plays the human at each gate — it drives `csdd spec approve` and the plan's Quality Gates around every session, while the session itself runs the csdd SDD+TDD dev-cycle and owns git (branch, `/csdd-commit`, the pre-push gate, the PR). The runner never commits or manipulates git — that responsibility stays where the dev-cycle already lives, so the loop is *just session control*. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval. A step that hits an unforeseen problem returns a `blocked` verdict with a revision proposal; folding it back in and re-approving is a human act (the PRD skill's **Revise** workflow), never a silent workaround.
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
