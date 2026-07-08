@@ -34,8 +34,10 @@ jobs:
         with:
           # Build/test with a current, patched toolchain even though go.mod keeps
           # its language directive at 1.22 for install-compatibility. Do NOT switch
-          # this to go-version-file: go.mod.
-          go-version: '1.25'
+          # this to go-version-file: go.mod. Pinned to .12 for the GO-2026-5856
+          # crypto/tls fix — the float '1.25' still resolves to .11 on hosted
+          # runners (manifest lag); float back once runners catch up.
+          go-version: '1.25.12'
           cache: true
 
       - name: go vet
@@ -70,7 +72,7 @@ jobs:
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.25'
+          go-version: '1.25.12' # GO-2026-5856 crypto/tls fix; see the test job's note
           cache: true
 
       - name: gofmt
