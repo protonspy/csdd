@@ -11,7 +11,7 @@ import (
 
 // failingGates returns hooks whose session always authors the change (checking the
 // task box) and whose gate fails until the nth call, so a test can decide exactly
-// which attempt goes green. briefs captures what each session actually read.
+// which iteration goes green. briefs captures what each session actually read.
 func failingGates(t *testing.T, root string, passOnCall int, briefs *[]string) Hooks {
 	t.Helper()
 	h := baseHooks()
@@ -41,76 +41,82 @@ func oneOpenFeat(t *testing.T) string {
 	return root
 }
 
-func TestRepairSessionRescuesStepWithFullHistory(t *testing.T) {
+// TestFailureContextAccumulatesAcrossIterations pins the loop's self-correction
+// seam: there is no inner retry and no repair budget — the next iteration IS the
+// retry, and it reads the whole trail of the attempts before it.
+func TestFailureContextAccumulatesAcrossIterations(t *testing.T) {
 	root := oneOpenFeat(t)
 	var briefs []string
-	// Two retries fail; the repair session (the 3rd gate call) goes green.
+	// Iterations 1 and 2 fail the gate; iteration 3 goes green.
 	h := failingGates(t, root, 3, &briefs)
 
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 1, MaxRepairs: 1, Out: &bytes.Buffer{}})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.Repairs != 1 || sum.Repaired != 1 {
-		t.Errorf("expected exactly one repair session that rescued the step, got %+v", sum)
-	}
 	if !sum.Completed {
-		t.Errorf("the repaired step should let the plan complete, got %+v", sum)
+		t.Fatalf("the loop should self-correct to completion, got %+v", sum)
 	}
-	if _, blocked := ReadBlock(root, "p", "a"); blocked {
-		t.Errorf("a repaired feat must not be left blocked")
+	if sum.Failures != 2 || sum.Sessions != 3 {
+		t.Errorf("expected 2 failed iterations across 3 sessions, got %+v", sum)
 	}
 	if len(briefs) != 3 {
-		t.Fatalf("expected 2 attempts + 1 repair session, got %d briefs", len(briefs))
+		t.Fatalf("expected 3 session briefs, got %d", len(briefs))
 	}
-	// The retry brief carries only the last failure; the repair brief carries both.
-	repair := briefs[2]
-	for _, want := range []string{"Repair session", "ROOT CAUSE", "Attempt 1", "Attempt 2", "FAIL attempt 1", "FAIL attempt 2"} {
-		if !strings.Contains(repair, want) {
-			t.Errorf("repair brief missing %q:\n%s", want, repair)
+	if strings.Contains(briefs[0], "Autonomous run context") {
+		t.Errorf("a first attempt has no trail to carry:\n%s", briefs[0])
+	}
+	for _, want := range []string{"Autonomous run context", "Attempt 1", "FAIL attempt 1"} {
+		if !strings.Contains(briefs[1], want) {
+			t.Errorf("iteration 2 should read attempt 1's failure, missing %q", want)
 		}
 	}
-	if strings.Contains(briefs[1], "Attempt 1 —") {
-		t.Errorf("a plain retry brief should carry the last failure, not the rendered history:\n%s", briefs[1])
+	for _, want := range []string{"failed 2 time(s)", "Attempt 1", "Attempt 2", "FAIL attempt 1", "FAIL attempt 2", "ROOT CAUSE"} {
+		if !strings.Contains(briefs[2], want) {
+			t.Errorf("iteration 3 should read the whole trail, missing %q", want)
+		}
 	}
-	// The journal records the rescue rather than a bare "done".
-	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	if !strings.Contains(string(logData), "| a | done (repaired)") {
-		t.Errorf("repair not journaled: %s", logData)
+	if _, blocked := ReadBlock(root, "p", "a"); blocked {
+		t.Errorf("a step that advanced must not leave a marker")
 	}
 }
 
-func TestMechanicalBlockIsTypedAndKeepsItsLog(t *testing.T) {
+// TestStallGuardParksTheRunWithItsEvidence: a step that never converges ends the
+// run early (before the iteration cap) with a typed marker pointing at the full
+// failure log — the wallet guard is the cap, the convergence guard is the stall.
+func TestStallGuardParksTheRunWithItsEvidence(t *testing.T) {
 	root := oneOpenFeat(t)
 	var briefs []string
 	h := failingGates(t, root, 0, &briefs) // never passes
 
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 1, MaxRepairs: 1, Out: &bytes.Buffer{}})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 50, Stall: 3, Out: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.Outcome != OutcomeNothing {
-		t.Errorf("expected OutcomeNothing once a is blocked and b is done, got %d", sum.Outcome)
+	if sum.Outcome != OutcomeStalled {
+		t.Fatalf("expected OutcomeStalled, got %d (%s)", sum.Outcome, sum.Reason)
+	}
+	if sum.Sessions != 3 {
+		t.Errorf("the stall guard should stop after exactly 3 sessions, got %d", sum.Sessions)
 	}
 	b, blocked := ReadBlock(root, "p", "a")
 	if !blocked {
-		t.Fatal("feat a should be blocked")
+		t.Fatal("a stalled run must leave a marker explaining where it was stuck")
 	}
 	if b.Kind != BlockGateFailure || !b.Mechanical() {
-		t.Errorf("a gate failure must be a mechanical block, got kind %q", b.Kind)
-	}
-	if b.Repairs != 1 {
-		t.Errorf("the spent repair session should be recorded on the marker, got %d", b.Repairs)
+		t.Errorf("a stall over gate failures is a mechanical marker, got kind %q", b.Kind)
 	}
 	if b.Attempts != 3 {
-		t.Errorf("expected 2 retries + 1 repair recorded as attempts, got %d", b.Attempts)
+		t.Errorf("expected 3 attempts on the marker, got %d", b.Attempts)
 	}
 	if b.Step != "task 1" {
-		t.Errorf("marker should name the step it failed on, got %q", b.Step)
+		t.Errorf("marker should name the step it stalled on, got %q", b.Step)
+	}
+	if !strings.Contains(b.Reason, "stalled") {
+		t.Errorf("marker should say it stalled, got %q", b.Reason)
 	}
 
-	// The failure log survives the run with every attempt's untruncated output —
-	// the whole point: the retry brief only ever carried a tail.
+	// The failure log survives with every attempt's untruncated output.
 	if b.Log == "" {
 		t.Fatal("marker should point at a failure log")
 	}
@@ -125,46 +131,45 @@ func TestMechanicalBlockIsTypedAndKeepsItsLog(t *testing.T) {
 	}
 
 	// The session checked the box; the gates refuted it. Leaving it checked would
-	// make the feat read as done the moment anything cleared the marker.
+	// make the feat read as done the moment the next run clears the marker.
 	tasks, _ := os.ReadFile(filepath.Join(root, "specs", "a", "tasks.md"))
 	if got := strings.TrimSpace(string(tasks)); got != "- [ ] 1. do it" {
 		t.Errorf("a refuted task claim must be retracted, got %q", got)
 	}
 
-	// A mechanical block is not a deviation: it must not show up as work the human
-	// owes the plan.
 	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
 	if !strings.Contains(string(logData), "blocked (gate-failure)") {
-		t.Errorf("mechanical block not journaled with its kind: %s", logData)
-	}
-	if n := countDeviations(Dir(root, "p")); n != 0 {
-		t.Errorf("a gate failure must not count as an unprocessed deviation, got %d", n)
+		t.Errorf("the stall marker should be journaled with its kind: %s", logData)
 	}
 }
 
-func TestMechanicalBlockRetriedOnNextRunUntilBudgetSpent(t *testing.T) {
+// TestNextRunRetriesEverythingAndReadsTheOldLog: markers never survive a run
+// start — the loop retries every feat — and the first session on a previously-
+// failed step is pointed at the failure log its predecessor left.
+func TestNextRunRetriesEverythingAndReadsTheOldLog(t *testing.T) {
 	root := oneOpenFeat(t)
 	var briefs []string
 
-	// Run 1: everything fails, one repair session is spent.
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 0, &briefs), MaxIterations: 5, MaxRetries: 1, MaxRepairs: 2, Out: &bytes.Buffer{}}); err != nil {
+	// Run 1: never passes, stalls quickly, leaves the marker + log.
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 0, &briefs), MaxIterations: 10, Stall: 2, Out: &bytes.Buffer{}}); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := ReadBlock(root, "p", "a")
-	if b.Repairs != 1 {
-		t.Fatalf("run 1 should have spent 1 repair session, got %d", b.Repairs)
+	if _, blocked := ReadBlock(root, "p", "a"); !blocked {
+		t.Fatal("run 1 should have left a marker")
 	}
 
-	// Run 2: budget remains, so the marker is cleared and the feat retried. This
-	// time the first gate passes — the run recovers with no human in the loop.
+	// Run 2: the first gate passes — the run recovers with no human in the loop.
 	var briefs2 []string
 	var out bytes.Buffer
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 1, &briefs2), MaxIterations: 5, MaxRetries: 1, MaxRepairs: 2, Out: &out})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 1, &briefs2), MaxIterations: 10, Out: &out})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(briefs2) == 0 {
-		t.Fatal("run 2 should have retried the blocked feat")
+		t.Fatal("run 2 should have retried the parked feat")
+	}
+	if !strings.Contains(briefs2[0], "failure log") || !strings.Contains(briefs2[0], "failures/a/task-1.log") {
+		t.Errorf("the first session should be pointed at the previous run's log:\n%s", briefs2[0])
 	}
 	if !sum.Completed {
 		t.Errorf("run 2 should complete, got %+v (%s)", sum, out.String())
@@ -175,83 +180,174 @@ func TestMechanicalBlockRetriedOnNextRunUntilBudgetSpent(t *testing.T) {
 	if _, blocked := ReadBlock(root, "p", "a"); blocked {
 		t.Errorf("a feat that advanced must not stay blocked")
 	}
+	// The journal carries both halves: the unblock and the eventual done.
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| a | unblocked") || !strings.Contains(string(logData), "autonomous loop retries every feat") {
+		t.Errorf("the startup clear should be journaled: %s", logData)
+	}
 }
 
-func TestMechanicalBlockSticksOnceRepairBudgetIsSpent(t *testing.T) {
+// TestStartupClearsMarkersOfEveryKind: even a deviation left by an older csdd is
+// retried — in the autonomous loop, decisions are the session's to make, so no
+// marker kind parks a feat anymore.
+func TestStartupClearsMarkersOfEveryKind(t *testing.T) {
 	root := oneOpenFeat(t)
-	var briefs []string
-	// MaxRepairs 1: run 1 spends the only repair session.
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 0, &briefs), MaxIterations: 5, MaxRetries: 1, MaxRepairs: 1, Out: &bytes.Buffer{}}); err != nil {
-		t.Fatal(err)
+	hash, _ := HashPlan(root, "p")
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
+	must(WriteBlock(root, "p", Block{Feat: "a", Step: "task 1", Kind: BlockDeviation,
+		Reason: "session blocked: needs a queue", Revision: "split feat a", PlanHash: hash}))
 
-	var briefs2 []string
+	h := baseHooks()
+	sessions := 0
+	h.Session = func(Step, string, float64) (Verdict, error) {
+		sessions++
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
+		return Verdict{Status: VerdictDone}, nil
+	}
 	var out bytes.Buffer
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: failingGates(t, root, 1, &briefs2), MaxIterations: 5, MaxRetries: 1, MaxRepairs: 1, Out: &out})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &out})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(briefs2) != 0 {
-		t.Errorf("an exhausted feat must not burn another session, got %d", len(briefs2))
+	if sessions == 0 {
+		t.Fatal("the feat behind an old deviation marker must be retried")
 	}
-	if sum.Outcome != OutcomeNothing {
-		t.Errorf("expected OutcomeNothing, got %d", sum.Outcome)
+	if !sum.Completed {
+		t.Errorf("run should complete, got %+v", sum)
 	}
-	if !strings.Contains(out.String(), "repair sessions spent") || !strings.Contains(out.String(), "plan unblock p a") {
-		t.Errorf("the run must say how to resume:\n%s", out.String())
+	if !strings.Contains(out.String(), "was blocked [deviation]") {
+		t.Errorf("the retry should say what it cleared:\n%s", out.String())
 	}
 }
 
-func TestDeviationBlockSurvivesRunsAndBindsToThePlan(t *testing.T) {
+// TestLegacyBlockedVerdictIsCoachedNotParked: the legacy `blocked` verdict no
+// longer ends a feat. It fails the iteration, and the next session on that step
+// is told the decision is its own to make and record.
+func TestLegacyBlockedVerdictIsCoachedNotParked(t *testing.T) {
+	root := oneOpenFeat(t)
+	var briefs []string
+	h := baseHooks()
+	calls := 0
+	h.Session = func(_ Step, brief string, _ float64) (Verdict, error) {
+		briefs = append(briefs, brief)
+		calls++
+		if calls == 1 {
+			return Verdict{Status: VerdictBlocked, Summary: "no frontend linter in stack.md", Revision: "add a stack row"}, nil
+		}
+		// The coached session decides, records, and finishes the step.
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
+		return Verdict{Status: VerdictDone, Summary: "done", Decisions: []string{"Frontend lint = ESLint — Vite react-ts default"}}, nil
+	}
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Completed {
+		t.Fatalf("the coached loop should complete, got %+v (%s)", sum, sum.Reason)
+	}
+	if sum.Decisions != 1 {
+		t.Errorf("the recorded decision should be counted, got %d", sum.Decisions)
+	}
+	if len(briefs) < 2 || !strings.Contains(briefs[1], "MAKE and RECORD") || !strings.Contains(briefs[1], "no frontend linter") {
+		t.Errorf("the second session should be coached with the objection:\n%s", briefs[len(briefs)-1])
+	}
+	if _, blocked := ReadBlock(root, "p", "a"); blocked {
+		t.Errorf("a legacy blocked verdict must not leave a marker")
+	}
+	// Both the failure and the decision are journaled.
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	for _, want := range []string{"legacy blocked verdict", "| a | decision", "Frontend lint = ESLint"} {
+		if !strings.Contains(string(logData), want) {
+			t.Errorf("journal missing %q: %s", want, logData)
+		}
+	}
+}
+
+// TestHaltVerdictEndsTheRunWithATypedMarker: halt is the session's one legitimate
+// way to end the loop — an impediment outside the workspace — and it must be
+// legible afterwards.
+func TestHaltVerdictEndsTheRunWithATypedMarker(t *testing.T) {
 	root := oneOpenFeat(t)
 	h := baseHooks()
 	sessions := 0
-	h.Session = func(step Step, _ string, _ float64) (Verdict, error) {
+	h.Session = func(Step, string, float64) (Verdict, error) {
 		sessions++
-		return Verdict{Status: VerdictBlocked, Summary: "needs a queue", Revision: "split feat a"}, nil
+		return Verdict{Status: VerdictHalt, Summary: "DATABASE_URL secret is not provisioned"}, nil
 	}
 	var out bytes.Buffer
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 2, MaxRepairs: 2, Out: &out}); err != nil {
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &out})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if sum.Outcome != OutcomeHalted {
+		t.Fatalf("expected OutcomeHalted, got %d (%s)", sum.Outcome, sum.Reason)
 	}
 	if sessions != 1 {
-		t.Errorf("a deviation ends the feat immediately: no retries, no repair; got %d sessions", sessions)
+		t.Errorf("a halt ends the run immediately, got %d sessions", sessions)
 	}
 	b, blocked := ReadBlock(root, "p", "a")
-	if !blocked || b.Kind != BlockDeviation || b.Mechanical() {
-		t.Fatalf("expected a non-mechanical deviation block, got %+v", b)
+	if !blocked || b.Kind != BlockHalt || b.Mechanical() {
+		t.Fatalf("expected a non-mechanical halt marker, got %+v", b)
 	}
-	if b.Revision != "split feat a" {
-		t.Errorf("the marker should carry the session's proposal, got %q", b.Revision)
+	if !strings.Contains(b.Reason, "DATABASE_URL") {
+		t.Errorf("the marker should carry the impediment, got %q", b.Reason)
 	}
-	hash, _ := HashPlan(Dir(root, "p"))
-	if b.PlanHash != hash {
-		t.Errorf("the deviation must bind to the plan it objected to")
-	}
-	if !strings.Contains(out.String(), "plan approve p") {
-		t.Errorf("the run must point at re-approval as the way out:\n%s", out.String())
-	}
-
-	// A second run leaves it alone: only a revised plan retires a deviation.
-	sessions = 0
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRepairs: 2, Out: &bytes.Buffer{}}); err != nil {
-		t.Fatal(err)
-	}
-	if sessions != 0 {
-		t.Errorf("a deviation must not be auto-retried, got %d sessions", sessions)
-	}
-	if n := countDeviations(Dir(root, "p")); n != 1 {
-		t.Errorf("the deviation should read as one unprocessed objection, got %d", n)
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| a | halted") {
+		t.Errorf("halt not journaled: %s", logData)
 	}
 }
 
+// TestFailureRotationLetsSiblingsAdvance: a failing feat steps aside for one
+// selection so the rest of the plan keeps moving, and comes back when nothing
+// else is eligible — no disk marker, no starvation in either direction.
+func TestFailureRotationLetsSiblingsAdvance(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
+	writeSpec(t, root, "b", allApproved, true, "- [ ] 1. do it\n")
+
+	var worked []string
+	h := baseHooks()
+	h.Session = func(step Step, _ string, _ float64) (Verdict, error) {
+		worked = append(worked, step.Feat)
+		if step.Feat == "a" {
+			// Claims done without checking the box: the materialization check
+			// refutes it, so a keeps failing while b is free to advance.
+			return Verdict{Status: VerdictDone, Summary: "claims done"}, nil
+		}
+		writeFile(t, filepath.Join(root, "specs", "b", "tasks.md"), "- [x] 1. do it\n")
+		return Verdict{Status: VerdictDone}, nil
+	}
+
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 6, Stall: 4, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Steps < 1 {
+		t.Errorf("feat b should have advanced despite a failing, got %+v (worked %v)", sum, worked)
+	}
+	// a fails first, then b gets its turn, then a is retried — the rotation.
+	if len(worked) < 3 || worked[0] != "a" || worked[1] != "b" || worked[2] != "a" {
+		t.Errorf("expected a → b → a rotation, got %v", worked)
+	}
+}
+
+// TestClearStaleDeviationsOnlyWhenThePlanChanged pins the `plan approve` half of
+// the deviation story, which survives for markers written by older runners: only
+// a genuinely revised plan retires an objection.
 func TestClearStaleDeviationsOnlyWhenThePlanChanged(t *testing.T) {
 	root := oneOpenFeat(t)
-	h := baseHooks()
-	h.Session = func(Step, string, float64) (Verdict, error) {
-		return Verdict{Status: VerdictBlocked, Summary: "needs a queue", Revision: "split feat a"}, nil
+	hash, err := HashPlan(root, "p")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, Out: &bytes.Buffer{}}); err != nil {
+	if err := WriteBlock(root, "p", Block{Feat: "a", Step: "spec-design", Kind: BlockDeviation,
+		Reason: "session blocked: needs a queue", Revision: "split feat a", PlanHash: hash}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -313,21 +409,27 @@ func TestReadBlockTreatsLegacyMarkerAsUnknown(t *testing.T) {
 		t.Fatal("a legacy marker must still block")
 	}
 	if b.Kind != BlockUnknown || b.Mechanical() {
-		t.Errorf("a legacy marker is not safely auto-clearable, got kind %q mechanical=%v", b.Kind, b.Mechanical())
+		t.Errorf("a legacy marker is not mechanically classified, got kind %q mechanical=%v", b.Kind, b.Mechanical())
 	}
 	if b.Reason != "gates failed after 2 retries: boom" {
 		t.Errorf("legacy reason lost: %q", b.Reason)
 	}
-	// The runner leaves it alone rather than guessing which kind it was.
+	// The autonomous runner clears even unknown markers at startup and retries.
+	h := baseHooks()
+	h.Session = func(Step, string, float64) (Verdict, error) {
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
+		return Verdict{Status: VerdictDone}, nil
+	}
 	var out bytes.Buffer
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), MaxIterations: 3, MaxRepairs: 2, Out: &out}); err != nil {
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, Out: &out})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, blocked := ReadBlock(root, "p", "a"); !blocked {
-		t.Errorf("a legacy marker must not be auto-cleared")
+	if !sum.Completed {
+		t.Errorf("the feat behind an unknown marker should be retried to completion, got %+v", sum)
 	}
-	if !strings.Contains(out.String(), "stays blocked [unknown]") {
-		t.Errorf("the run should say why it skipped the feat:\n%s", out.String())
+	if !strings.Contains(out.String(), "was blocked [unknown]") {
+		t.Errorf("the run should say what it cleared:\n%s", out.String())
 	}
 }
 
@@ -392,6 +494,20 @@ func TestTailCapKeepsTheTailOnARuneBoundary(t *testing.T) {
 	}
 }
 
+func TestRenderTailOmitsOldAttemptsButSaysSo(t *testing.T) {
+	h := &failureHistory{}
+	for i := 1; i <= 8; i++ {
+		h.add("gate failed", "boom "+itoa(i))
+	}
+	out := h.renderTail(5, 100)
+	if !strings.Contains(out, "3 older attempt(s) omitted") {
+		t.Errorf("the omission must be explicit, got:\n%s", out)
+	}
+	if strings.Contains(out, "boom 3") || !strings.Contains(out, "boom 4") || !strings.Contains(out, "boom 8") {
+		t.Errorf("renderTail should keep exactly the last 5 attempts:\n%s", out)
+	}
+}
+
 func TestStepFileName(t *testing.T) {
 	cases := map[string]string{
 		"task 1.2":         "task-1.2",
@@ -431,7 +547,7 @@ func TestRetractTaskClaimIgnoresSpecPhaseSteps(t *testing.T) {
 	retractTaskClaim(RunOptions{Root: root, Slug: "p"}, Step{Feat: "a", Step: StepSpecDesign})
 	after, _ := os.ReadFile(filepath.Join(root, "specs", "a", "tasks.md"))
 	if string(before) != string(after) {
-		t.Errorf("a spec-phase block has no task claim to retract")
+		t.Errorf("a spec-phase failure has no task claim to retract")
 	}
 }
 
@@ -439,7 +555,7 @@ func TestBlockedAtIsStamped(t *testing.T) {
 	root := oneOpenFeat(t)
 	var briefs []string
 	h := failingGates(t, root, 0, &briefs)
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, MaxRetries: 0, Out: &bytes.Buffer{}}); err != nil {
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Stall: 2, Out: &bytes.Buffer{}}); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := ReadBlock(root, "p", "a")

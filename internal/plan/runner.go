@@ -16,9 +16,9 @@ import (
 
 // Hooks are the runner's seams onto the outside world. Every field has a real
 // default (installed by Run); tests inject stubs so the whole loop — verdict
-// parsing, gate pipeline, retries, block markers, journal — runs with no
-// `claude`, `csdd`, or subprocess at all. The runner never touches git: branch,
-// commit, and the PR are the csdd dev-cycle's job, driven inside the session.
+// parsing, gate pipeline, rotation, journal — runs with no `claude`, `csdd`, or
+// subprocess at all. The runner never touches git: branch, commit, and the PR
+// are the csdd dev-cycle's job, driven inside the session.
 type Hooks struct {
 	// Session runs one claude session for a step and returns its parsed verdict.
 	// Every session runs bypass-mode (--dangerously-skip-permissions).
@@ -39,47 +39,54 @@ type Hooks struct {
 	Now func() time.Time
 }
 
-// RunOptions configures a `csdd plan run` invocation.
+// RunOptions configures a `csdd plan run` invocation. The loop is deliberately
+// dumb: one iteration is exactly one claude session, and the only ways it ends
+// are the plan completing, the session declaring a halt, the stall guard, or
+// the iteration cap. Claude — driving csdd inside the session — owns the flow;
+// the runner owns verification and bookkeeping.
 type RunOptions struct {
 	Root          string
 	Slug          string
 	AssumeYes     bool    // accept the unverified-sandbox alert without prompting (--yes)
 	SessionBudget float64 // per-session --max-budget-usd; 0 = no cap (Claude account limits)
-	MaxIterations int     // default 25
-	MaxRetries    int     // default 2
-	// MaxRepairs is how many repair sessions a single feat may consume before its
-	// mechanical block turns sticky and a human has to look. The count accumulates
-	// in the marker across runs and resets whenever the feat advances. Zero — the
-	// zero value, so a library caller opts in — disables repair entirely: a
-	// mechanical block then stays put until `csdd plan unblock` clears it.
-	MaxRepairs int
-	Out        io.Writer
-	Hooks      Hooks
+	MaxIterations int     // sessions the run may spend; default 100
+	// Stall ends the run after this many consecutive iterations in which no step
+	// advanced (default 10). The iteration cap protects the wallet; the stall
+	// guard protects against burning it on a failure the loop is not converging
+	// on — self-correction gets a real window, not an unbounded one.
+	Stall int
+	Out   io.Writer
+	Hooks Hooks
 }
 
 // Run outcomes, chosen so the CLI can surface them as distinct exit codes.
 const (
 	OutcomeComplete = 0 // every feat is done
 	OutcomeNothing  = 4 // nothing unblocked (mirrors the sequencer)
-	OutcomeDrift    = 5 // plan drifted mid-run
+	OutcomeDrift    = 5 // plan.md or seeds/ changed mid-run
 	OutcomeCapped   = 6 // hit the iteration cap without finishing
+	OutcomeHalted   = 7 // a session declared an impediment outside the workspace
+	OutcomeStalled  = 8 // the stall guard tripped: no advancement for Stall iterations
 )
 
 // RunSummary is the totals reported on exit (R9.7).
 type RunSummary struct {
-	Steps     int
-	Retries   int
-	Repairs   int // repair sessions spent
-	Repaired  int // steps a repair session rescued
-	Blocks    int
+	Sessions  int // claude sessions spent (= iterations that reached a session)
+	Steps     int // steps that advanced (gates green, approval performed)
+	Decisions int // open decisions sessions resolved and recorded
+	Failures  int // iterations that ended as failure context for the next one
 	Completed bool
 	Reason    string
 	Outcome   int
 }
 
-// Run drives the plan loop (R9): preflight, then repeatedly drift-check → next →
-// brief → session → gates → advance/retry/block → journal, until the plan
-// completes, nothing is unblocked, drift is detected, or the iteration cap is hit.
+// Run drives the autonomous plan loop (R9): preflight, then one session per
+// iteration — brief + rolling context → session → runner-owned gates →
+// advance/feed-back — until the plan completes. Failures never park a feat:
+// they become the next iteration's context, and the loop self-corrects inside
+// the iteration budget. A mid-run change to the Decided stack rows is a
+// recorded decision and re-binds the approval; a change to plan.md or seeds/
+// is real drift and stops autonomy.
 func Run(opts RunOptions) (RunSummary, error) {
 	fillRunDefaults(&opts)
 	h := opts.Hooks
@@ -90,8 +97,9 @@ func Run(opts RunOptions) (RunSummary, error) {
 	if err != nil {
 		return RunSummary{}, err
 	}
+	st := newRunState()
 
-	// Preflight (R9.1): approval + drift, claude present, mode selection.
+	// Preflight (R9.1): approval + drift, claude present, sandbox.
 	approved, drift, err := IsApproved(opts.Root, opts.Slug)
 	if err != nil {
 		return RunSummary{}, err
@@ -100,7 +108,17 @@ func Run(opts RunOptions) (RunSummary, error) {
 		return RunSummary{}, fmt.Errorf("plan %q is not approved; run `csdd plan approve %s` first", opts.Slug, opts.Slug)
 	}
 	if drift {
-		return RunSummary{}, fmt.Errorf("plan %q has drifted since approval; re-approve before running", opts.Slug)
+		// A decision recorded between runs (new Decided rows, same plan.md) is not
+		// the human's drift to answer — fold it in and go. Anything else still is.
+		rebound, note, rerr := rebindContract(opts, doc, "")
+		if rerr != nil {
+			return RunSummary{}, rerr
+		}
+		if !rebound {
+			return RunSummary{}, fmt.Errorf("plan %q has drifted since approval; re-approve before running", opts.Slug)
+		}
+		st.contractNote = note
+		logf("contract re-bound: recorded stack decisions folded into the approval")
 	}
 	if !h.ClaudeAvailable() {
 		return RunSummary{}, fmt.Errorf("the `claude` CLI is not available on PATH; the runner needs it to spawn sessions")
@@ -122,27 +140,39 @@ func Run(opts RunOptions) (RunSummary, error) {
 		}
 		logf("continuing WITHOUT a verified sandbox (explicitly accepted)")
 	}
-	logf("plan run %s (bypass mode, %s, max %d iterations)", opts.Slug, budgetLabel(opts.SessionBudget), opts.MaxIterations)
+	logf("plan run %s (bypass mode, %s, max %d sessions, stall guard %d)",
+		opts.Slug, budgetLabel(opts.SessionBudget), opts.MaxIterations, opts.Stall)
 
-	// A mechanical block is a fact about one attempt, not about the plan, so it is
-	// run-scoped: the next run retries the feat instead of skipping it forever.
-	// Markers that already spent their repair budget stay put, and deviations always
-	// do — only revising the plan retires those.
-	carried := clearRepairableBlocks(opts, logf)
+	// The core hash is the trusted mid-run reference when plan.json predates
+	// CoreHash. Computed after the preflight settled that nothing has drifted.
+	startCore, err := HashPlanCore(opts.Root, opts.Slug)
+	if err != nil {
+		return RunSummary{}, err
+	}
+
+	// A marker is only ever the record of how a previous run ended; this run
+	// retries everything, seeded with the failure logs those markers point at.
+	clearAllBlocks(opts, st, logf)
 
 	var sum RunSummary
-	for iter := 0; iter < opts.MaxIterations; iter++ {
-		// R9.5: re-check drift every iteration; stop autonomy immediately on mismatch.
-		if _, drift, err := IsApproved(opts.Root, opts.Slug); err != nil {
+	stall := 0
+	lastFailedFeat := ""
+	var lastStep Step
+	haveLast := false
+
+	for iter := 1; iter <= opts.MaxIterations; iter++ {
+		// Contract reconciliation, every iteration (R9.5 rethought): a recorded
+		// decision re-binds and continues; an edited plan still stops autonomy.
+		if stop, reason, err := reconcileContract(opts, doc, startCore, st, logf); err != nil {
 			return sum, err
-		} else if drift {
-			sum.Reason = "stopped: plan drifted mid-run (re-approve to continue)"
+		} else if stop {
+			sum.Reason = reason
 			sum.Outcome = OutcomeDrift
 			logf(sum.Reason)
 			return summarize(out, sum), nil
 		}
 
-		step, outcome, err := Next(opts.Root, doc, true)
+		step, outcome, err := nextWithRotation(opts, doc, lastFailedFeat)
 		if err != nil {
 			return sum, err
 		}
@@ -154,8 +184,10 @@ func Run(opts RunOptions) (RunSummary, error) {
 			logf(sum.Reason)
 			return summarize(out, sum), nil
 		case SeqNothing:
+			// Defensive: mid-run nothing is ever marker-blocked, so this means the
+			// dependency graph itself has nothing actionable (e.g. an unknown dep).
 			sum.Outcome = OutcomeNothing
-			sum.Reason = "nothing unblocked: remaining feats are blocked or waiting on blocked deps"
+			sum.Reason = "nothing actionable: remaining feats wait on dependencies that cannot complete"
 			logf(sum.Reason)
 			reportBlocks(opts, logf)
 			return summarize(out, sum), nil
@@ -166,152 +198,211 @@ func Run(opts RunOptions) (RunSummary, error) {
 			return summarize(out, sum), nil
 		}
 
-		logf("→ %s / %s", step.Feat, step.Step)
-		advanced := executeStep(opts, doc, step, &sum, carried)
-		if !advanced {
-			sum.Blocks++
+		logf("→ %s / %s (session %d/%d)", step.Feat, step.Step, iter, opts.MaxIterations)
+		lastStep, haveLast = step, true
+		switch executeStep(opts, doc, step, st, &sum) {
+		case iterAdvanced:
+			stall = 0
+			lastFailedFeat = ""
+		case iterProgress:
+			stall++
+			lastFailedFeat = "" // honest partial work: keep the feat in front
+		case iterFailed:
+			sum.Failures++
+			stall++
+			lastFailedFeat = step.Feat // rotate: siblings advance while this cools off
+		case iterHalted:
+			sum.Outcome = OutcomeHalted
+			sum.Reason = "halted by the session: " + orDash(st.haltSummary)
+			logf(sum.Reason)
+			return summarize(out, sum), nil
+		}
+		if stall >= opts.Stall {
+			reason := fmt.Sprintf("stalled: %d consecutive sessions without a step advancing", stall)
+			parkRun(opts, step, st, reason)
+			sum.Outcome = OutcomeStalled
+			sum.Reason = reason + " — the marker and failure log say where it was stuck"
+			logf(sum.Reason)
+			return summarize(out, sum), nil
+		}
+	}
+
+	// The cap is the wallet guard, not a verdict on the plan: park the in-flight
+	// step (if one was failing) so `plan status` explains, and let the next
+	// `plan run` pick everything back up.
+	if haveLast {
+		if hist := st.hists[stepKey(lastStep)]; hist != nil && hist.len() > 0 {
+			parkRun(opts, lastStep, st, fmt.Sprintf("iteration cap (%d) hit while this step was failing", opts.MaxIterations))
 		}
 	}
 	sum.Outcome = OutcomeCapped
-	sum.Reason = fmt.Sprintf("reached the iteration cap (%d)", opts.MaxIterations)
+	sum.Reason = fmt.Sprintf("reached the iteration cap (%d) — `csdd plan run %s` resumes from here", opts.MaxIterations, opts.Slug)
 	logf(sum.Reason)
 	return summarize(out, sum), nil
 }
 
-// stepResult is what one session-plus-gates attempt produced.
-type stepResult int
+// nextWithRotation is Next plus the in-memory failure rotation: the feat whose
+// step just failed steps aside for one selection so its siblings keep moving,
+// and comes straight back when nothing else is eligible. Without this the
+// sequencer would re-pick the same failing feat forever and starve the rest —
+// the disk-marker version of "skip" died with the parking runner.
+func nextWithRotation(opts RunOptions, doc *PlanDoc, lastFailedFeat string) (Step, int, error) {
+	if lastFailedFeat != "" {
+		step, outcome, err := Next(opts.Root, doc, true, lastFailedFeat)
+		if err != nil || outcome != SeqNothing {
+			return step, outcome, err
+		}
+	}
+	return Next(opts.Root, doc, true)
+}
+
+// iterResult is what one iteration (one session) produced.
+type iterResult int
 
 const (
-	stepFailed    stepResult = iota // mechanical: recorded on the history, retryable
-	stepDone                        // green: gates passed and the phase advanced
-	stepDeviation                   // the session blocked on an open decision
+	iterFailed   iterResult = iota // context for the next iteration
+	iterAdvanced                   // gates green, approval performed
+	iterProgress                   // honest partial work, handoff recorded
+	iterHalted                     // the session declared an external impediment
 )
 
-// executeStep runs one step with retries (R9.2/R9.3), then — if the failure was
-// mechanical and the feat has repair budget left — one repair session that sees
-// every failed attempt rather than just the last. It returns whether the step
-// advanced. A feat that still fails gets a typed marker so the sequencer skips it
-// and the loop continues with other unblocked feats (R9.4); carried tracks the
-// repair sessions already spent on each feat, so the budget survives across runs.
-func executeStep(opts RunOptions, doc *PlanDoc, step Step, sum *RunSummary, carried map[string]Block) bool {
+// executeStep runs exactly one session for the step and, when the session claims
+// done, the runner-owned verification: gates, then the approval a session must
+// never perform. Nothing here parks a feat — every failure lands on the step's
+// rolling history, which the next iteration's brief carries. The retry IS the
+// next iteration; self-correction is the session reading its own trail.
+func executeStep(opts RunOptions, doc *PlanDoc, step Step, st *runState, sum *RunSummary) iterResult {
 	h := opts.Hooks
 	logf := runLogf(opts)
+	key := stepKey(step)
+	hist := st.hist(key)
 
 	baseBrief, err := Brief(opts.Root, doc, step)
 	if err != nil {
-		logf("  brief error: %v", err)
-		blockStep(opts, step, BlockBrief, "brief assembly failed: "+err.Error(), 0, spentRepairs(carried, step.Feat), "")
-		return false
+		hist.add("brief assembly failed", err.Error())
+		journal(opts, step, "failed", "brief assembly: "+firstLine(err.Error()))
+		logf("  ✗ brief error: %v", err)
+		return iterFailed
 	}
 
-	// Scaffold a spec before its requirements step (R8; runner-owned).
+	// Scaffold a spec before its requirements step (R8; runner-owned). A scaffold
+	// failure is not a block: it lands on the history, and the session — which
+	// has the csdd CLI — inherits the job of clearing whatever broke it.
 	if step.Step == StepSpecRequirements {
 		specDir := filepath.Join(opts.Root, "specs", step.Feat)
 		if _, statErr := os.Stat(specDir); statErr != nil {
 			if ok, o := h.CSDD(opts.Root, "plan", "generate", opts.Slug, step.Feat, "--require-approved"); !ok {
-				blockStep(opts, step, BlockScaffold, "scaffold (plan generate) failed: "+firstLine(o), 0, spentRepairs(carried, step.Feat), "")
-				return false
+				hist.add("scaffold (plan generate) failed — run `csdd plan generate` yourself or fix what broke it", o)
+				logf("  scaffold failed; handing it to the session")
 			}
 		}
 	}
 
-	hist := &failureHistory{}
-	for attempt := 0; attempt <= opts.MaxRetries; attempt++ {
-		if attempt > 0 {
-			sum.Retries++
-			logf("  retry %d/%d", attempt, opts.MaxRetries)
-		}
-		brief := baseBrief
-		if last := hist.last(); last != "" {
-			brief += "\n\n## Previous attempt failed — fix this\n\n" + tailCap(last, briefFailureCap) + "\n"
-		}
-		switch tryStep(opts, step, brief, hist, logf) {
-		case stepDone:
-			journal(opts, step, "done")
-			sum.Steps++
-			delete(carried, step.Feat) // the feat moved: its repair streak resets
-			logf("  ✓ %s", step.Step)
-			return true
-		case stepDeviation:
-			return false // tryStep already journaled and marked it
-		}
+	sum.Sessions++
+	verdict, err := h.Session(step, baseBrief+runContext(st, key), opts.SessionBudget)
+	if err != nil {
+		hist.add("session error", err.Error())
+		st.logs[key] = writeFailureLog(opts, step, hist)
+		journal(opts, step, "failed", "session error: "+firstLine(err.Error()))
+		logf("  ✗ session error: %v", err)
+		return iterFailed
 	}
 
-	// Every retry is gone and the failure is mechanical. Persist the whole history
-	// first — the retry briefs only ever carried a truncated tail, and without this
-	// file the actual compiler or test output dies with the process.
-	logRel := writeFailureLog(opts, step, hist)
-	spent := spentRepairs(carried, step.Feat)
-	if spent < opts.MaxRepairs {
-		spent++
-		sum.Repairs++
-		logf("  ⚒ repair session %d/%d — replaying %d failed attempt(s)", spent, opts.MaxRepairs, hist.len())
-		switch tryStep(opts, step, repairBrief(baseBrief, hist, logRel), hist, logf) {
-		case stepDone:
-			journal(opts, step, "done (repaired)")
-			sum.Steps++
-			sum.Repaired++
-			delete(carried, step.Feat)
-			logf("  ✓ %s (repaired)", step.Step)
-			return true
-		case stepDeviation:
-			return false
-		}
-		logRel = writeFailureLog(opts, step, hist) // fold the repair attempt in
+	// Decisions are journaled no matter how the iteration ends: the audit trail
+	// of autonomy is the whole deal (the human ratifies by reading log.md).
+	for _, d := range verdict.Decisions {
+		journal(opts, step, "decision", oneLine(d))
+		st.decisions = append(st.decisions, oneLine(d))
+		sum.Decisions++
+		logf("  ⚖ decision recorded: %s", oneLine(d))
 	}
 
-	// The session checked the task box on an attempt the gates then refuted. Retract
-	// the claim before parking the feat: a later unblock derives the feat's state
-	// from that box, and a checked one would walk straight past a task that never
-	// went green.
-	retractTaskClaim(opts, step)
-	reason := "gates failed after " + itoa(hist.len()) + " attempts: " + firstLine(hist.last())
-	journal(opts, step, "blocked ("+BlockGateFailure+")", "attempts: "+itoa(hist.len()), "log: "+logRel)
-	blockStep(opts, step, BlockGateFailure, reason, hist.len(), spent, logRel)
-	logf("  ✗ blocked after %d attempt(s) — full output in %s", hist.len(), logRel)
-	if spent >= opts.MaxRepairs {
-		logf("    → repair budget spent; `csdd plan unblock %s %s` to retry", opts.Slug, step.Feat)
+	switch verdict.Status {
+	case VerdictHalt:
+		st.haltSummary = oneLine(verdict.Summary)
+		journal(opts, step, "halted", "reason: "+orDash(st.haltSummary))
+		_ = WriteBlock(opts.Root, opts.Slug, Block{
+			Feat: step.Feat, Step: step.Step, Kind: BlockHalt,
+			Reason:    "session halted the run: " + orDash(st.haltSummary),
+			BlockedAt: h.Now().UTC().Format(time.RFC3339),
+		})
+		logf("  ⛔ halted by the session: %s", firstLine(verdict.Summary))
+		return iterHalted
+	case VerdictBlocked:
+		// Legacy verdict from an older brief. In this loop a decision is the
+		// session's to make and record, so coach the successor instead of parking.
+		detail := oneLine(verdict.Summary)
+		if verdict.Revision != "" {
+			detail += " | proposal: " + oneLine(verdict.Revision)
+		}
+		hist.add("legacy `blocked` verdict", detail+
+			"\nOpen decisions are the session's to MAKE and RECORD (docs/stack.md Decided row / ADR, declared in the verdict's `decisions`) — decide it and continue; do not stop on it.")
+		journal(opts, step, "failed", "legacy blocked verdict: "+oneLine(verdict.Summary))
+		logf("  ✗ legacy 'blocked' verdict — the next session is told to decide and record")
+		return iterFailed
+	case VerdictProgress:
+		st.handoffs[key] = strings.TrimSpace(verdict.Summary)
+		journal(opts, step, "progress", "handoff: "+oneLine(verdict.Summary))
+		logf("  … progress — handing off to the next session")
+		return iterProgress
+	}
+
+	// done: the runner verifies, then performs the approval a session never does.
+	// Persisting the step (branch, commit, PR) stays the session's dev-cycle job.
+	if !taskClaimMaterialized(opts, step) {
+		hist.add("done claim not materialized",
+			"the verdict says done but the box for "+step.Step+" in specs/"+step.Feat+"/tasks.md is unchecked — checking it is part of the step's contract")
+		st.logs[key] = writeFailureLog(opts, step, hist)
+		journal(opts, step, "failed", "done claim not materialized (task box unchecked)")
+		logf("  ✗ done claimed but the task box is unchecked")
+		return iterFailed
+	}
+	if ok, output := runGates(opts, step); !ok {
+		// The session checked the task box on a claim the gates refuted; retract it
+		// so the sequencer re-selects this task instead of walking past it.
+		retractTaskClaim(opts, step)
+		hist.add("gate failed", output)
+		st.logs[key] = writeFailureLog(opts, step, hist)
+		journal(opts, step, "failed", "gates refuted the done claim (attempt "+itoa(hist.len())+")", "log: "+st.logs[key])
+		logf("  ✗ gates failed (attempt %d) — the output feeds the next session", hist.len())
+		return iterFailed
+	}
+	if err := advance(opts, step); err != nil {
+		hist.add("advance failed", err.Error())
+		st.logs[key] = writeFailureLog(opts, step, hist)
+		journal(opts, step, "failed", "advance: "+firstLine(err.Error()))
+		logf("  ✗ advance failed: %v", err)
+		return iterFailed
+	}
+	journal(opts, step, "done")
+	st.clearStep(key)
+	sum.Steps++
+	logf("  ✓ %s", step.Step)
+	return iterAdvanced
+}
+
+// taskClaimMaterialized reports whether a task step's box is actually checked on
+// disk. A done verdict whose box is still unchecked is a claim that never
+// happened: without this check the runner would journal an advance while the
+// sequencer re-selects the same task forever — a green-looking infinite loop the
+// stall guard cannot see, because nothing ever fails. Non-task steps have their
+// materialization checked by their own gates (spec validate reads the artifact).
+func taskClaimMaterialized(opts RunOptions, step Step) bool {
+	if !strings.HasPrefix(step.Step, StepTaskPrefix) {
+		return true
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(step.Step, StepTaskPrefix))
+	data, err := os.ReadFile(filepath.Join(paths.Specs(opts.Root), step.Feat, "tasks.md"))
+	if err != nil {
+		return false
+	}
+	for _, r := range parseTaskRows(string(data)) {
+		if r.id == id {
+			return r.done
+		}
 	}
 	return false
 }
-
-// tryStep runs one session for the step and, when it claims done, the gates and the
-// runner-owned approval. Mechanical failures land on the history so the next attempt
-// — and the repair session after it — can read them; a `blocked` verdict is a
-// deviation and ends the feat here, because only a revised plan can answer it.
-func tryStep(opts RunOptions, step Step, brief string, hist *failureHistory, logf func(string, ...any)) stepResult {
-	verdict, err := opts.Hooks.Session(step, brief, opts.SessionBudget)
-	if err != nil {
-		hist.add("session error", err.Error())
-		return stepFailed
-	}
-	if verdict.Status == VerdictBlocked {
-		journalDeviation(opts, step, verdict)
-		blockDeviation(opts, step, verdict)
-		logf("  blocked by session: %s", firstLine(verdict.Summary))
-		logf("    → fold the revision into docs/plans/%s/plan.md, then `csdd plan approve %s`", opts.Slug, opts.Slug)
-		return stepDeviation
-	}
-	if ok, output := runGates(opts, step); !ok {
-		hist.add("gate failed", output)
-		logf("  gate failed")
-		return stepFailed
-	}
-	// Green: the runner performs the approval a session must never do — it stands in
-	// for the human at the phase gate. Persisting the step (branch, commit, PR) is
-	// the session's csdd dev-cycle job (/csdd-commit, pre-push), never the runner's;
-	// the runner leaves every write in the working tree.
-	if err := advance(opts, step); err != nil {
-		hist.add("advance failed", err.Error())
-		logf("  advance failed: %v", err)
-		return stepFailed
-	}
-	return stepDone
-}
-
-// spentRepairs is how many repair sessions this feat has already consumed, carried
-// over from the marker the run cleared at startup.
-func spentRepairs(carried map[string]Block, feat string) int { return carried[feat].Repairs }
 
 // runGates runs the gates for a step: the spec validator for a spec phase, or the
 // plan's Quality Gates plus graph traceability for an implementation task (R9.2).
@@ -364,9 +455,167 @@ func specPhaseOf(step string) (string, bool) {
 	return "", false
 }
 
-// --- failure history ---------------------------------------------------------
+// --- contract reconciliation --------------------------------------------------
 
-// briefFailureCap bounds how much of one attempt's output a brief carries. A
+// reconcileContract keeps the approval honest every iteration: no drift is a
+// no-op, a stack-rows-only drift is a recorded decision (re-bind and continue),
+// and anything that moved plan.md or seeds/ stops autonomy — the approved plan
+// is not the loop's to rewrite.
+func reconcileContract(opts RunOptions, doc *PlanDoc, startCore string, st *runState, logf func(string, ...any)) (stop bool, reason string, err error) {
+	approved, drift, err := IsApproved(opts.Root, opts.Slug)
+	if err != nil {
+		return false, "", err
+	}
+	if !approved {
+		return true, "stopped: the plan is no longer approved", nil
+	}
+	if !drift {
+		return false, "", nil
+	}
+	rebound, note, rerr := rebindContract(opts, doc, startCore)
+	if rerr != nil {
+		return false, "", rerr
+	}
+	if !rebound {
+		return true, "stopped: plan.md or seeds/ changed mid-run (re-approve to continue)", nil
+	}
+	st.contractNote = note
+	logf("  ⚖ contract re-bound: a recorded stack decision was folded into the approval")
+	return false, "", nil
+}
+
+// rebindContract re-approves the plan when — and only when — the drift is a
+// recorded decision: the Decided rows moved but plan.md + seeds/** did not.
+// fallbackCore is the trusted core hash for a plan.json that predates CoreHash
+// (an approval written by an older csdd); empty means "no fallback: refuse".
+// It returns whether it re-bound, plus a note carrying any validation findings
+// the changed contract introduced — the next brief hands that note to the
+// session to fix, so a corrupted stack table cannot strand the loop.
+func rebindContract(opts RunOptions, doc *PlanDoc, fallbackCore string) (bool, string, error) {
+	pj, ok, err := LoadPlanJSON(Dir(opts.Root, opts.Slug))
+	if err != nil || !ok {
+		return false, "", err
+	}
+	coreRef := pj.Approvals.CoreHash
+	if coreRef == "" {
+		coreRef = fallbackCore
+	}
+	if coreRef == "" {
+		return false, "", nil
+	}
+	core, err := HashPlanCore(opts.Root, opts.Slug)
+	if err != nil {
+		return false, "", err
+	}
+	if core != coreRef {
+		return false, "", nil
+	}
+	note := ""
+	if issues := ValidatePlan(doc, opts.Root); len(issues) > 0 {
+		lines := make([]string, 0, len(issues))
+		for _, i := range issues {
+			lines = append(lines, "- "+i.String())
+		}
+		note = "The re-bound contract has validation findings — fix docs/stack.md so `csdd plan validate` passes:\n" + strings.Join(lines, "\n")
+	}
+	if err := ApprovePlan(opts.Root, doc, opts.Hooks.Now()); err != nil {
+		return false, "", err
+	}
+	appendJournal(Dir(opts.Root, opts.Slug), opts.Hooks.Now(), "", "-", "contract re-bound",
+		"docs/stack.md Decided rows changed (a recorded decision); the approval hash was updated")
+	return true, note, nil
+}
+
+// --- run state: the loop's memory across iterations ---------------------------
+
+// runState is what one iteration hands the next. Sessions are fresh processes;
+// anything not carried here (or written to disk) is lost between them.
+type runState struct {
+	hists        map[string]*failureHistory // step key → failed attempts
+	handoffs     map[string]string          // step key → progress-verdict handoff
+	logs         map[string]string          // step key → workspace-relative failure log
+	decisions    []string                   // decisions recorded this run (rolling audit)
+	contractNote string                     // validation findings after a re-bind, until fixed
+	haltSummary  string
+}
+
+func newRunState() *runState {
+	return &runState{hists: map[string]*failureHistory{}, handoffs: map[string]string{}, logs: map[string]string{}}
+}
+
+func (s *runState) hist(key string) *failureHistory {
+	if s.hists[key] == nil {
+		s.hists[key] = &failureHistory{}
+	}
+	return s.hists[key]
+}
+
+// clearStep forgets a step's trail once it advanced: the streak is over, and the
+// next step of the same feat starts clean.
+func (s *runState) clearStep(key string) {
+	delete(s.hists, key)
+	delete(s.handoffs, key)
+	delete(s.logs, key)
+}
+
+// stepKey identifies one step of one feat in the state maps. NUL cannot appear
+// in a feat slug or step name, so distinct pairs never collide.
+func stepKey(step Step) string { return step.Feat + "\x00" + step.Step }
+
+// maxContextAttempts bounds how many failed attempts the rolling context
+// replays. The full history is always in the on-disk failure log; the brief
+// carries the recent tail because a session that cannot converge after five
+// replayed attempts needs a different angle, not a longer transcript.
+const maxContextAttempts = 5
+
+// runContext renders the rolling context one iteration hands the next: contract
+// findings, the decisions recorded so far, the predecessor's handoff, and the
+// step's failure trail. Appended after the deterministic Brief, so the contract
+// part of the prompt stays byte-identical (R7.3) and only the memory varies.
+func runContext(st *runState, key string) string {
+	hist := st.hists[key]
+	histLen := 0
+	if hist != nil {
+		histLen = hist.len()
+	}
+	handoff := st.handoffs[key]
+	logRel := st.logs[key]
+	if st.contractNote == "" && len(st.decisions) == 0 && handoff == "" && histLen == 0 && logRel == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n## Autonomous run context\n\n")
+	b.WriteString("You are one iteration of a self-correcting loop; previous iterations left the\n")
+	b.WriteString("state below. Diagnose the ROOT CAUSE before editing — never replay an\n")
+	b.WriteString("approach that already failed. If the fix fits this step's contract, make it;\n")
+	b.WriteString("if it needs a decision, make and RECORD the decision.\n")
+	if st.contractNote != "" {
+		b.WriteString("\n### Contract findings to fix first\n\n" + st.contractNote + "\n")
+	}
+	if len(st.decisions) > 0 {
+		b.WriteString("\n### Decisions recorded earlier in this run\n\n")
+		for _, d := range st.decisions {
+			b.WriteString("- " + d + "\n")
+		}
+	}
+	if handoff != "" {
+		b.WriteString("\n### Handoff from the previous session (it reported progress)\n\n" + handoff + "\n")
+	}
+	if histLen > 0 {
+		fmt.Fprintf(&b, "\n### This step already failed %d time(s)\n\n", histLen)
+		if logRel != "" {
+			fmt.Fprintf(&b, "Full untruncated output: %s\n\n", logRel)
+		}
+		b.WriteString(hist.renderTail(maxContextAttempts, briefFailureCap))
+	} else if logRel != "" {
+		fmt.Fprintf(&b, "\n### A previous run left a failure log for this step\n\nRead %s before starting.\n", logRel)
+	}
+	return b.String()
+}
+
+// --- failure history ----------------------------------------------------------
+
+// briefFailureCap bounds how much of one attempt's output the context carries. A
 // failing `go test` can print megabytes; the model needs the verdict, not the
 // transcript, and the untruncated text is on disk in the failure log regardless.
 const briefFailureCap = 4000
@@ -378,9 +627,9 @@ type attempt struct {
 	output string
 }
 
-// failureHistory accumulates every failed attempt at a step. The retry brief reads
-// only the last one; the repair session reads them all, which is the whole point —
-// a root cause is usually visible across attempts and invisible within one.
+// failureHistory accumulates every failed attempt at a step across the run. The
+// rolling context replays the recent tail — a root cause is usually visible
+// across attempts and invisible within one.
 type failureHistory struct{ attempts []attempt }
 
 func (h *failureHistory) add(stage, output string) {
@@ -389,8 +638,7 @@ func (h *failureHistory) add(stage, output string) {
 
 func (h *failureHistory) len() int { return len(h.attempts) }
 
-// last renders the most recent failure for the retry brief, matching the shape the
-// session has always seen: `<stage>:\n<output>`.
+// last renders the most recent failure one-liner-first, for markers and logs.
 func (h *failureHistory) last() string {
 	if len(h.attempts) == 0 {
 		return ""
@@ -399,10 +647,16 @@ func (h *failureHistory) last() string {
 	return a.stage + ":\n" + a.output
 }
 
-// render lays every attempt out for the repair brief, each capped at cap bytes.
-func (h *failureHistory) render(cap int) string {
+// renderTail lays out the last n attempts, each capped at cap bytes; anything
+// older stays in the on-disk failure log.
+func (h *failureHistory) renderTail(n, cap int) string {
 	var b strings.Builder
-	for _, a := range h.attempts {
+	start := 0
+	if len(h.attempts) > n {
+		start = len(h.attempts) - n
+		fmt.Fprintf(&b, "(%d older attempt(s) omitted — see the failure log)\n\n", start)
+	}
+	for _, a := range h.attempts[start:] {
 		fmt.Fprintf(&b, "### Attempt %d — %s\n\n```\n%s\n```\n\n", a.n, a.stage, tailCap(a.output, cap))
 	}
 	return b.String()
@@ -421,32 +675,11 @@ func tailCap(s string, n int) string {
 	return "…(truncated — the full output is in the failure log)…\n" + s[i:]
 }
 
-// repairBrief is the second-chance brief: the step's original contract, plus every
-// failed attempt in full, plus an instruction to diagnose before editing. The
-// forbidden actions still hold — a fix that needs a decision the plan does not
-// cover is still a deviation, not an improvisation.
-func repairBrief(base string, hist *failureHistory, logPath string) string {
-	var b strings.Builder
-	b.WriteString(base)
-	fmt.Fprintf(&b, "\n\n## Repair session — this step already failed %d time(s)\n\n", hist.len())
-	b.WriteString("You are a fresh session re-running the SAME step. Every previous attempt is\n")
-	b.WriteString("below, in order, with its output. Read them, find the ROOT CAUSE, and fix\n")
-	b.WriteString("that — do not replay an edit that already failed. The step's contract and\n")
-	b.WriteString("its forbidden actions above are unchanged: make the gates pass. If the real\n")
-	b.WriteString("fix needs a decision this plan does not cover, return a `blocked` verdict\n")
-	b.WriteString("with a revision proposal instead of improvising.\n\n")
-	if logPath != "" {
-		fmt.Fprintf(&b, "Full untruncated output: %s\n\n", logPath)
-	}
-	b.WriteString(hist.render(briefFailureCap))
-	return b.String()
-}
-
 // writeFailureLog persists every attempt's untruncated output under the runner's
-// state dir and returns its workspace-relative path, which both the block marker
-// and the run journal point at. It is rewritten (not appended) so the file always
-// mirrors the history exactly. An I/O failure yields "" — a lost log must never
-// take the run down with it.
+// state dir and returns its workspace-relative path, which the rolling context
+// and any post-run marker point at. It is rewritten (not appended) so the file
+// always mirrors the history exactly. An I/O failure yields "" — a lost log must
+// never take the run down with it.
 func writeFailureLog(opts RunOptions, step Step, hist *failureHistory) string {
 	rel := filepath.Join(paths.StateDir, "plan", opts.Slug, "failures", step.Feat, stepFileName(step.Step)+".log")
 	var b strings.Builder
@@ -486,7 +719,7 @@ func stepFileName(step string) string {
 // retractTaskClaim un-checks the tasks.md box for a task step whose gates never
 // went green. The box is the session's claim that the task is done; the gates
 // refuted it, and a feat's state is derived from that box alone — so leaving it
-// checked would let the next `plan run` skip a task that never passed. Only the
+// checked would let the sequencer skip a task that never passed. Only the
 // named task's line is touched, and only when it is currently checked.
 func retractTaskClaim(opts RunOptions, step Step) {
 	if !strings.HasPrefix(step.Step, StepTaskPrefix) {
@@ -536,104 +769,65 @@ func journal(opts RunOptions, step Step, outcome string, details ...string) {
 	appendJournal(Dir(opts.Root, opts.Slug), opts.Hooks.Now(), step.Step, step.Feat, outcome, details...)
 }
 
-// journalDeviation appends the blocked entry plus the session's revision proposal,
-// so the human can fold it back in via the Revise workflow (principle 5).
-func journalDeviation(opts RunOptions, step Step, v Verdict) {
-	var details []string
-	if v.Summary != "" {
-		details = append(details, "reason: "+oneLine(v.Summary))
-	}
-	if v.Revision != "" {
-		details = append(details, "revision: "+oneLine(v.Revision))
-	}
-	journal(opts, step, VerdictBlocked, details...)
-}
-
-// blockStep writes a mechanical block marker so the sequencer skips the feat and
-// the loop continues with others (R9.4). Markers live under the transient state dir.
-func blockStep(opts RunOptions, step Step, kind, reason string, attempts, repairs int, logPath string) {
-	_ = WriteBlock(opts.Root, opts.Slug, Block{
-		Feat: step.Feat, Step: step.Step, Kind: kind, Reason: reason,
-		Attempts: attempts, Repairs: repairs, Log: logPath,
-		BlockedAt: opts.Hooks.Now().UTC().Format(time.RFC3339),
-	})
-}
-
-// blockDeviation records an open decision against the exact plan the session
-// objected to. Binding the marker to that hash is what lets a later `plan approve`
-// tell "the human revised the plan" from "the human re-approved the same one".
-func blockDeviation(opts RunOptions, step Step, v Verdict) {
-	hash, _ := HashPlan(Dir(opts.Root, opts.Slug))
-	_ = WriteBlock(opts.Root, opts.Slug, Block{
-		Feat: step.Feat, Step: step.Step, Kind: BlockDeviation,
-		Reason: deviationReason(v), Revision: oneLine(v.Revision), PlanHash: hash,
-		BlockedAt: opts.Hooks.Now().UTC().Format(time.RFC3339),
-	})
-}
-
-// clearRepairableBlocks retires the mechanical markers a previous run left behind,
-// returning them by feat so the repair budget they accumulated carries into this
-// run. Deviations and markers that exhausted their budget survive, and say so.
-func clearRepairableBlocks(opts RunOptions, logf func(string, ...any)) map[string]Block {
-	carried := map[string]Block{}
-	for _, b := range ListBlocks(opts.Root, opts.Slug) {
-		switch {
-		case !b.Mechanical():
-			logf("  ⏸ %s stays blocked [%s]: %s", b.Feat, b.Kind, firstLine(b.Reason))
-		case b.Repairs >= opts.MaxRepairs:
-			logf("  ⏸ %s stays blocked: %d/%d repair sessions spent — `csdd plan unblock %s %s` to retry",
-				b.Feat, b.Repairs, opts.MaxRepairs, opts.Slug, b.Feat)
-		default:
-			if err := ClearBlock(opts.Root, opts.Slug, b.Feat); err == nil {
-				carried[b.Feat] = b
-				logf("  ↻ retrying %s (%d/%d repair sessions spent)", b.Feat, b.Repairs, opts.MaxRepairs)
-			}
+// parkRun leaves the post-run marker that explains why the loop ended without
+// completing: the step it was working, how often it failed, and where the full
+// output lives. The next `plan run` clears it and retries.
+func parkRun(opts RunOptions, step Step, st *runState, reason string) {
+	key := stepKey(step)
+	attempts := 0
+	if hist := st.hists[key]; hist != nil {
+		attempts = hist.len()
+		if last := firstLine(hist.last()); last != "" {
+			reason += "; last failure: " + last
 		}
 	}
-	return carried
+	_ = WriteBlock(opts.Root, opts.Slug, Block{
+		Feat: step.Feat, Step: step.Step, Kind: BlockGateFailure,
+		Reason: reason, Attempts: attempts, Log: st.logs[key],
+		BlockedAt: opts.Hooks.Now().UTC().Format(time.RFC3339),
+	})
+	journal(opts, step, "blocked ("+BlockGateFailure+")", "reason: "+reason)
+}
+
+// clearAllBlocks retires every marker a previous run left, whatever its kind: a
+// marker is only ever the record of how a previous run ended, and the autonomous
+// loop retries everything. It seeds the failure-log pointers so the first
+// session on a previously-failed step starts from its predecessor's evidence
+// instead of rediscovering it.
+func clearAllBlocks(opts RunOptions, st *runState, logf func(string, ...any)) {
+	for _, b := range ListBlocks(opts.Root, opts.Slug) {
+		if err := Unblock(opts.Root, opts.Slug, b, "plan run (the autonomous loop retries every feat)", opts.Hooks.Now()); err != nil {
+			continue
+		}
+		if b.Log != "" && b.Step != "" {
+			st.logs[stepKey(Step{Feat: b.Feat, Step: b.Step})] = b.Log
+		}
+		logf("  ↻ retrying %s (was blocked [%s]: %s)", b.Feat, b.Kind, firstLine(b.Reason))
+	}
 }
 
 // reportBlocks explains why a run has nothing left to do, and how to resume — the
-// two ways out differ by kind, and neither is discoverable from the exit code.
+// ways out differ by kind, and none is discoverable from the exit code.
 func reportBlocks(opts RunOptions, logf func(string, ...any)) {
 	blocks := ListBlocks(opts.Root, opts.Slug)
 	if len(blocks) == 0 {
 		return
 	}
-	deviations, mechanical, untyped := 0, 0, 0
+	halts := 0
 	for _, b := range blocks {
 		logf("  · %s [%s] %s", b.Feat, b.Kind, firstLine(b.Reason))
 		if b.Log != "" {
 			logf("      log: %s", b.Log)
 		}
-		switch {
-		case b.Kind == BlockDeviation:
-			deviations++
-			if b.Revision != "" {
-				logf("      proposed revision: %s", firstLine(b.Revision))
-			}
-		case b.Mechanical():
-			mechanical++
-		default:
-			untyped++
+		if b.Kind == BlockHalt {
+			halts++
 		}
 	}
-	if deviations > 0 {
-		logf("resume: fold the revisions into docs/plans/%s/plan.md, then `csdd plan approve %s`", opts.Slug, opts.Slug)
+	if halts > 0 {
+		logf("resume: fix the impediment the session reported, then `csdd plan run %s` — it retries every feat", opts.Slug)
+	} else {
+		logf("resume: `csdd plan run %s` retries every feat; `csdd plan unblock %s --all --force` clears the markers by hand", opts.Slug, opts.Slug)
 	}
-	if mechanical > 0 {
-		logf("resume: `csdd plan unblock %s --all` clears the mechanical blocks and retries them", opts.Slug)
-	}
-	if untyped > 0 {
-		logf("resume: `csdd plan unblock %s <feat> --force` clears the untyped markers left by an older csdd", opts.Slug)
-	}
-}
-
-func deviationReason(v Verdict) string {
-	if v.Summary != "" {
-		return "session blocked: " + oneLine(v.Summary)
-	}
-	return "session returned a blocked verdict"
 }
 
 // runLogf is the runner's line-oriented logger onto opts.Out.
@@ -651,19 +845,10 @@ func fillRunDefaults(opts *RunOptions) {
 		opts.SessionBudget = 0
 	}
 	if opts.MaxIterations <= 0 {
-		opts.MaxIterations = 25
+		opts.MaxIterations = 100
 	}
-	if opts.MaxRetries < 0 {
-		opts.MaxRetries = 2
-	}
-	if opts.MaxRetries == 0 {
-		opts.MaxRetries = 2
-	}
-	// MaxRepairs 0 means "no repair sessions": the zero value keeps a library caller
-	// on the pre-repair behavior, and `--max-repairs 0` is how a human turns the
-	// autonomy off. Only a negative value is a mistake worth normalizing.
-	if opts.MaxRepairs < 0 {
-		opts.MaxRepairs = 0
+	if opts.Stall <= 0 {
+		opts.Stall = 10
 	}
 	if opts.Out == nil {
 		opts.Out = io.Discard
@@ -672,8 +857,8 @@ func fillRunDefaults(opts *RunOptions) {
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
-	_, _ = fmt.Fprintf(out, "totals: %d steps, %d retries, %d repairs, %d blocks\n",
-		sum.Steps, sum.Retries, sum.Repairs, sum.Blocks)
+	_, _ = fmt.Fprintf(out, "totals: %d sessions, %d steps advanced, %d decisions recorded, %d failed iterations\n",
+		sum.Sessions, sum.Steps, sum.Decisions, sum.Failures)
 	return sum
 }
 

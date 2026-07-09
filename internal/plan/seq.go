@@ -50,7 +50,12 @@ const (
 // requireApproved gates autonomy: when true (the runner), an unapproved or
 // drifted plan returns SeqNotReady. A human following `plan next` by hand passes
 // false and sequences a draft freely.
-func Next(root string, doc *PlanDoc, requireApproved bool) (Step, int, error) {
+//
+// skip lists feat slugs to pass over for THIS selection only — the runner's
+// in-memory rotation: a feat whose step just failed steps aside so its siblings
+// keep advancing, and comes back the moment nothing else is eligible. It is
+// deliberately not a disk marker; nothing about the plan is wrong.
+func Next(root string, doc *PlanDoc, requireApproved bool, skip ...string) (Step, int, error) {
 	if requireApproved {
 		approved, drift, err := IsApproved(root, doc.Slug)
 		if err != nil {
@@ -59,6 +64,11 @@ func Next(root string, doc *PlanDoc, requireApproved bool) (Step, int, error) {
 		if !approved || drift {
 			return Step{}, SeqNotReady, nil
 		}
+	}
+
+	skipSet := map[string]bool{}
+	for _, s := range skip {
+		skipSet[s] = true
 	}
 
 	statuses := map[string]FeatStatus{}
@@ -72,7 +82,7 @@ func Next(root string, doc *PlanDoc, requireApproved bool) (Step, int, error) {
 		if state != StateDone {
 			allDone = false
 		}
-		if state == StateDone || state == StateBlocked {
+		if state == StateDone || state == StateBlocked || skipSet[f.Slug] {
 			continue
 		}
 		// Dependencies must all be done before this feat is eligible. A feat

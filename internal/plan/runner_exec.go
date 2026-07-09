@@ -48,7 +48,8 @@ func installRealHooks(h *Hooks) {
 // verdictSchema is the JSON schema the session must satisfy — the runner's
 // contract with the model (§5.6). Pinned here alongside the flags in one place.
 const verdictSchema = `{"type":"object","required":["status","summary"],` +
-	`"properties":{"status":{"enum":["done","blocked"]},"summary":{"type":"string"},"revision":{"type":"string"}}}`
+	`"properties":{"status":{"enum":["done","progress","halt"]},"summary":{"type":"string"},` +
+	`"decisions":{"type":"array","items":{"type":"string"}}}}`
 
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
@@ -123,10 +124,11 @@ func parseVerdict(output []byte) (Verdict, error) {
 
 func normalizeVerdict(v Verdict) (Verdict, error) {
 	v.Status = strings.ToLower(strings.TrimSpace(v.Status))
-	if v.Status != VerdictDone && v.Status != VerdictBlocked {
-		return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|blocked)", v.Status)
+	switch v.Status {
+	case VerdictDone, VerdictProgress, VerdictHalt, VerdictBlocked:
+		return v, nil // blocked is legacy: parsed, then coached into a decision
 	}
-	return v, nil
+	return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|progress|halt)", v.Status)
 }
 
 // csddBinary is the path to the csdd binary the runner shells out to. It prefers

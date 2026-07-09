@@ -242,9 +242,10 @@ func TestBriefInlinesADRs(t *testing.T) {
 	if !strings.Contains(out, "adr:ghost-ref") || !strings.Contains(out, "WARNING") {
 		t.Errorf("brief should warn on the unresolved ADR ref:\n%s", out)
 	}
-	// The open-decision forbidden-actions line is present (R4.3).
-	if !strings.Contains(out, "OPEN DECISION") {
-		t.Errorf("brief should carry the open-decision forbidden-actions line:\n%s", out)
+	// The open-decision ownership line is present (R4.3): the session decides,
+	// records, and declares — it never adopts silently.
+	if !strings.Contains(out, "Open decisions are YOURS") {
+		t.Errorf("brief should carry the open-decision ownership line:\n%s", out)
 	}
 }
 

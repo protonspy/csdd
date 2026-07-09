@@ -93,8 +93,8 @@ func TestADRValidateE2E(t *testing.T) {
 	if !strings.Contains(out, "Store under docs/adr") || !strings.Contains(out, "BODY_TOKEN") {
 		t.Errorf("brief should inline the cited ADR in full:\n%s", out)
 	}
-	if !strings.Contains(out, "OPEN DECISION") {
-		t.Errorf("brief should carry the open-decision forbidden line")
+	if !strings.Contains(out, "Open decisions are YOURS") {
+		t.Errorf("brief should carry the open-decision ownership line")
 	}
 
 	// Broken citation: rewrite the ADR to a different slug.

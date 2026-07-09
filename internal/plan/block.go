@@ -10,17 +10,21 @@ import (
 	"time"
 )
 
-// Block kinds. Only a deviation says something about the PLAN: the session hit an
-// open decision, so the contract itself has to change and folding the revision back
-// in — then re-approving — is the only legitimate way out (principle 5). The other
-// kinds are mechanical failures of one step; the runner may repair and retry those
-// on its own. A marker written by an older csdd carries no kind and reads as
-// BlockUnknown, which is never auto-cleared: we cannot tell which of the two it was.
+// Block kinds. In the autonomous loop a marker is a POST-RUN artifact: the runner
+// never parks a feat mid-run (every failure is context for the next iteration),
+// it only leaves a marker when the run itself ends without completing — a halt
+// verdict, a stall, or the iteration cap — so `plan status` can explain the state.
+// The next `plan run` clears every marker at startup and retries everything.
+// BlockHalt records a session's declaration that something outside the workspace
+// blocks the work (missing credential, unreachable external service). The other
+// kinds — and BlockDeviation, which only pre-autonomous runners wrote — survive
+// for markers left by older versions. A marker with no kind reads as BlockUnknown.
 const (
 	BlockDeviation   = "deviation"
 	BlockGateFailure = "gate-failure"
 	BlockScaffold    = "scaffold"
 	BlockBrief       = "brief"
+	BlockHalt        = "halt"
 	BlockUnknown     = "unknown"
 )
 
@@ -33,10 +37,10 @@ type Block struct {
 	Step      string `json:"step,omitempty"`
 	Kind      string `json:"kind"`
 	Reason    string `json:"reason"`
-	Revision  string `json:"revision,omitempty"`  // deviation only: the session's proposal
-	Attempts  int    `json:"attempts,omitempty"`  // sessions spent on the step before blocking
-	Repairs   int    `json:"repairs,omitempty"`   // repair sessions already spent on this feat
-	PlanHash  string `json:"plan_hash,omitempty"` // deviation only: the plan the objection was against
+	Revision  string `json:"revision,omitempty"`  // deviation (legacy) only: the session's proposal
+	Attempts  int    `json:"attempts,omitempty"`  // sessions spent on the step before the run ended
+	Repairs   int    `json:"repairs,omitempty"`   // written by pre-autonomous runners only; kept so old markers parse
+	PlanHash  string `json:"plan_hash,omitempty"` // deviation (legacy) only: the plan the objection was against
 	Log       string `json:"log,omitempty"`       // workspace-relative failure log
 	BlockedAt string `json:"blocked_at,omitempty"`
 }

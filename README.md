@@ -284,23 +284,25 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
    (human gate)         (csdd-controlled)     (human gate)
 ```
 
-`csdd plan run <slug>` is the **runner**: autonomous development that plays the human at each gate — it drives `csdd spec approve` and the plan's Quality Gates around every session, while the session itself runs the csdd SDD+TDD dev-cycle and owns git (branch, `/csdd-commit`, the pre-push gate, the PR). The runner never commits or manipulates git — that responsibility stays where the dev-cycle already lives, so the loop is *just session control*. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval.
+`csdd plan run <slug>` is the **runner**: a deliberately dumb, deterministic loop where **one iteration = one Claude session** (default cap 100). The session — Claude driving csdd — controls the whole flow: it authors the step, runs the dev-cycle, owns git (branch, `/csdd-commit`, the pre-push gate, the PR), and **makes and records open decisions** (a `docs/stack.md` Decided row, an ADR when the why needs more than a line, declared in its verdict's `decisions`). The runner owns verification and bookkeeping: it runs the gates, performs `csdd spec approve` when they pass, and journals everything to `log.md`. Nothing parks mid-run — **every failure becomes the next session's context** (the failure trail, the predecessor's handoff, the decisions recorded so far), which is what makes the loop self-correcting.
+
+The session's verdict declares its intent: `done` (verify me), `progress` (honest partial work; the summary is the handoff), or `halt` (something *outside* the workspace blocks the run — a missing credential, an external service). Approval stays bound to a **content hash**, split in two: new Decided rows are a *recorded decision* — the runner **re-binds automatically** and continues — while any edit to `plan.md`/`seeds/` is real drift and stops autonomy.
+
+The run ends only four ways: the plan **completes**, a session **halts**, the **stall guard** trips (default: 10 consecutive sessions with no step advancing — the convergence guard), or the **iteration cap** is hit (the wallet guard). The last two leave a marker with the failure log; the next `plan run` clears every marker and retries.
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
-                        --session-budget 5   # per-session USD cap · --max-iterations · --max-retries · --max-repairs
-csdd plan unblock <slug> [feat…] [--all]    # clear block markers and let the runner pick the feats back up
+                        --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
+csdd plan unblock <slug> [feat…] [--all]    # clear post-run markers by hand (plan run already retries everything)
 ```
 
-#### When a feat blocks
+#### When a run ends without completing
 
-A blocked feat is skipped by the sequencer, so the two ways out have to be legible. They differ by **why** it blocked, and `plan status` prints the kind.
+A marker is the record of how a run **ended**, not a mid-run parking spot — `plan status` prints its kind, and the next `plan run` clears it and retries automatically.
 
-A **mechanical** block — gates red after every retry, a failed scaffold, a brief that would not assemble — is a fact about one attempt, not about the plan. The runner writes every attempt's untruncated output to `.csdd/plan/<slug>/failures/<feat>/<step>.log`, then spends one **repair session** on the step: a fresh session that reads the whole failure history rather than just the last error, and is told to find the root cause instead of replaying the edit that failed. If that still fails, the feat parks with its checkbox retracted — the gates refuted the session's claim that the task was done — and the *next* `plan run` clears the marker and tries again, until the feat has spent its `--max-repairs` budget (default 2). Only then does the block stick, and `csdd plan unblock <slug> <feat>` is how you hand it back.
-
-A **deviation** — the session returned a `blocked` verdict because it hit an open decision — is a fact about the plan, and no amount of retrying answers it. It stays blocked until the plan changes: fold the revision proposal into `plan.md` and run `csdd plan approve`, which retires every deviation raised against the plan you just replaced (the PRD skill's **Revise** workflow). Re-approving an *unchanged* plan resolves nothing and clears nothing. `plan unblock --force` drops the objection without addressing it, and is not the road you want.
+A **gate-failure** marker (stall or cap) points at `.csdd/plan/<slug>/failures/<feat>/<step>.log` with every attempt's untruncated output; the checkbox of a refuted task claim is retracted so the sequencer re-selects it. A **halt** marker carries the impediment the session reported — fix that, then just run again. Deviation markers only exist if written by an older csdd; they too are retried (in this loop, decisions are the session's to make), and `csdd plan approve` after a plan revision still retires the stale ones.
 
 ### 🔒 `sandbox` — isolation before autonomy
 

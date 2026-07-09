@@ -16,11 +16,22 @@ import (
 // standing in for the human gate; committing, branching, and the PR are the csdd
 // dev-cycle's job (/csdd-commit, the pre-push gate), which the session drives.
 var forbiddenActions = []string{
-	"Do NOT edit plan.md or plan.json — editing the approved plan is drift and stops the run; leave .csdd/ (the runner's operational state) alone.",
-	"Do NOT run `csdd spec approve` or `csdd plan approve` — the runner performs the phase approvals after the gates pass.",
-	"Do NOT adopt a technology that is not in docs/stack.md — that is an open decision; stop and report it in your verdict instead.",
-	"Do NOT make a decision that is hard to reverse, surprising without context, and the result of a real trade-off unless a cited ADR or stack row already covers it — that is an OPEN DECISION; return a `blocked` verdict with a revision proposal, never improvise.",
-	"If you hit an unforeseen problem you cannot solve within this step's contract, return a `blocked` verdict with a revision proposal — never improvise around the plan.",
+	"Do NOT edit plan.md or plan.json — the approved plan is the contract; editing it is real drift and stops the run. Leave .csdd/ (the runner's operational state) alone.",
+	"Do NOT run `csdd spec approve` or `csdd plan approve` — the runner performs every approval after its own gates pass.",
+	"Do NOT adopt a technology or make a hard-to-reverse trade-off SILENTLY: an adoption is only legitimate once it is recorded (a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line) and declared in your verdict's `decisions`.",
+}
+
+// verdictProtocol teaches the session how to talk to the loop: decisions are the
+// session's to make and record (the runner re-binds the contract, it never stops
+// on one), and the verdict status is a declaration of intent — done asks to be
+// verified, progress hands off, halt ends the run. This text is what retired the
+// legacy `blocked` verdict: a loop that parks a feat on every open decision is
+// not autonomous, it is a queue for the human.
+var verdictProtocol = []string{
+	"**Open decisions are YOURS.** When this step needs a technology or trade-off the contract does not cover (no stack row, no ADR), decide it — prefer the option that deviates least from the decided stack — record it (docs/stack.md Decided row; docs/adr when the why needs more than a line), and list it in your verdict's `decisions`. The runner re-binds the contract to the recorded decision and the loop continues.",
+	"`done` — this step's contract is fulfilled. The runner verifies with the gates above; if they fail, the next session inherits your failure output, so never claim done on hope.",
+	"`progress` — honest partial work: you are out of room before the step is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).",
+	"`halt` — something OUTSIDE the workspace blocks the work (missing credential, unreachable external service, access only a human has). A halt ends the WHOLE run, so never halt on anything you could fix, decide, or record yourself.",
 }
 
 // Brief assembles the deterministic context pack for one step (R7). It draws only
@@ -54,6 +65,10 @@ func Brief(root string, doc *PlanDoc, step Step) (string, error) {
 	w("\n**Forbidden actions:**\n")
 	for _, f := range forbiddenActions {
 		w("- %s\n", f)
+	}
+	w("\n**Decisions and the verdict protocol:**\n")
+	for _, p := range verdictProtocol {
+		w("- %s\n", p)
 	}
 	w("\n")
 

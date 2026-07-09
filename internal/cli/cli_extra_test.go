@@ -795,6 +795,18 @@ func TestInitDefaultOmitsOptInComponents(t *testing.T) {
 	if _, ok := parsed["permissions"]; !ok {
 		t.Errorf("default settings.json should keep the permissions block:\n%s", raw)
 	}
+	// A session drives the workspace through csdd; pre-allowing its entry points is
+	// what keeps an interactive run from stopping on a prompt at every command.
+	for _, entry := range []string{
+		"Bash(npx @protonspy/csdd:*)",
+		"Bash(npx -y @protonspy/csdd:*)",
+		"Bash(csdd:*)",
+		"mcp__csdd",
+	} {
+		if !strings.Contains(raw, entry) {
+			t.Errorf("default settings.json should pre-allow %q:\n%s", entry, raw)
+		}
+	}
 }
 
 // TestInitOptInHooksAndPrePush covers the --include spelling (with the "prepush"

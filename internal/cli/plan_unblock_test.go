@@ -163,7 +163,7 @@ func TestPlanApproveKeepsADeviationAgainstTheCurrentPlan(t *testing.T) {
 	dir := blockedPlan(t)
 	// Bind the deviation to the plan as it stands: nothing was revised, so nothing
 	// is answered, and re-approving must not paper over the objection.
-	hash, err := plan.HashPlan(filepath.Join(dir, "docs", "plans", "photos"))
+	hash, err := plan.HashPlan(dir, "photos")
 	must(t, err)
 	must(t, plan.WriteBlock(dir, "photos", plan.Block{
 		Feat: "thumbs", Step: "spec-design", Kind: plan.BlockDeviation,
@@ -174,6 +174,41 @@ func TestPlanApproveKeepsADeviationAgainstTheCurrentPlan(t *testing.T) {
 	}
 	if _, blocked := plan.ReadBlock(dir, "photos", "thumbs"); !blocked {
 		t.Errorf("re-approving an unchanged plan resolves nothing; the deviation must stand")
+	}
+}
+
+// TestPlanApproveRetiresADeviationAnsweredByAStackRow covers the way a session
+// actually deviates most often: it refuses to adopt a technology docs/stack.md
+// never decided. The human answers by adding the row — not by touching plan.md —
+// so that row has to be inside the approval hash, or `plan approve` recomputes an
+// identical hash, the marker survives, and the feat blocks on every future run.
+func TestPlanApproveRetiresADeviationAnsweredByAStackRow(t *testing.T) {
+	dir := blockedPlan(t)
+	stack := filepath.Join(dir, "docs", "stack.md")
+	writeTestFile(t, stack, "# Stack\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n")
+	if code, _, e := run(t, "plan", "approve", "photos", "--root", dir); code != 0 {
+		t.Fatalf("approve failed: %s", e)
+	}
+	// The deviation now binds to the plan exactly as the session saw it.
+	hash, err := plan.HashPlan(dir, "photos")
+	must(t, err)
+	must(t, plan.WriteBlock(dir, "photos", plan.Block{
+		Feat: "thumbs", Step: "spec-design", Kind: plan.BlockDeviation,
+		Reason: "session blocked: no Frontend lint row in docs/stack.md", PlanHash: hash,
+	}))
+
+	// The human answers the open decision the only way the contract allows.
+	writeTestFile(t, stack, "# Stack\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n"+
+		"| Frontend lint | ESLint | 9.x | Vite react-ts default | |\n")
+	if code, _, e := run(t, "plan", "approve", "photos", "--root", dir); code != 0 {
+		t.Fatalf("approve after the stack revision failed: %s", e)
+	}
+	if _, blocked := plan.ReadBlock(dir, "photos", "thumbs"); blocked {
+		t.Errorf("answering the open decision with a stack row must retire the deviation")
 	}
 }
 
