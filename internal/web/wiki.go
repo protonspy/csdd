@@ -173,7 +173,8 @@ func parseWikiIndex(wikiDir string, ov *wikiOverview) (map[string]string, map[st
 	catBySlug := map[string]string{}
 	indexed := map[string]bool{}
 	orderBySlug := map[string]int{}
-	var cats []string
+	// Non-nil so a wiki with no categorized entries marshals as [], not null.
+	cats := []string{}
 	data, err := os.ReadFile(filepath.Join(wikiDir, "index.md"))
 	if err != nil {
 		return catBySlug, indexed, orderBySlug, cats

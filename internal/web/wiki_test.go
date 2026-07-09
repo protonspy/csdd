@@ -1,7 +1,9 @@
 package web
 
 import (
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +97,27 @@ func TestAPIWiki(t *testing.T) {
 	// Raw sources exclude the README dropzone explainer.
 	if len(ov.RawSources) != 1 || ov.RawSources[0] != "paper.pdf" {
 		t.Errorf("raw sources should be [paper.pdf]; got %v", ov.RawSources)
+	}
+}
+
+// A freshly scaffolded wiki has an index whose only entries are commented-out
+// examples, so no category survives. The list must still marshal as [] — the UI
+// spreads it, and a null crashes the tab.
+func TestAPIWikiScaffoldCategoriesNotNull(t *testing.T) {
+	srv := testServer(t, tempWorkspace(t, map[string]string{
+		"docs/wiki/index.md": "# Wiki index\n\n## Concepts\n\n<!-- - [Example](pages/example.md) — scaffold. -->\n",
+	}))
+	resp, err := http.Get(srv.URL + "/api/wiki")
+	if err != nil {
+		t.Fatalf("GET /api/wiki: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(body), `"categories":[]`) {
+		t.Errorf("categories must marshal as []; got %s", body)
 	}
 }
 
