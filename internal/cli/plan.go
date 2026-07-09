@@ -58,24 +58,28 @@ func planRun(args []string) int {
 	var root string
 	var autonomous, assumeYes bool
 	var sessionBudget float64
-	var maxIterations, maxRetries, maxRepairs int
+	var maxIterations, stall, maxRetries, maxRepairs int
 	addRoot(fs, &root)
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
-	fs.IntVar(&maxIterations, "max-iterations", 25, "Maximum loop iterations before stopping.")
-	fs.IntVar(&maxRetries, "max-retries", 2, "Retries per step before the runner escalates to a repair session.")
-	fs.IntVar(&maxRepairs, "max-repairs", 2, "Repair sessions a feat may spend across runs before its block sticks. 0 disables repair.")
+	fs.IntVar(&maxIterations, "max-iterations", 100, "Sessions the run may spend; one iteration is one claude session.")
+	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
+	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
+	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--max-retries N] [--max-repairs N]")
+		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--stall N]")
 		return 1
 	}
 	if autonomous {
 		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
+	}
+	if maxRetries != 0 || maxRepairs != 0 {
+		render.Warn("--max-retries/--max-repairs are deprecated no-ops: every failure feeds the next session, bounded by --max-iterations and --stall")
 	}
 	slug := positionals[0]
 	if err := workspace.SafeName(slug, "plan"); err != nil {
@@ -93,8 +97,7 @@ func planRun(args []string) int {
 		AssumeYes:     assumeYes,
 		SessionBudget: sessionBudget,
 		MaxIterations: maxIterations,
-		MaxRetries:    maxRetries,
-		MaxRepairs:    maxRepairs,
+		Stall:         stall,
 		Out:           os.Stdout,
 	})
 	if err != nil {
@@ -311,18 +314,19 @@ func planApprove(args []string) int {
 	return 0
 }
 
-// planUnblock clears block markers so `plan run` picks the feats back up. It is the
-// escape hatch, not the main road: a mechanical block already clears itself on the
-// next run while repair budget remains, and a deviation is meant to be answered by
-// revising the plan and re-approving. Clearing a deviation by hand needs --force,
-// because it drops the session's objection without ever addressing it.
+// planUnblock clears block markers by hand. It is the escape hatch, not the main
+// road: the autonomous loop already clears every marker at the start of the next
+// `plan run` and retries — so this exists for scripting around a marker without
+// running, and for legacy markers. Clearing a non-mechanical marker (halt, a
+// legacy deviation, unknown) needs --force, because it discards what the session
+// reported without addressing it.
 func planUnblock(args []string) int {
 	fs := flag.NewFlagSet("plan unblock", flag.ContinueOnError)
 	var root string
 	var all, force, jsonOut bool
 	addRoot(fs, &root)
-	fs.BoolVar(&all, "all", false, "Unblock every blocked feat (deviations only with --force).")
-	fs.BoolVar(&force, "force", false, "Also clear deviation blocks, which normally clear by revising plan.md and re-approving.")
+	fs.BoolVar(&all, "all", false, "Unblock every blocked feat (non-mechanical kinds only with --force).")
+	fs.BoolVar(&force, "force", false, "Also clear halt/deviation/unknown markers, which carry something the session reported.")
 	addJSON(fs, &jsonOut)
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
@@ -363,12 +367,15 @@ func planUnblock(args []string) int {
 		if !b.Mechanical() && !force {
 			refused++
 			render.Warn(b.Feat + " [" + b.Kind + "] left blocked: " + firstLineOf(b.Reason))
-			if b.Kind == plan.BlockDeviation {
+			switch b.Kind {
+			case plan.BlockDeviation:
 				if b.Revision != "" {
 					render.Info("  proposed revision: " + b.Revision)
 				}
 				render.Info("  fold it into docs/plans/" + doc.Slug + "/plan.md and run `" + prog() + " plan approve " + doc.Slug + "`, or pass --force")
-			} else {
+			case plan.BlockHalt:
+				render.Info("  the session reported an impediment outside the workspace; fix it, then `" + prog() + " plan run " + doc.Slug + "` retries automatically (or pass --force)")
+			default:
 				// An untyped marker predates typed blocks, so we cannot tell whether a
 				// re-approval would answer it. Only an explicit --force clears it.
 				render.Info("  this marker predates typed blocks; inspect it, then pass --force to clear")

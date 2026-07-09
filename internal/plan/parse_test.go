@@ -188,15 +188,16 @@ func TestParseEmpty(t *testing.T) {
 }
 
 func TestHashPlanDeterministicAndSensitive(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := Dir(root, "p")
 	writeFile(t, filepath.Join(dir, "plan.md"), goodPlan)
 	writeFile(t, filepath.Join(dir, "seeds", "upload-pipeline", "requirements.md"), "# seed\n")
 
-	h1, err := HashPlan(dir)
+	h1, err := HashPlan(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, err := HashPlan(dir)
+	h2, err := HashPlan(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +207,7 @@ func TestHashPlanDeterministicAndSensitive(t *testing.T) {
 
 	// Editing a seed changes the hash.
 	writeFile(t, filepath.Join(dir, "seeds", "upload-pipeline", "requirements.md"), "# seed edited\n")
-	h3, err := HashPlan(dir)
+	h3, err := HashPlan(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,12 +218,67 @@ func TestHashPlanDeterministicAndSensitive(t *testing.T) {
 	// A CRLF re-checkout of plan.md must NOT look like drift (normalized hashing).
 	writeFile(t, filepath.Join(dir, "seeds", "upload-pipeline", "requirements.md"), "# seed\n")
 	writeFile(t, filepath.Join(dir, "plan.md"), replaceLF(goodPlan))
-	h4, err := HashPlan(dir)
+	h4, err := HashPlan(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if h4 != h1 {
 		t.Errorf("CRLF plan.md must hash identically to LF; got %s vs %s", h4, h1)
+	}
+}
+
+// TestHashPlanCoversTheStackContract pins the fix for the stale-deviation trap: a
+// session that blocks on a missing stack row is answered by adding that row, so
+// the row must be inside the approval hash. Otherwise `plan approve` recomputes
+// the same hash, ClearStaleDeviations skips the marker, and the feat blocks forever.
+func TestHashPlanCoversTheStackContract(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(Dir(root, "p"), "plan.md"), goodPlan)
+
+	// A workspace with no tech contract hashes exactly as it did before stack rows
+	// joined the stream — adding the input must not churn every existing approval.
+	bare, err := HashPlan(root, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n")
+	withStack, err := HashPlan(root, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withStack == bare {
+		t.Fatalf("adding the Decided table must change the hash")
+	}
+
+	// Answering an open decision — a new row — moves the hash. This is what lets a
+	// deviation clear on the next `plan approve`.
+	writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n"+
+		"| Frontend lint | ESLint | 9.x | Vite react-ts default | |\n")
+	added, err := HashPlan(root, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if added == withStack {
+		t.Errorf("adding a Decided row must change the hash — otherwise the deviation never clears")
+	}
+
+	// Prose outside the Decided table is not the contract; a typo fix there must not
+	// drift every approved plan in the workspace.
+	writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\nSome revised prose.\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n"+
+		"| Frontend lint | ESLint | 9.x | Vite react-ts default | |\n"+
+		"\n## Rules\n\n1. The contract is law.\n")
+	prose, err := HashPlan(root, "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prose != added {
+		t.Errorf("prose outside the Decided table must not change the hash")
 	}
 }
 

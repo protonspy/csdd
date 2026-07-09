@@ -65,13 +65,31 @@ func List(root string) ([]string, error) {
 	return out, nil
 }
 
-// HashPlan computes the approval-binding content hash over plan.md plus every
-// file under seeds/, sorted by workspace path (R4.1, §5.4). Content is
-// line-ending normalized (via manifest.Hash) so a CRLF re-checkout never looks
-// like drift — the exact discipline phaseContentHash uses for specs. The
-// per-file path is folded into the hashed stream so renaming a seed changes the
-// hash even when its bytes do not.
-func HashPlan(dir string) (string, error) {
+// HashPlan computes the approval-binding content hash over plan.md, every file
+// under seeds/, and the Decided rows of docs/stack.md, sorted by workspace path
+// (R4.1, §5.4). Content is line-ending normalized (via manifest.Hash) so a CRLF
+// re-checkout never looks like drift — the exact discipline phaseContentHash uses
+// for specs. The per-file path is folded into the hashed stream so renaming a seed
+// changes the hash even when its bytes do not.
+//
+// The stack rows belong in the hash because Brief inlines them in full (R7.2):
+// they are part of the contract a session is handed, so a decision recorded as a
+// new row genuinely changes the contract, and the approval must re-bind to it.
+func HashPlan(root, slug string) (string, error) {
+	return hashPlan(root, slug, true)
+}
+
+// HashPlanCore hashes only plan.md + seeds/** — the part of the contract nobody
+// may change while a run is live. A session recording a decision moves HashPlan
+// (the stack rows are inside it) but never HashPlanCore; an edit to the plan
+// itself moves both. The runner compares the two to tell "decision recorded:
+// re-bind and continue" from "the approved plan changed: stop".
+func HashPlanCore(root, slug string) (string, error) {
+	return hashPlan(root, slug, false)
+}
+
+func hashPlan(root, slug string, includeStack bool) (string, error) {
+	dir := Dir(root, slug)
 	var b strings.Builder
 	planMD, err := os.ReadFile(planMDPath(dir))
 	if err != nil {
@@ -101,7 +119,36 @@ func HashPlan(dir string) (string, error) {
 		}
 		writeHashEntry(&b, filepath.ToSlash(rel), data)
 	}
+	if includeStack {
+		if rows := hashableStackRows(root); rows != "" {
+			writeHashEntry(&b, "docs/stack.md#decided", []byte(rows))
+		}
+	}
 	return manifest.Hash(b.String()), nil
+}
+
+// hashableStackRows renders the Decided table as a canonical, order-independent
+// stream — one sorted line per row, every cell folded in, so editing a row's Why
+// or Version is drift just as much as changing its Choice. Only the table is
+// hashed, never the surrounding prose: a typo fix in stack.md's Rules section must
+// not invalidate an approval. A workspace with no tech contract yields "", which
+// keeps its hash byte-identical to what a pre-stack-rows csdd computed.
+func hashableStackRows(root string) string {
+	rows := decidedRows(root)
+	if len(rows) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(rows))
+	for name := range rows {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, name := range names {
+		r := rows[name]
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", name, r.Domain, r.Choice, r.Version, r.Why, r.Refs)
+	}
+	return b.String()
 }
 
 // writeHashEntry appends one canonical (path, content) record to the hash stream.

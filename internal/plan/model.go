@@ -108,10 +108,15 @@ func (d *PlanDoc) FeatSlugs() []string {
 const planSchemaVersion = 1
 
 // PlanApproval binds an approval to exact content. ContentHash covers plan.md +
-// seeds/** (R4.1) so any post-approval edit is detectable as drift (R4.2).
+// seeds/** + the docs/stack.md Decided rows (R4.1) so any post-approval edit is
+// detectable as drift (R4.2). CoreHash covers only plan.md + seeds/** — the part
+// nobody may change mid-run. The split is what lets the runner tell a recorded
+// decision (a new stack row: re-bind and continue) from real drift (an edited
+// plan: stop).
 type PlanApproval struct {
 	Approved    bool   `json:"approved"`
 	ContentHash string `json:"content_hash,omitempty"`
+	CoreHash    string `json:"core_hash,omitempty"`
 	ApprovedAt  string `json:"approved_at,omitempty"`
 }
 
@@ -125,16 +130,28 @@ type PlanJSON struct {
 }
 
 // Verdict is the structured result a runner session returns for one step (§5.6).
-// Status is "done" or "blocked"; Revision carries the deviation proposal when the
-// session blocks (principle 5 — deviation is an event, not an improvisation).
+// It is how the session DECLARES its intent to the loop — the runner never
+// infers it. Status says what to do next: "done" asks the runner to verify with
+// the gates and advance, "progress" hands unfinished-but-honest work to the next
+// session (Summary carries the handoff), and "halt" ends the whole run because
+// something outside the workspace blocks it. Decisions is the audit trail of the
+// open decisions the session resolved and recorded this iteration (stack rows,
+// ADRs); each one is journaled, and the runner re-binds the approval hash to the
+// recorded contract.
 type Verdict struct {
-	Status   string `json:"status"`
-	Summary  string `json:"summary"`
-	Revision string `json:"revision,omitempty"`
+	Status    string   `json:"status"`
+	Summary   string   `json:"summary"`
+	Decisions []string `json:"decisions,omitempty"`
+	Revision  string   `json:"revision,omitempty"` // legacy blocked-verdict proposal
 }
 
-// Verdict status values.
+// Verdict status values. VerdictBlocked is the legacy status older briefs taught:
+// the runner still parses it, but treats it as a failed iteration with coaching —
+// in the autonomous loop, decisions are the session's to make and record, not to
+// stop on.
 const (
-	VerdictDone    = "done"
-	VerdictBlocked = "blocked"
+	VerdictDone     = "done"
+	VerdictProgress = "progress"
+	VerdictHalt     = "halt"
+	VerdictBlocked  = "blocked"
 )

@@ -62,12 +62,15 @@ an initiative into **feats**, each becoming exactly one spec.
   validated plan for you to `csdd plan approve`. A single feature stays on the
   lighter `quick-prd` on-ramp.
 - **Never edit an approved plan, and never execute approvals, during a run.**
-  `csdd plan run` is csdd-controlled: the runner plays the human at each gate — it
-  owns `csdd spec approve` and the plan's Quality Gates, while the session runs the
-  csdd dev-cycle and owns git (branch, `/csdd-commit`, the PR). Don't run
+  `csdd plan run` is a dumb loop plus a verifier: it runs the gates, owns
+  `csdd spec approve`, and journals — while the session controls the flow, runs
+  the csdd dev-cycle, and owns git (branch, `/csdd-commit`, the PR). Don't run
   `csdd spec/plan approve` yourself, and don't edit `plan.md`/`plan.json` — editing
-  an approved plan is drift and pauses autonomy until re-approval.
-- **Deviations go through Revise, not improvisation.** When a step hits an
-  unforeseen problem, return a `blocked` verdict with a revision proposal; folding
-  it into the plan and re-approving is the PRD skill's **Revise** workflow — a
-  human act, never a silent workaround.
+  an approved plan is real drift and stops autonomy until re-approval.
+- **Decisions are recorded, never improvised silently.** When a step needs a
+  technology or trade-off the contract doesn't cover, the session decides it,
+  records it (a `docs/stack.md` Decided row; a `docs/adr` record when the why
+  needs more than a line), and declares it in the verdict's `decisions` — the
+  runner re-binds the approval automatically and the loop continues. Audit the
+  run's decisions afterwards in `docs/plans/<slug>/log.md`; plan-shape changes
+  still go through the PRD skill's **Revise** workflow and re-approval.

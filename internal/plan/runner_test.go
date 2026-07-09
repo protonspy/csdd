@@ -68,9 +68,12 @@ func TestParseVerdict(t *testing.T) {
 		wantErr bool
 	}{
 		{"plain", `{"status":"done","summary":"ok"}`, VerdictDone, false},
-		{"blocked", `{"status":"blocked","summary":"stuck","revision":"split it"}`, VerdictBlocked, false},
+		{"progress", `{"status":"progress","summary":"half the parser is in; wire the CLI next"}`, VerdictProgress, false},
+		{"halt", `{"status":"halt","summary":"no DATABASE_URL secret"}`, VerdictHalt, false},
+		{"decisions", `{"status":"done","summary":"ok","decisions":["Frontend lint = ESLint"]}`, VerdictDone, false},
+		{"legacy blocked", `{"status":"blocked","summary":"stuck","revision":"split it"}`, VerdictBlocked, false},
 		{"envelope", `{"type":"result","result":"{\"status\":\"done\",\"summary\":\"ok\"}"}`, VerdictDone, false},
-		{"envelope prose+json", `{"result":"Here is my verdict: {\"status\":\"blocked\",\"summary\":\"x\"}"}`, VerdictBlocked, false},
+		{"envelope prose+json", `{"result":"Here is my verdict: {\"status\":\"halt\",\"summary\":\"x\"}"}`, VerdictHalt, false},
 		{"uppercase", `{"status":"DONE","summary":"ok"}`, VerdictDone, false},
 		{"garbage", `not json at all`, "", true},
 		{"bad status", `{"status":"maybe","summary":"?"}`, "", true},
@@ -172,7 +175,10 @@ func TestRunnerRunsWithDirtyRunnerOwnedTree(t *testing.T) {
 	}
 }
 
-func TestRunnerRetryAppendsFailure(t *testing.T) {
+// TestRunnerProgressHandsOffToTheNextSession: a progress verdict skips the gates
+// (the session says it is not done) and its summary becomes the successor's
+// handoff, so a step bigger than one context window still converges.
+func TestRunnerProgressHandsOffToTheNextSession(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
 	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
@@ -180,69 +186,103 @@ func TestRunnerRetryAppendsFailure(t *testing.T) {
 	var briefs []string
 	gateCalls := 0
 	h := baseHooks()
-	// The session authors the change and checks its task box; the runner's gate
-	// then decides pass vs. retry. No commit — git is the session's own job.
-	h.Session = func(step Step, brief string, _ float64) (Verdict, error) {
+	h.Gate = func(string, string) (bool, string) { gateCalls++; return true, "" }
+	calls := 0
+	h.Session = func(_ Step, brief string, _ float64) (Verdict, error) {
 		briefs = append(briefs, brief)
+		calls++
+		if calls == 1 {
+			return Verdict{Status: VerdictProgress, Summary: "parser is in; the CLI wiring remains"}, nil
+		}
 		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
 		return Verdict{Status: VerdictDone}, nil
 	}
-	h.Gate = func(string, string) (bool, string) {
-		gateCalls++
-		if gateCalls == 1 {
-			return false, "FAIL: expected 3 got 4"
-		}
-		return true, ""
-	}
 
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, MaxRetries: 2, Out: &bytes.Buffer{}})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sum.Retries != 1 {
-		t.Errorf("expected 1 retry, got %d", sum.Retries)
+	if !sum.Completed || sum.Sessions != 2 {
+		t.Fatalf("progress then done should complete in 2 sessions, got %+v", sum)
 	}
-	if len(briefs) < 2 || !strings.Contains(briefs[1], "Previous attempt failed") || !strings.Contains(briefs[1], "expected 3 got 4") {
-		t.Errorf("retry brief should append the gate failure, got %v", briefs)
+	if gateCalls != 1 {
+		t.Errorf("a progress verdict must not run the gates; expected 1 gate call (the done), got %d", gateCalls)
 	}
-	if !sum.Completed {
-		t.Errorf("run should complete once the retried step passes")
+	if !strings.Contains(briefs[1], "Handoff from the previous session") || !strings.Contains(briefs[1], "the CLI wiring remains") {
+		t.Errorf("the second session should read the handoff:\n%s", briefs[1])
+	}
+	if sum.Failures != 0 {
+		t.Errorf("progress is not a failure, got %d", sum.Failures)
+	}
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| a | progress") {
+		t.Errorf("progress not journaled: %s", logData)
 	}
 }
 
-func TestRunnerBlockedVerdictContinues(t *testing.T) {
+// TestRunnerRebindsOnStackDecision: a session records an open decision as a new
+// Decided row mid-run. The next iteration sees the hash drift, recognizes the
+// core (plan.md + seeds) is untouched, re-binds the approval, journals it, and
+// the loop continues to completion instead of dying on drift.
+func TestRunnerRebindsOnStackDecision(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [ ] 1. do it\n")
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
 
 	h := baseHooks()
 	h.Session = func(step Step, _ string, _ float64) (Verdict, error) {
-		if step.Feat == "a" {
-			return Verdict{Status: VerdictBlocked, Summary: "cannot resolve", Revision: "split feat a"}, nil
-		}
-		// b authors its change and checks its box, so it advances despite a blocking.
-		writeFile(t, filepath.Join(root, "specs", "b", "tasks.md"), "- [x] 1. do it\n")
-		return Verdict{Status: VerdictDone}, nil
+		writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
+			"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+			"| Frontend lint | ESLint | 9.x | Vite react-ts default | |\n")
+		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
+		return Verdict{Status: VerdictDone, Summary: "done",
+			Decisions: []string{"Frontend lint = ESLint — Vite react-ts default, type-aware rules"}}, nil
 	}
 
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 8, MaxRetries: 1, Out: &bytes.Buffer{}})
+	var out bytes.Buffer
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &out})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// a is blocked, b advanced; the loop ends with nothing unblocked.
-	if _, blocked := ReadBlock(root, "p", "a"); !blocked {
-		t.Errorf("feat a should be blocked")
+	if !sum.Completed {
+		t.Fatalf("a recorded decision must not stop the loop, got %+v (%s)", sum, sum.Reason)
 	}
-	if sum.Steps < 1 {
-		t.Errorf("feat b should have advanced despite a being blocked")
+	if sum.Decisions != 1 {
+		t.Errorf("the decision should be counted, got %d", sum.Decisions)
 	}
-	if sum.Outcome != OutcomeNothing {
-		t.Errorf("expected OutcomeNothing after b done and a blocked, got %d", sum.Outcome)
+	// The approval was re-bound to the contract that now includes the row.
+	if _, drift, err := IsApproved(root, "p"); err != nil || drift {
+		t.Errorf("the plan should be approved at the new hash (drift=%v, err=%v)", drift, err)
 	}
-	// The deviation is journaled with its revision.
 	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	if !strings.Contains(string(logData), "| a | blocked") || !strings.Contains(string(logData), "split feat a") {
-		t.Errorf("deviation not journaled with revision: %s", logData)
+	for _, want := range []string{"contract re-bound", "| a | decision", "Frontend lint = ESLint"} {
+		if !strings.Contains(string(logData), want) {
+			t.Errorf("journal missing %q: %s", want, logData)
+		}
+	}
+}
+
+// TestRunnerPreflightRebindsADecisionRecordedBetweenRuns: rows added to the
+// Decided table while no run was live (the human, or a session that got capped
+// right after recording) fold in at startup instead of demanding a re-approve.
+func TestRunnerPreflightRebindsADecisionRecordedBetweenRuns(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	writeSpec(t, root, "a", allApproved, true, "- [x] 1. done\n")
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
+	writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
+		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
+		"| Backend lint | Ruff | current | Fast | |\n")
+
+	var out bytes.Buffer
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), MaxIterations: 3, Out: &out})
+	if err != nil {
+		t.Fatalf("a stack-only drift at startup should re-bind, not refuse: %v", err)
+	}
+	if !sum.Completed {
+		t.Errorf("run should complete, got %+v", sum)
+	}
+	if !strings.Contains(out.String(), "contract re-bound") {
+		t.Errorf("the startup re-bind should be announced:\n%s", out.String())
 	}
 }
 

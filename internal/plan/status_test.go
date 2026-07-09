@@ -129,7 +129,7 @@ status: approved
 	}
 
 	// Approve at the current hash → approved, no drift.
-	h, err := HashPlan(dir)
+	h, err := HashPlan(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}

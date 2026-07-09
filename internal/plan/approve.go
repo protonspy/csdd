@@ -5,14 +5,19 @@ import (
 )
 
 // ApprovePlan writes plan.json binding an approval to the exact current content
-// of plan.md + seeds/** (R4.1). It assumes validation has already passed (the CLI
-// runs ValidatePlan and refuses on findings first); this function is purely the
-// mechanical state write — the plan analog of SpecApprove's final step, and the
-// only place a plan is marked approved (design principle 3). now is injected so
-// callers and tests stay deterministic where they need to be.
+// of plan.md + seeds/** + the docs/stack.md Decided rows (R4.1). It assumes
+// validation has already passed (the CLI runs ValidatePlan and refuses on findings
+// first); this function is purely the mechanical state write — the plan analog of
+// SpecApprove's final step, and the only place a plan is marked approved (design
+// principle 3). now is injected so callers and tests stay deterministic where they
+// need to be.
 func ApprovePlan(root string, doc *PlanDoc, now time.Time) error {
 	dir := Dir(root, doc.Slug)
-	h, err := HashPlan(dir)
+	h, err := HashPlan(root, doc.Slug)
+	if err != nil {
+		return err
+	}
+	core, err := HashPlanCore(root, doc.Slug)
 	if err != nil {
 		return err
 	}
@@ -25,6 +30,7 @@ func ApprovePlan(root string, doc *PlanDoc, now time.Time) error {
 		Approvals: PlanApproval{
 			Approved:    true,
 			ContentHash: h,
+			CoreHash:    core,
 			ApprovedAt:  now.UTC().Format("2006-01-02T15:04:05Z"),
 		},
 	})
@@ -32,8 +38,10 @@ func ApprovePlan(root string, doc *PlanDoc, now time.Time) error {
 
 // IsApproved reports a plan's approval state and whether its content has drifted
 // since approval (R4.2). Drift is a hash mismatch between the stored approval and
-// the current plan.md + seeds/**; an unapproved plan is (false, false).
-// next/run consult this to refuse autonomous execution on drift.
+// the current plan.md + seeds/** + docs/stack.md Decided rows; an unapproved plan
+// is (false, false). next/run consult this to refuse autonomous execution on drift.
+// Editing the tech contract therefore drifts every plan that was approved against
+// the old one — the contract genuinely changed, and re-approving is the acknowledgement.
 func IsApproved(root, slug string) (approved, drift bool, err error) {
 	dir := Dir(root, slug)
 	pj, ok, err := LoadPlanJSON(dir)
@@ -43,7 +51,7 @@ func IsApproved(root, slug string) (approved, drift bool, err error) {
 	if pj.Approvals.ContentHash == "" {
 		return true, false, nil // approved by an older writer with no hash — trust it
 	}
-	h, herr := HashPlan(dir)
+	h, herr := HashPlan(root, slug)
 	if herr != nil {
 		return true, false, herr
 	}
