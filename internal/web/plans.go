@@ -32,7 +32,9 @@ type webFeat struct {
 	State        string   `json:"state"`
 	TasksTotal   int      `json:"tasks_total"`
 	TasksChecked int      `json:"tasks_checked"`
+	BlockKind    string   `json:"block_kind,omitempty"`
 	BlockReason  string   `json:"block_reason,omitempty"`
+	BlockLog     string   `json:"block_log,omitempty"`
 }
 
 // milestoneProgress is per-milestone completion, in first-seen order.
@@ -119,7 +121,8 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 		d.Feats = append(d.Feats, webFeat{
 			Slug: f.Slug, Num: f.Num, Objective: f.Objective, Milestone: f.Milestone,
 			Depends: f.Depends, Parallel: f.Parallel, State: s.State,
-			TasksTotal: s.TasksTotal, TasksChecked: s.TasksChecked, BlockReason: s.BlockReason,
+			TasksTotal: s.TasksTotal, TasksChecked: s.TasksChecked,
+			BlockKind: s.BlockKind, BlockReason: s.BlockReason, BlockLog: s.BlockLog,
 		})
 		mi, ok := milestoneIndex[f.Milestone]
 		if !ok {

@@ -235,7 +235,9 @@ export interface PlanFeat {
   state: string
   tasks_total: number
   tasks_checked: number
+  block_kind?: string
   block_reason?: string
+  block_log?: string
 }
 
 export interface MilestoneProgress {

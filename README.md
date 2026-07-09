@@ -58,7 +58,7 @@ csdd spec generate my-feature --artifact requirements   # → validate → appro
 | `csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) — the complement of `init --exclude` |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
 | `csdd spec init · generate · validate · approve · status · test-report` | the requirements → design → tasks gated lifecycle |
-| `csdd plan init · validate · approve · status · next · brief · generate · run` | decompose an initiative into feats; drive each feat → spec → shipped code |
+| `csdd plan init · validate · approve · status · next · brief · generate · run · unblock` | decompose an initiative into feats; drive each feat → spec → shipped code |
 | `csdd sandbox init · doctor` | scaffold a default-deny-egress devcontainer and prove its isolation |
 | `csdd graph build · query · path · explain · analyze · export` | the knowledge-base **brain** — a structured index over the whole workspace |
 | `csdd wiki init · lint` | the LLM-authored knowledge base under `docs/` |
@@ -284,14 +284,23 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
    (human gate)         (csdd-controlled)     (human gate)
 ```
 
-`csdd plan run <slug>` is the **runner**: autonomous development that plays the human at each gate — it drives `csdd spec approve` and the plan's Quality Gates around every session, while the session itself runs the csdd SDD+TDD dev-cycle and owns git (branch, `/csdd-commit`, the pre-push gate, the PR). The runner never commits or manipulates git — that responsibility stays where the dev-cycle already lives, so the loop is *just session control*. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval. A step that hits an unforeseen problem returns a `blocked` verdict with a revision proposal; folding it back in and re-approving is a human act (the PRD skill's **Revise** workflow), never a silent workaround.
+`csdd plan run <slug>` is the **runner**: autonomous development that plays the human at each gate — it drives `csdd spec approve` and the plan's Quality Gates around every session, while the session itself runs the csdd SDD+TDD dev-cycle and owns git (branch, `/csdd-commit`, the pre-push gate, the PR). The runner never commits or manipulates git — that responsibility stays where the dev-cycle already lives, so the loop is *just session control*. Approval is bound to a **content hash** — any edit to an approved plan is drift and pauses autonomy until re-approval.
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
-                        --session-budget 5   # per-session USD cap · --max-iterations · --max-retries
+                        --session-budget 5   # per-session USD cap · --max-iterations · --max-retries · --max-repairs
+csdd plan unblock <slug> [feat…] [--all]    # clear block markers and let the runner pick the feats back up
 ```
+
+#### When a feat blocks
+
+A blocked feat is skipped by the sequencer, so the two ways out have to be legible. They differ by **why** it blocked, and `plan status` prints the kind.
+
+A **mechanical** block — gates red after every retry, a failed scaffold, a brief that would not assemble — is a fact about one attempt, not about the plan. The runner writes every attempt's untruncated output to `.csdd/plan/<slug>/failures/<feat>/<step>.log`, then spends one **repair session** on the step: a fresh session that reads the whole failure history rather than just the last error, and is told to find the root cause instead of replaying the edit that failed. If that still fails, the feat parks with its checkbox retracted — the gates refuted the session's claim that the task was done — and the *next* `plan run` clears the marker and tries again, until the feat has spent its `--max-repairs` budget (default 2). Only then does the block stick, and `csdd plan unblock <slug> <feat>` is how you hand it back.
+
+A **deviation** — the session returned a `blocked` verdict because it hit an open decision — is a fact about the plan, and no amount of retrying answers it. It stays blocked until the plan changes: fold the revision proposal into `plan.md` and run `csdd plan approve`, which retires every deviation raised against the plan you just replaced (the PRD skill's **Revise** workflow). Re-approving an *unchanged* plan resolves nothing and clears nothing. `plan unblock --force` drops the objection without addressing it, and is not the road you want.
 
 ### 🔒 `sandbox` — isolation before autonomy
 

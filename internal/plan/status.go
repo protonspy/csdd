@@ -35,7 +35,9 @@ type FeatStatus struct {
 	State        string `json:"state"`
 	TasksTotal   int    `json:"tasks_total,omitempty"`
 	TasksChecked int    `json:"tasks_checked,omitempty"`
+	BlockKind    string `json:"block_kind,omitempty"` // which way out applies (see Block)
 	BlockReason  string `json:"block_reason,omitempty"`
+	BlockLog     string `json:"block_log,omitempty"`
 }
 
 // PlanStatus is the whole-plan derived view: plan-level flags (approval, drift,
@@ -69,15 +71,19 @@ func DeriveStatus(root string, doc *PlanDoc) (PlanStatus, error) {
 	return st, nil
 }
 
-// deriveFeatStatus resolves a single feat's state. A block marker always wins
-// (an unblock is a runner/human act); otherwise the state follows spec approvals
-// and, once ready, the tasks.md checkbox progress.
+// deriveFeatStatus resolves a single feat's state. A block marker always wins —
+// clearing it is a runner or human act (`plan run` retires the repairable ones,
+// `plan approve` retires deviations against a revised plan, `plan unblock` retires
+// any) — otherwise the state follows spec approvals and, once ready, the tasks.md
+// checkbox progress.
 func deriveFeatStatus(root, slug string, f Feat) FeatStatus {
 	fs := FeatStatus{Slug: f.Slug, Num: f.Num, Milestone: f.Milestone}
 
-	if reason, blocked := blockMarker(root, slug, f.Slug); blocked {
+	if b, blocked := ReadBlock(root, slug, f.Slug); blocked {
 		fs.State = StateBlocked
-		fs.BlockReason = reason
+		fs.BlockKind = b.Kind
+		fs.BlockReason = b.Reason
+		fs.BlockLog = b.Log
 		return fs
 	}
 
@@ -162,31 +168,35 @@ func stateDir(root, slug string) string {
 	return filepath.Join(paths.State(root), "plan", slug)
 }
 
-// blockMarker reads .csdd/plan/<slug>/blocked/<feat>, returning its reason text
-// and whether the feat is currently blocked.
-func blockMarker(root, slug, feat string) (string, bool) {
-	data, err := os.ReadFile(filepath.Join(stateDir(root, slug), "blocked", feat))
-	if err != nil {
-		return "", false
-	}
-	return strings.TrimSpace(string(data)), true
-}
+// A deviation entry ends in a bare `blocked` outcome. A mechanical block is
+// journaled as `blocked (<kind>)` and an unblock as `unblocked`, so neither can be
+// mistaken for the thing the human owes the plan.
+var (
+	reDeviationEntry = regexp.MustCompile(`^##\s+\[\d{4}-\d{2}-\d{2}\].*\|\s*` + regexp.QuoteMeta(VerdictBlocked) + `\s*$`)
+	reUnblockedEntry = regexp.MustCompile(`^##\s+\[\d{4}-\d{2}-\d{2}\].*\|\s*unblocked\b`)
+)
 
-var reDeviationEntry = regexp.MustCompile(`^##\s+\[\d{4}-\d{2}-\d{2}\].*\|\s*` + regexp.QuoteMeta(VerdictBlocked) + `\s*$`)
-
-// countDeviations counts blocked entries in the run journal (log.md). A blocked
-// entry is a structured deviation the human must fold into the plan and re-approve
-// (principle 5); its presence is surfaced as a plan-level flag (R5.2).
+// countDeviations counts the deviations in the run journal (log.md) that nobody has
+// answered yet: blocked entries minus the unblocks that retired them. A deviation is
+// a structured objection the human must fold into the plan and re-approve
+// (principle 5); the outstanding count is surfaced as a plan-level flag (R5.2).
 func countDeviations(dir string) int {
 	data, err := os.ReadFile(filepath.Join(dir, "log.md"))
 	if err != nil {
 		return 0
 	}
-	n := 0
+	blocked, unblocked := 0, 0
 	for _, line := range strings.Split(textutil.NormalizeNewlines(string(data)), "\n") {
-		if reDeviationEntry.MatchString(strings.TrimRight(line, " \t")) {
-			n++
+		line = strings.TrimRight(line, " \t")
+		switch {
+		case reDeviationEntry.MatchString(line):
+			blocked++
+		case reUnblockedEntry.MatchString(line):
+			unblocked++
 		}
 	}
-	return n
+	if n := blocked - unblocked; n > 0 {
+		return n
+	}
+	return 0
 }
