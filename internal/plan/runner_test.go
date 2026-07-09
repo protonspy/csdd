@@ -167,7 +167,7 @@ func TestRunnerRunsWithDirtyRunnerOwnedTree(t *testing.T) {
 	if !sum.Completed {
 		t.Errorf("run should complete despite a pre-existing dirty tree, got %+v", sum)
 	}
-	if _, blocked := blockMarker(root, "p", "a"); blocked {
+	if _, blocked := ReadBlock(root, "p", "a"); blocked {
 		t.Errorf("feat a must not be blocked by pre-existing dirt")
 	}
 }
@@ -230,7 +230,7 @@ func TestRunnerBlockedVerdictContinues(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a is blocked, b advanced; the loop ends with nothing unblocked.
-	if _, blocked := blockMarker(root, "p", "a"); !blocked {
+	if _, blocked := ReadBlock(root, "p", "a"); !blocked {
 		t.Errorf("feat a should be blocked")
 	}
 	if sum.Steps < 1 {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/protonspy/csdd/internal/paths"
@@ -44,6 +45,8 @@ func runPlan(args []string, templates embed.FS) int {
 		return planGenerate(rest, templates)
 	case "run":
 		return planRun(rest)
+	case "unblock":
+		return planUnblock(rest)
 	default:
 		render.Err("unknown plan action: " + action)
 		return 1
@@ -55,19 +58,20 @@ func planRun(args []string) int {
 	var root string
 	var autonomous, assumeYes bool
 	var sessionBudget float64
-	var maxIterations, maxRetries int
+	var maxIterations, maxRetries, maxRepairs int
 	addRoot(fs, &root)
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
 	fs.IntVar(&maxIterations, "max-iterations", 25, "Maximum loop iterations before stopping.")
-	fs.IntVar(&maxRetries, "max-retries", 2, "Retries per step before marking the feat blocked.")
+	fs.IntVar(&maxRetries, "max-retries", 2, "Retries per step before the runner escalates to a repair session.")
+	fs.IntVar(&maxRepairs, "max-repairs", 2, "Repair sessions a feat may spend across runs before its block sticks. 0 disables repair.")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--max-retries N]")
+		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--max-retries N] [--max-repairs N]")
 		return 1
 	}
 	if autonomous {
@@ -90,6 +94,7 @@ func planRun(args []string) int {
 		SessionBudget: sessionBudget,
 		MaxIterations: maxIterations,
 		MaxRetries:    maxRetries,
+		MaxRepairs:    maxRepairs,
 		Out:           os.Stdout,
 	})
 	if err != nil {
@@ -293,7 +298,147 @@ func planApprove(args []string) int {
 		return 1
 	}
 	render.OK(doc.Slug + ": approved (bound to the current plan.md + seeds hash)")
+	// Approving a revised plan IS the unblock for the deviations raised against the
+	// old one: the contract the session objected to no longer exists (principle 5).
+	cleared, err := plan.ClearStaleDeviations(r, doc.Slug, time.Now())
+	if err != nil {
+		render.Warn("approved, but could not retire the deviation markers: " + err.Error())
+		return 0
+	}
+	for _, feat := range cleared {
+		render.OK("unblocked " + feat + " (its deviation was raised against the previous plan)")
+	}
 	return 0
+}
+
+// planUnblock clears block markers so `plan run` picks the feats back up. It is the
+// escape hatch, not the main road: a mechanical block already clears itself on the
+// next run while repair budget remains, and a deviation is meant to be answered by
+// revising the plan and re-approving. Clearing a deviation by hand needs --force,
+// because it drops the session's objection without ever addressing it.
+func planUnblock(args []string) int {
+	fs := flag.NewFlagSet("plan unblock", flag.ContinueOnError)
+	var root string
+	var all, force, jsonOut bool
+	addRoot(fs, &root)
+	fs.BoolVar(&all, "all", false, "Unblock every blocked feat (deviations only with --force).")
+	fs.BoolVar(&force, "force", false, "Also clear deviation blocks, which normally clear by revising plan.md and re-approving.")
+	addJSON(fs, &jsonOut)
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
+		return failOnFlagParse(err)
+	}
+	if len(positionals) < 1 {
+		render.Err("usage: " + prog() + " plan unblock SLUG [FEAT...] [--all] [--force]")
+		return 1
+	}
+	slug, feats := positionals[0], positionals[1:]
+	r, doc, code := resolvePlan(root, slug)
+	if code != 0 {
+		return code
+	}
+	blocks := plan.ListBlocks(r, doc.Slug)
+	if len(blocks) == 0 {
+		if jsonOut {
+			return emitJSON(map[string]any{"plan": doc.Slug, "unblocked": []string{}})
+		}
+		render.OK(doc.Slug + ": no blocked feats")
+		return 0
+	}
+	if len(feats) == 0 && !all {
+		printBlocks(doc.Slug, blocks)
+		render.Err("name a feat to unblock, or pass --all")
+		return 1
+	}
+
+	selected, code := selectBlocks(blocks, feats, all)
+	if code != 0 {
+		return code
+	}
+	// An explicit feat name that we refuse is an error; --force is right there. A
+	// deviation swept up by --all is only skipped, so the mechanical ones still clear.
+	var unblocked []string
+	refused := 0
+	for _, b := range selected {
+		if !b.Mechanical() && !force {
+			refused++
+			render.Warn(b.Feat + " [" + b.Kind + "] left blocked: " + firstLineOf(b.Reason))
+			if b.Kind == plan.BlockDeviation {
+				if b.Revision != "" {
+					render.Info("  proposed revision: " + b.Revision)
+				}
+				render.Info("  fold it into docs/plans/" + doc.Slug + "/plan.md and run `" + prog() + " plan approve " + doc.Slug + "`, or pass --force")
+			} else {
+				// An untyped marker predates typed blocks, so we cannot tell whether a
+				// re-approval would answer it. Only an explicit --force clears it.
+				render.Info("  this marker predates typed blocks; inspect it, then pass --force to clear")
+			}
+			continue
+		}
+		if err := plan.Unblock(r, doc.Slug, b, prog()+" plan unblock", time.Now()); err != nil {
+			render.Err(err.Error())
+			return 1
+		}
+		unblocked = append(unblocked, b.Feat)
+	}
+
+	if jsonOut {
+		emitJSON(map[string]any{"plan": doc.Slug, "unblocked": unblocked, "refused": refused})
+	} else {
+		for _, f := range unblocked {
+			render.OK("unblocked " + f)
+		}
+		if len(unblocked) > 0 {
+			render.Info("next: `" + prog() + " plan run " + doc.Slug + "`")
+		}
+	}
+	if refused > 0 && !all {
+		return 2
+	}
+	return 0
+}
+
+// selectBlocks resolves the feats named on the command line against the plan's
+// blocks, or returns them all. A name that is not blocked is a typo worth failing on.
+func selectBlocks(blocks []plan.Block, feats []string, all bool) ([]plan.Block, int) {
+	if all {
+		return blocks, 0
+	}
+	byFeat := map[string]plan.Block{}
+	for _, b := range blocks {
+		byFeat[b.Feat] = b
+	}
+	out := make([]plan.Block, 0, len(feats))
+	for _, f := range feats {
+		b, ok := byFeat[f]
+		if !ok {
+			render.Err("feat '" + f + "' is not blocked")
+			return nil, 1
+		}
+		out = append(out, b)
+	}
+	return out, 0
+}
+
+func printBlocks(slug string, blocks []plan.Block) {
+	if len(blocks) == 0 {
+		return
+	}
+	fmt.Println(render.Bold("blocked feats in " + slug + ":"))
+	for _, b := range blocks {
+		fmt.Printf("  %-20s [%s] %s\n", b.Feat, b.Kind, firstLineOf(b.Reason))
+		if b.Log != "" {
+			fmt.Printf("  %-20s log: %s\n", "", b.Log)
+		}
+	}
+}
+
+// firstLineOf keeps a marker reason to one terminal line.
+func firstLineOf(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 func planNext(args []string) int {
@@ -343,6 +488,7 @@ func planNext(args []string) int {
 			emitJSON(map[string]string{"status": "nothing_unblocked"})
 		} else {
 			render.Warn("nothing unblocked: remaining feats are blocked or waiting on blocked deps")
+			printBlocks(doc.Slug, plan.ListBlocks(r, doc.Slug))
 		}
 		return 4
 	default: // SeqNotReady
@@ -534,14 +680,21 @@ func printPlanStatus(st plan.PlanStatus) {
 	// States are printed plain (no ANSI) so the fixed-width columns stay aligned
 	// regardless of terminal color support.
 	fmt.Printf("  %-3s %-*s  %-13s  %-10s  %s\n", "#", maxName, "feat", "state", "milestone", "progress")
+	blocked := 0
 	for _, f := range st.Feats {
 		progress := ""
 		if f.TasksTotal > 0 {
 			progress = fmt.Sprintf("%d/%d tasks", f.TasksChecked, f.TasksTotal)
 		}
 		if f.BlockReason != "" {
-			progress = f.BlockReason
+			blocked++
+			progress = "[" + f.BlockKind + "] " + firstLineOf(f.BlockReason)
 		}
 		fmt.Printf("  %-3s %-*s  %-13s  %-10s  %s\n", f.Num, maxName, f.Slug, f.State, f.Milestone, progress)
+	}
+	// A blocked feat is otherwise a dead end: the state says nothing about how to
+	// leave it, and the two exits differ by kind.
+	if blocked > 0 {
+		render.Info("blocked feats resume via `" + prog() + " plan unblock " + st.Slug + " --all` (mechanical) or by revising plan.md and re-approving (deviations)")
 	}
 }

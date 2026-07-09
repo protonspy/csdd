@@ -1,7 +1,7 @@
 ---
 description: Drive a csdd plan's autonomous loop — fresh sessions per step, gated and approved by the runner. Requires an approved, drift-free plan.
 argument-hint: <plan-slug> [--yes]
-allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(npx @protonspy/csdd plan:*)
+allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(csdd plan unblock:*), Bash(npx @protonspy/csdd plan:*)
 ---
 
 ## Task
@@ -21,6 +21,21 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
 
 The runner plays the human at each gate: it owns the phase approvals, while the
 session runs the csdd dev-cycle and owns git (branch, `/csdd-commit`, the pre-push
-gate, the PR) — the runner never commits. If it records a `blocked` deviation, do
-not patch the plan mid-run — take it to the `prd` skill's Revise workflow and
-re-approve.
+gate, the PR) — the runner never commits.
+
+## When the run stops with blocked feats
+
+`csdd plan status <slug>` prints each block's **kind**, and the kind decides what to
+do. Never `rm` a marker under `.csdd/` by hand.
+
+- **`gate-failure` / `scaffold` / `brief`** — mechanical. The runner already
+  retried, already spent a repair session on the full failure history, and wrote
+  every attempt's output to `.csdd/plan/<slug>/failures/<feat>/<step>.log`. **Read
+  that log before doing anything else.** If the fix is within the step's contract,
+  make it, then `csdd plan unblock <slug> <feat>` and re-run. A feat that has spent
+  its `--max-repairs` budget will not retry itself again until you do.
+- **`deviation`** — the session hit an open decision, so the plan itself is wrong
+  and no retry can answer it. Do not patch the plan mid-run and do not pass
+  `--force`: take the recorded revision proposal to the `prd` skill's Revise
+  workflow. Re-approving the revised plan (`csdd plan approve <slug>`) is what
+  clears the block — re-approving an unchanged plan clears nothing.
