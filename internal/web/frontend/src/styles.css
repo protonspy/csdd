@@ -1821,3 +1821,251 @@ code {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ---------- Graph tab (react-graph-vis / vis-network) ---------- */
+.graph-view {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.graph-canvas {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.graph-toolbar {
+  /* Stacks above .graph-stage so the search dropdown is not swallowed by the
+     vis canvas, which sits in the next sibling and would otherwise paint over
+     it and intercept the click. */
+  position: relative;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.graph-search {
+  position: relative;
+  width: 260px;
+}
+.graph-search input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+.graph-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.graph-matches {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  max-height: 260px;
+  overflow: auto;
+  box-shadow: 0 8px 24px #0008;
+}
+.graph-matches button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.graph-matches button:hover {
+  background: var(--bg-3);
+}
+.graph-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+}
+.graph-ctl input[type='range'] {
+  width: 84px;
+  accent-color: var(--accent);
+}
+.graph-ctl b {
+  color: var(--text);
+  min-width: 18px;
+  text-align: right;
+}
+.graph-btn {
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.graph-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.graph-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.graph-notice {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  background: var(--bg-2);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.graph-legend {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  max-width: 70%;
+  font-size: 11px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.graph-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.graph-legend b {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+.graph-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.graph-panel {
+  width: 320px;
+  flex: 0 0 320px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 13px;
+}
+.graph-panel h3 {
+  margin-top: 0;
+}
+.graph-panel h4 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.graph-conns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.graph-conns li {
+  margin: 1px 0;
+}
+.graph-conns button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-conns button:hover {
+  background: var(--bg-3);
+}
+.graph-arrow {
+  display: inline-block;
+  width: 14px;
+  color: var(--text-faint);
+}
+.graph-arrow.on {
+  color: var(--accent);
+}
+/* vis-network renders the popup into its own container; style the element we
+   hand it as `title`. */
+.graph-tip {
+  max-width: 380px;
+  white-space: normal;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.graph-tip div:first-child {
+  font-weight: 600;
+}
+.graph-tip div + div {
+  color: var(--text-dim);
+}
+div.vis-tooltip {
+  background: var(--bg-2) !important;
+  border: 1px solid var(--border-2) !important;
+  border-radius: var(--radius) !important;
+  color: var(--text) !important;
+  box-shadow: 0 8px 24px #0008 !important;
+  padding: 8px 10px !important;
+  font-family: var(--sans) !important;
+}

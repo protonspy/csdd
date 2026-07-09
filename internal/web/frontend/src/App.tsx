@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { useLive } from './useLive'
 import type { Artifact, Overview } from './types'
@@ -8,12 +8,15 @@ import { SpecView } from './components/SpecView'
 import { FileViewer } from './components/FileViewer'
 import { TestsView } from './components/TestsView'
 import { ResourceView } from './components/ResourceView'
-import { GraphView } from './components/GraphView'
 import { PlansView } from './components/PlansView'
 import { WikiView } from './components/WikiView'
 import { AuthScreen } from './components/AuthScreen'
 import { resourceKindsHint } from './resources'
 import type { ResourceKind } from './resources'
+
+// The Graph tab pulls in vis-network, which is heavy enough to dominate the
+// initial bundle. Split it out so it is only fetched when the tab is opened.
+const GraphView = lazy(() => import('./components/GraphView').then((m) => ({ default: m.GraphView })))
 
 // View is the top-level workspace area chosen from the header tabs. Specs and
 // Tests are full-width pages; Resources and Files use the contextual sidebar.
@@ -169,7 +172,11 @@ export function App() {
 
           {view === 'wiki' && <WikiView version={version} />}
 
-          {view === 'graph' && <GraphView version={version} />}
+          {view === 'graph' && (
+            <Suspense fallback={<EmptyPrompt title="Graph" hint="Loading graph…" />}>
+              <GraphView version={version} />
+            </Suspense>
+          )}
         </main>
       </div>
     </div>

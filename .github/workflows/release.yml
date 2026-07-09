@@ -38,6 +38,37 @@ jobs:
             *) echo "::error::version must look like vX.Y.Z (got '$VERSION')"; exit 1 ;;
           esac
 
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0   # tags — needed to tell a retry from a re-release
+
+      # A version is immutable. Re-dispatching an already-released version from a
+      # NEW commit is the one failure this pipeline cannot report: npm-publish
+      # skips every package that is already on the registry, the tag stays put,
+      # and the whole run goes green having shipped nothing. That is how v0.2.31
+      # ended up with the pre-#54 binary on npm and the post-#54 binary on the
+      # GitHub Release. Fail loudly instead.
+      #
+      # Re-dispatching the SAME commit is still allowed: that is the intended way
+      # to resume a run that died between npm-publish and the tag/Release step.
+      - name: Refuse to re-release an existing version from a different commit
+        env:
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "$VERSION is unreleased — proceeding"
+            exit 0
+          fi
+          tagged=$(git rev-list -n1 "refs/tags/$VERSION")
+          if [ "$tagged" != "$SHA" ]; then
+            echo "::error::$VERSION is already released and points at $tagged, but this run is on $SHA."
+            echo "::error::Publishing is idempotent, so re-running would ship nothing. Bump the version instead."
+            exit 1
+          fi
+          echo "$VERSION already tagged at this exact commit — resuming a partial release"
+
   # Reuse the full CI gate (gofmt, vet, build, race tests + mcp-server tests) —
   # no binaries are built or published unless this passes.
   ci:
@@ -110,10 +141,14 @@ jobs:
           fi
           rm -f "${bin}"
 
+      # Upload only what this run built. `dist/*` also swept up any stale tarball
+      # sitting in the checked-out dist/ — that is how csdd_v0.1.2_* rode along
+      # into every GitHub Release long after v0.1.2.
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: csdd-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
+          path: dist/csdd_${{ inputs.version }}_*
+          if-no-files-found: error
           retention-days: 7
 
   # Publish every npm package at the requested version. Authenticates with the
