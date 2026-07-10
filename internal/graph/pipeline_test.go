@@ -309,12 +309,30 @@ func TestWriteBuildDeterministicAndLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	onDisk, err := os.ReadFile(GraphJSONPath(dir))
+	onDisk, err := os.ReadFile(GraphGzPath(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(onDisk) != string(d1) {
 		t.Errorf("written file differs from returned bytes")
+	}
+	// The gzip blob is byte-stable across rebuilds (R7.2): a second build with the
+	// same graph produces an identical file, so nothing churns in git.
+	d2, err := WriteBuild(dir, g, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(d1) != string(d2) {
+		t.Errorf("gzip blob not byte-stable across rebuilds")
+	}
+	// It round-trips: decompress + parse recovers the node/edge counts.
+	back, err := ReadGraph(dir)
+	if err != nil {
+		t.Fatalf("ReadGraph: %v", err)
+	}
+	if len(back.Nodes) != len(g.Nodes) || len(back.Links) != len(g.Links) {
+		t.Errorf("round-trip lost data: got %d nodes/%d links, want %d/%d",
+			len(back.Nodes), len(back.Links), len(g.Nodes), len(g.Links))
 	}
 	// log.md gained a build heading in the documented format.
 	logData, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(GraphLogRel)))

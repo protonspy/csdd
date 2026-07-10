@@ -3,7 +3,7 @@
 csdd maintains a **knowledge base** in two cooperating halves. Use it; do not
 re-derive what it already holds.
 
-- **The graph** (`docs/graph/graph.json`, built by `csdd graph build`) is a
+- **The graph** (`docs/graph/graph.json.gz`, built by `csdd graph build`) is a
   structured brain over specs, `.claude/`, `docs/`, the tech contract, and the Go
   source. **Before you grep or read code** to understand structure, query it:
   `csdd graph query "<terms>"`, `csdd graph explain "<label>"`,
@@ -16,7 +16,7 @@ re-derive what it already holds.
 Discipline:
 
 - **Rebuild after you change** specs, tasks, `.claude/`, `docs/`, or `.go` files:
-  `csdd graph build` (byte-stable; commit the regenerated `graph.json` with the
+  `csdd graph build` (byte-stable; commit the regenerated `graph.json.gz` with the
   change).
 - **Gate before review/commit**: `csdd graph analyze --strict` (SDD + tech lints)
   and `csdd wiki lint` (wiki health) must be clean.

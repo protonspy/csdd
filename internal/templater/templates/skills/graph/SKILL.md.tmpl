@@ -21,7 +21,7 @@ globally). It never edits `docs/graph/` or `.csdd/` by hand — those are genera
 
 ## Execution Workflow
 
-Pick the moment, run the command, read the output — do not open `graph.json`.
+Pick the moment, run the command, read the output — do not open `graph.json.gz`.
 
 1. **Consult before searching (the brain-first habit).** Before you grep or read
    source to answer "what depends on X?", "what implements Y?", "where are the
@@ -35,7 +35,7 @@ Pick the moment, run the command, read the output — do not open `graph.json`.
      if I change it".
 2. **Rebuild after editing specs, tasks, or code.** Any change to `specs/`,
    `.claude/`, `docs/`, or `.go` files makes the index stale:
-   - `csdd graph build` — full deterministic rebuild of `docs/graph/graph.json`
+   - `csdd graph build` — full deterministic rebuild of `docs/graph/graph.json.gz`
      (+ one line appended to `docs/graph/log.md`). Byte-stable for an unchanged
      corpus, so commit the result with the change that caused it.
 3. **Analyze before review or commit.** Run the mechanical SDD lint and treat it
@@ -57,7 +57,7 @@ message, file} ], "god_nodes": [...] }`; filter `corpus` to focus on `spec`,
 - **Never hand-edit `docs/graph/` or `.csdd/`.** They are generated; edits are
   overwritten on the next `build` and corrupt the byte-stable diff. Change the
   *source* artifact and rebuild.
-- **`analyze` reflects the live corpus, not the last committed `graph.json`.** It
+- **`analyze` reflects the live corpus, not the last committed `graph.json.gz`.** It
   rebuilds in memory, so it is always current — but that means a green `analyze`
   needs the same working tree the reviewer will see.
 - **Range shorthand is a parse error.** `_Requirements: 3.1-3.5_` is reported,
@@ -71,15 +71,15 @@ message, file} ], "god_nodes": [...] }`; filter `corpus` to focus on `spec`,
 ## Verification Before Reporting
 
 - You ran the actual `csdd graph …` command this session and read its output —
-  never report graph facts from memory or a stale `graph.json`.
+  never report graph facts from memory or a stale `graph.json.gz`.
 - Before claiming the contract is clean, `csdd graph analyze --strict` exited 0.
 - After any spec/task/code edit you intend to commit, `csdd graph build` ran and
-  the regenerated `docs/graph/graph.json` is staged alongside the change.
+  the regenerated `docs/graph/graph.json.gz` is staged alongside the change.
 
 ## Completion Criteria
 
 - The question was answered by a graph query/path/explain, not by re-reading
   source, whenever the graph could answer it.
-- `docs/graph/graph.json` is current with the working tree (rebuilt after edits).
+- `docs/graph/graph.json.gz` is current with the working tree (rebuilt after edits).
 - `analyze` findings are either resolved or explicitly acknowledged to the human;
   none were silently ignored.
