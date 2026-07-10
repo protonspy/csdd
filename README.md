@@ -320,7 +320,7 @@ csdd sandbox doctor            # prove the isolation holds before bypass mode is
 
 ### 🧠 Graph — a structured brain over the workspace
 
-`csdd graph` builds a deterministic index (`docs/graph/graph.json`, byte-stable — commit it with the change) linking specs, tasks, `.claude/` artifacts, `docs/`, and source. **Consult it before you grep:**
+`csdd graph` builds a deterministic index (`docs/graph/graph.json.gz`, a byte-stable gzip blob — commit it with the change; conflicts are resolved by rebuilding, not hand-merging) linking specs, tasks, `.claude/` artifacts, `docs/`, and source. **Consult it before you grep:**
 
 ```bash
 csdd graph build              # rebuild the index (+ appends docs/graph/log.md)

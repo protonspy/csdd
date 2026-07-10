@@ -186,11 +186,11 @@ matches the context).
 
 Consult it before you grep. `query`/`path`/`explain`/`analyze` rebuild the graph in
 memory from the corpus, so their answers are always current even if the committed
-`graph.json` is stale.
+`graph.json.gz` is stale.
 
 | Tool | Parameters | What it does |
 |------|------------|--------------|
-| `csdd_graph_build` | `full?`, `json?`, `root?` | Rebuild `docs/graph/graph.json` from the corpus (specs, plans, ADRs, wiki, glossary, stack, CLAUDE.md, Go source). Incremental by default; `full` forces a complete rebuild. |
+| `csdd_graph_build` | `full?`, `json?`, `root?` | Rebuild `docs/graph/graph.json.gz` from the corpus (specs, plans, ADRs, wiki, glossary, stack, CLAUDE.md, Go source). Incremental by default; `full` forces a complete rebuild. |
 | `csdd_graph_query` | `terms`, `hops?`, `budget?`, `json?`, `root?` | Find nodes matching `terms` and show their neighborhood — the fast way to locate an artifact and what connects to it. Quote multi-word queries. |
 | `csdd_graph_path` | `from`, `to`, `maxHops?`, `json?`, `root?` | Shortest path between two nodes. Reports each endpoint's match tier (exact / prefix / substring), so a fuzzy resolution is never mistaken for an exact one. |
 | `csdd_graph_explain` | `label`, `json?`, `root?` | A node and all its connections, ordered by neighbor degree. |

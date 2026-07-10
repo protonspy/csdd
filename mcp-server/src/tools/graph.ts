@@ -17,7 +17,7 @@ export const graphTools: ToolDef[] = [
     name: "csdd_graph_build",
     title: "Graph build",
     description:
-      "Rebuild docs/graph/graph.json from the workspace corpus (specs, plans, ADRs, wiki, glossary, stack, CLAUDE.md, Go source). Incremental by default; pass full to force a complete rebuild.",
+      "Rebuild docs/graph/graph.json.gz from the workspace corpus (specs, plans, ADRs, wiki, glossary, stack, CLAUDE.md, Go source). Incremental by default; pass full to force a complete rebuild.",
     inputSchema: {
       full: z.boolean().optional().describe("Force a full rebuild instead of the incremental default."),
       json: jsonField,

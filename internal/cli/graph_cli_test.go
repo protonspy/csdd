@@ -37,12 +37,12 @@ func TestGraphBuildAndAnalyzeCLI(t *testing.T) {
 	dir := freshWorkspace(t)
 	seedSpec(t, dir)
 
-	// build writes docs/graph/graph.json and exits 0.
+	// build writes docs/graph/graph.json.gz and exits 0.
 	if code, out, errOut := run(t, "graph", "build", "--root", dir); code != 0 {
 		t.Fatalf("graph build failed: code=%d out=%s err=%s", code, out, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "docs", "graph", "graph.json")); err != nil {
-		t.Fatalf("graph.json not written: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, "docs", "graph", "graph.json.gz")); err != nil {
+		t.Fatalf("graph.json.gz not written: %v", err)
 	}
 
 	// analyze reports the untested criterion 1.2.

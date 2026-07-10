@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"time"
 
+	"github.com/protonspy/csdd/internal/graph"
 	"github.com/protonspy/csdd/internal/session"
 )
 
@@ -23,6 +25,11 @@ type overviewResponse struct {
 // deliberately opaque: the underlying os error embeds the absolute path, which
 // must not leak into the response body.
 var errFileNotFound = errors.New("file not found")
+
+// errGraphNotFound is surfaced when docs/graph/graph.json.gz is absent (no build
+// yet). Kept distinct from errFileNotFound so the Graph tab can show the "run
+// csdd graph build" hint rather than a generic file error.
+var errGraphNotFound = errors.New("graph not built")
 
 // pinggyTokenFilename is the workspace-local pinggy Pro token store (mirrors the
 // cli package's constant). It is never served, even with a valid auth token.
@@ -83,6 +90,24 @@ func newMux(root string, h *hub, a *auth, allowedHosts ...string) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, fc)
+	}))
+
+	// The knowledge graph is served straight from its gzip blob with
+	// Content-Encoding: gzip — the browser decompresses transparently, so there is
+	// zero server-side decompression and the payload skips the /api/file plaintext
+	// path (its 2 MiB preview cap and binary rejection). The Graph tab reads this.
+	mux.HandleFunc("GET /api/graph", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		blob, err := os.ReadFile(graph.GraphGzPath(root))
+		if err != nil {
+			writeError(w, http.StatusNotFound, errGraphNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(blob)
 	}))
 
 	mux.HandleFunc("GET /api/tests", a.protect(func(w http.ResponseWriter, _ *http.Request) {

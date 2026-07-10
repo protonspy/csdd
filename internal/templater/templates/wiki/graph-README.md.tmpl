@@ -14,7 +14,7 @@ it — fast, token-cheap, precise. It lives inside `docs/` because it *is* knowl
 
 | File | Purpose | Writer |
 |------|---------|--------|
-| `graph.json` | The knowledge graph (NetworkX node-link, graphify-interoperable). | `csdd graph build` |
+| `graph.json.gz` | The knowledge graph (gzip-compressed NetworkX node-link, graphify-interoperable). | `csdd graph build` |
 | `graph.html` | Self-contained interactive visualization. | `csdd graph export` |
 | `log.md` | Append-only chronological record of builds. | every build |
 
@@ -33,6 +33,9 @@ the human gate, 0.1–0.3).
 ## Consume it, don't read it
 
 Query the graph with `csdd graph query|path|explain`, lint it with
-`csdd graph analyze`. The JSON is byte-stable for an unchanged corpus (total
-deterministic ordering), so it diffs cleanly in PRs. Everything in `docs/` —
-including this generated directory — is committed.
+`csdd graph analyze`. The file is a gzip-compressed blob — deterministic and
+byte-stable for an unchanged corpus (total deterministic ordering + a pinned gzip
+header), so an unchanged corpus produces an identical file and nothing churns.
+Being an opaque generated artifact, git treats it as binary: a merge conflict is
+resolved by re-running `csdd graph build`, not by hand-merging JSON. Everything in
+`docs/` — including this generated directory — is committed.

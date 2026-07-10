@@ -14,10 +14,10 @@ import (
 
 // runGraph dispatches `csdd graph <action>`. The graph is a structured brain for
 // fast, token-cheap, precise consultation of the workspace. build persists the
-// index to docs/graph/graph.json (for humans, PR review, and the web dashboard);
+// index to docs/graph/graph.json.gz (for humans, PR review, and the web dashboard);
 // query/path/explain/analyze each rebuild the graph in memory from the corpus (a
 // full build is milliseconds at this scale) rather than reading the persisted
-// file, so their answers are always fresh even if graph.json is stale.
+// file, so their answers are always fresh even if the persisted graph is stale.
 func runGraph(args []string) int {
 	action, rest, err := parseAction("graph", args)
 	if err != nil {
@@ -51,7 +51,7 @@ func runGraph(args []string) int {
 func graphHelp() {
 	fmt.Println(`csdd graph — the knowledge-base index (a structured brain over the workspace).
 
-  build            Rebuild docs/graph/graph.json from the corpus (+ appends log.md).
+  build            Rebuild docs/graph/graph.json.gz from the corpus (+ appends log.md).
   query "<terms>"  Find nodes by label tier and show their neighborhood.
   path <A> <B>     Shortest path between two nodes.
   explain <label>  A node plus its connections, ordered by neighbor degree.
@@ -123,7 +123,7 @@ func graphBuild(args []string) int {
 	if jsonOut {
 		out := map[string]any{
 			"ok": true, "nodes": len(g.Nodes), "edges": len(g.Links),
-			"pending": len(g.Pending), "output": graph.GraphJSONRel,
+			"pending": len(g.Pending), "output": graph.GraphGzRel,
 		}
 		if len(g.Warnings) > 0 {
 			out["warnings"] = g.Warnings
@@ -131,7 +131,7 @@ func graphBuild(args []string) int {
 		return emitJSON(out)
 	}
 	render.OK(fmt.Sprintf("Built graph: %d nodes, %d edges (%d pending references).", len(g.Nodes), len(g.Links), len(g.Pending)))
-	render.Info("Wrote " + graph.GraphJSONRel)
+	render.Info("Wrote " + graph.GraphGzRel)
 	for _, w := range g.Warnings {
 		render.Warn(w)
 	}

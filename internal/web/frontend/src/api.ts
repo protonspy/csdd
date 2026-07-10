@@ -27,6 +27,9 @@ export const api = {
   spec: (feature: string) => get<SpecDetail>(`/api/spec/${encodeURIComponent(feature)}`),
   tree: () => get<WorkspaceTree>('/api/tree'),
   file: (path: string) => get<FileContent>(`/api/file?path=${encodeURIComponent(path)}`),
+  // The graph is served gzip-compressed with Content-Encoding: gzip; the browser
+  // decompresses it before we ever see the body, so this is a normal JSON fetch.
+  graph: () => get<{ nodes?: unknown; links?: unknown }>('/api/graph'),
   tests: () => get<TestReport>('/api/tests'),
   plans: () => get<PlanSummary[]>('/api/plans'),
   plan: (slug: string) => get<PlanDetail>(`/api/plan/${encodeURIComponent(slug)}`),

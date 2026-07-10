@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Graph, { type VisEventParams, type VisNetwork } from 'react-graph-vis'
 import { api } from '../api'
 
-// GraphView renders docs/graph/graph.json — the csdd knowledge graph — through
-// the same read-only /api/file route as every other file (host guard + auth +
-// secret redaction, PR #43). It never writes; the CLI is the only author of the
-// graph (R6.3).
+// GraphView renders docs/graph/graph.json.gz — the csdd knowledge graph — served
+// gzip-compressed through the read-only /api/graph route (host guard + auth). The
+// browser decompresses the blob transparently, so this component consumes plain
+// node-link JSON. It never writes; the CLI is the only author of the graph (R6.3).
 //
 // The graph is far too large to draw at once (a mid-size repo yields ~2k nodes
 // / ~2k edges, dominated by `code` nodes and `contains` edges). Drawing it whole
@@ -236,24 +236,19 @@ export function GraphView({ version }: { version: number }) {
   useEffect(() => {
     let cancelled = false
     api
-      .file('docs/graph/graph.json')
-      .then((fc) => {
+      .graph()
+      .then((parsed) => {
         if (cancelled) return
-        try {
-          const parsed = JSON.parse(fc.text)
-          if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.links)) {
-            setError('graph.json is not a node-link graph (missing nodes/links arrays). Re-run `csdd graph build`.')
-            setGraph(null)
-            return
-          }
-          setGraph(parsed as NodeLink)
-          setError(null)
-        } catch (e) {
-          setError('graph.json is not valid JSON: ' + String(e))
+        if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.links)) {
+          setError('graph.json.gz is not a node-link graph (missing nodes/links arrays). Re-run `csdd graph build`.')
+          setGraph(null)
+          return
         }
+        setGraph(parsed as NodeLink)
+        setError(null)
       })
       .catch(() => {
-        if (!cancelled) setError('No graph yet. Run `csdd graph build` to generate docs/graph/graph.json.')
+        if (!cancelled) setError('No graph yet. Run `csdd graph build` to generate docs/graph/graph.json.gz.')
       })
     return () => {
       cancelled = true

@@ -15,14 +15,14 @@ func TestE2EGoldenPath(t *testing.T) {
 	dir := freshWorkspace(t)
 	seedSpec(t, dir)
 
-	// build → graph.json exists.
+	// build → graph.json.gz exists.
 	if code, _, e := run(t, "graph", "build", "--root", dir); code != 0 {
 		t.Fatalf("graph build failed: %s", e)
 	}
-	graphPath := filepath.Join(dir, "docs", "graph", "graph.json")
+	graphPath := filepath.Join(dir, "docs", "graph", "graph.json.gz")
 	first, err := os.ReadFile(graphPath)
 	if err != nil {
-		t.Fatalf("graph.json missing: %v", err)
+		t.Fatalf("graph.json.gz missing: %v", err)
 	}
 
 	// A second build with an unchanged corpus is byte-identical (§5.9, R7.2).
@@ -31,7 +31,7 @@ func TestE2EGoldenPath(t *testing.T) {
 	}
 	second, _ := os.ReadFile(graphPath)
 	if string(first) != string(second) {
-		t.Fatalf("graph.json not byte-stable across rebuilds")
+		t.Fatalf("graph.json.gz not byte-stable across rebuilds")
 	}
 
 	// Incremental (default) also matches the full rebuild byte-for-byte.
@@ -40,7 +40,7 @@ func TestE2EGoldenPath(t *testing.T) {
 	}
 	third, _ := os.ReadFile(graphPath)
 	if string(first) != string(third) {
-		t.Fatalf("incremental graph.json differs from full rebuild")
+		t.Fatalf("incremental graph.json.gz differs from full rebuild")
 	}
 
 	// analyze surfaces the seeded gap (criterion 1.2 untested); --strict gates.
