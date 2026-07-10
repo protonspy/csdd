@@ -10,14 +10,12 @@ import (
 // planSummary is one row of GET /api/plans: enough to render the Plans list with
 // approval/drift badges and milestone-agnostic progress counts.
 type planSummary struct {
-	Slug       string `json:"slug"`
-	Name       string `json:"name"`
-	Approved   bool   `json:"approved"`
-	Drift      bool   `json:"drift"`
-	Deviations int    `json:"deviations"`
-	Feats      int    `json:"feats"`
-	Done       int    `json:"done"`
-	Blocked    int    `json:"blocked"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Approved bool   `json:"approved"`
+	Drift    bool   `json:"drift"`
+	Feats    int    `json:"feats"`
+	Done     int    `json:"done"`
 }
 
 // webFeat is one feat row in the per-plan view, merging the plan's static feat
@@ -32,9 +30,6 @@ type webFeat struct {
 	State        string   `json:"state"`
 	TasksTotal   int      `json:"tasks_total"`
 	TasksChecked int      `json:"tasks_checked"`
-	BlockKind    string   `json:"block_kind,omitempty"`
-	BlockReason  string   `json:"block_reason,omitempty"`
-	BlockLog     string   `json:"block_log,omitempty"`
 }
 
 // milestoneProgress is per-milestone completion, in first-seen order.
@@ -52,7 +47,6 @@ type planDetail struct {
 	Name       string              `json:"name"`
 	Approved   bool                `json:"approved"`
 	Drift      bool                `json:"drift"`
-	Deviations int                 `json:"deviations"`
 	Feats      []webFeat           `json:"feats"`
 	Milestones []milestoneProgress `json:"milestones"`
 }
@@ -77,14 +71,11 @@ func loadPlansList(root string) []planSummary {
 		}
 		s := planSummary{
 			Slug: slug, Name: st.Name, Approved: st.Approved,
-			Drift: st.Drift, Deviations: st.Deviations, Feats: len(st.Feats),
+			Drift: st.Drift, Feats: len(st.Feats),
 		}
 		for _, f := range st.Feats {
-			switch f.State {
-			case plan.StateDone:
+			if f.State == plan.StateDone {
 				s.Done++
-			case plan.StateBlocked:
-				s.Blocked++
 			}
 		}
 		out = append(out, s)
@@ -113,7 +104,7 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 	}
 	d := planDetail{
 		Slug: slug, Name: st.Name, Approved: st.Approved,
-		Drift: st.Drift, Deviations: st.Deviations,
+		Drift: st.Drift,
 	}
 	milestoneIndex := map[string]int{}
 	for _, f := range doc.Feats {
@@ -122,7 +113,6 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 			Slug: f.Slug, Num: f.Num, Objective: f.Objective, Milestone: f.Milestone,
 			Depends: f.Depends, Parallel: f.Parallel, State: s.State,
 			TasksTotal: s.TasksTotal, TasksChecked: s.TasksChecked,
-			BlockKind: s.BlockKind, BlockReason: s.BlockReason, BlockLog: s.BlockLog,
 		})
 		mi, ok := milestoneIndex[f.Milestone]
 		if !ok {

@@ -51,8 +51,9 @@ type Feat struct {
 }
 
 // Gate is one `## Quality Gates` line (R2.2): `- <label>: <command>`. The gate
-// list is the plan's own verification contract — the runner executes every gate
-// after each implementation step (R9.2).
+// list is the plan's own verification contract. The runner no longer executes it
+// (the loop trusts the session); instead every feat's brief injects these commands
+// as the checks the session must run itself before declaring the feat done.
 type Gate struct {
 	Label   string
 	Command string
@@ -129,29 +130,19 @@ type PlanJSON struct {
 	Approvals     PlanApproval `json:"approvals"`
 }
 
-// Verdict is the structured result a runner session returns for one step (§5.6).
-// It is how the session DECLARES its intent to the loop — the runner never
-// infers it. Status says what to do next: "done" asks the runner to verify with
-// the gates and advance, "progress" hands unfinished-but-honest work to the next
-// session (Summary carries the handoff), and "halt" ends the whole run because
-// something outside the workspace blocks it. Decisions is the audit trail of the
-// open decisions the session resolved and recorded this iteration (stack rows,
-// ADRs); each one is journaled, and the runner re-binds the approval hash to the
-// recorded contract.
+// Verdict is the structured result a runner session returns for one feat. It is
+// how the session DECLARES its intent to the loop — the runner never infers it and
+// never second-guesses it (the loop trusts the session, Ralph-style). Status says
+// what happens next: "done" means the whole feat is delivered — the runner records
+// it in the ledger and moves to the next feat; "continue" means honest partial
+// work — the same feat comes back next iteration and Summary carries the handoff.
 type Verdict struct {
-	Status    string   `json:"status"`
-	Summary   string   `json:"summary"`
-	Decisions []string `json:"decisions,omitempty"`
-	Revision  string   `json:"revision,omitempty"` // legacy blocked-verdict proposal
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
 }
 
-// Verdict status values. VerdictBlocked is the legacy status older briefs taught:
-// the runner still parses it, but treats it as a failed iteration with coaching —
-// in the autonomous loop, decisions are the session's to make and record, not to
-// stop on.
+// Verdict status values — the only two the loop understands.
 const (
 	VerdictDone     = "done"
-	VerdictProgress = "progress"
-	VerdictHalt     = "halt"
-	VerdictBlocked  = "blocked"
+	VerdictContinue = "continue"
 )

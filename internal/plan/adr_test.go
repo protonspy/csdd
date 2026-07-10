@@ -218,17 +218,20 @@ func TestBriefInlinesADRs(t *testing.T) {
 	writeADRs(t, root, map[string]string{
 		"0001-pick-store.md": "# We store records under docs/adr\n\nDECISION_BODY_TOKEN: append-only, project-scoped.\n",
 	})
-	step := Step{Feat: "thing", Step: "task 1.1", Reason: "implement"}
 	doc, err := Load(root, "p")
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := Brief(root, doc, step)
+	feat, ok := doc.Feat("thing")
+	if !ok {
+		t.Fatal("feat thing not found")
+	}
+	out, err := FeatBrief(root, doc, feat)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Determinism.
-	if out2, _ := Brief(root, doc, step); out != out2 {
+	if out2, _ := FeatBrief(root, doc, feat); out != out2 {
 		t.Errorf("ADR brief is not byte-deterministic")
 	}
 	// The resolved ADR is inlined in full (title + body).
@@ -242,10 +245,10 @@ func TestBriefInlinesADRs(t *testing.T) {
 	if !strings.Contains(out, "adr:ghost-ref") || !strings.Contains(out, "WARNING") {
 		t.Errorf("brief should warn on the unresolved ADR ref:\n%s", out)
 	}
-	// The open-decision ownership line is present (R4.3): the session decides,
-	// records, and declares — it never adopts silently.
-	if !strings.Contains(out, "Open decisions are YOURS") {
-		t.Errorf("brief should carry the open-decision ownership line:\n%s", out)
+	// The mission tells the session to record any technology / hard-to-reverse
+	// trade-off it makes (stack row + ADR), never adopt one silently.
+	if !strings.Contains(out, "docs/stack.md Decided row") {
+		t.Errorf("brief should carry the record-your-decisions mission line:\n%s", out)
 	}
 }
 

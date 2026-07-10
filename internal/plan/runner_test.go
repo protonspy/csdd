@@ -25,8 +25,6 @@ status: draft
 - verify: make check
 `
 
-var allApproved = map[string]bool{"requirements": true, "design": true, "tasks": true}
-
 // approvedRunnerWorkspace lays down the plan, approves it, and returns the root.
 func approvedRunnerWorkspace(t *testing.T) string {
 	t.Helper()
@@ -44,15 +42,12 @@ func approvedRunnerWorkspace(t *testing.T) string {
 // fixedNow is a deterministic clock for journal timestamps.
 func fixedNow() time.Time { return time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC) }
 
-// baseHooks returns hooks that always succeed and change nothing, so the loop
-// would run to the iteration cap unless a test's stubs advance state. The runner
-// no longer touches git, so there is no commit or changed-paths seam to stub —
-// a test advances a feat by having its Session hook check the task box on disk.
+// baseHooks returns hooks that always declare `done`, so a fresh plan runs to
+// completion (one session per feat). The runner spawns nothing but the Session
+// hook — there is no gate, csdd, or git seam, because the loop trusts the session.
 func baseHooks() Hooks {
 	return Hooks{
-		Session:         func(Step, string, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
-		CSDD:            func(string, ...string) (bool, string) { return true, "" },
-		Gate:            func(string, string) (bool, string) { return true, "" },
+		Session:         func(Feat, string, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
 		Doctor:          func() SandboxReport { return SandboxReport{OK: true} },
 		Confirm:         func(string) bool { return false },
 		ClaudeAvailable: func() bool { return true },
@@ -67,16 +62,13 @@ func TestParseVerdict(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"plain", `{"status":"done","summary":"ok"}`, VerdictDone, false},
-		{"progress", `{"status":"progress","summary":"half the parser is in; wire the CLI next"}`, VerdictProgress, false},
-		{"halt", `{"status":"halt","summary":"no DATABASE_URL secret"}`, VerdictHalt, false},
-		{"decisions", `{"status":"done","summary":"ok","decisions":["Frontend lint = ESLint"]}`, VerdictDone, false},
-		{"legacy blocked", `{"status":"blocked","summary":"stuck","revision":"split it"}`, VerdictBlocked, false},
+		{"plain done", `{"status":"done","summary":"ok"}`, VerdictDone, false},
+		{"continue", `{"status":"continue","summary":"half the parser is in; wire the CLI next"}`, VerdictContinue, false},
 		{"envelope", `{"type":"result","result":"{\"status\":\"done\",\"summary\":\"ok\"}"}`, VerdictDone, false},
-		{"envelope prose+json", `{"result":"Here is my verdict: {\"status\":\"halt\",\"summary\":\"x\"}"}`, VerdictHalt, false},
+		{"envelope prose+json", `{"result":"Here is my verdict: {\"status\":\"continue\",\"summary\":\"x\"}"}`, VerdictContinue, false},
 		{"uppercase", `{"status":"DONE","summary":"ok"}`, VerdictDone, false},
 		{"garbage", `not json at all`, "", true},
-		{"bad status", `{"status":"maybe","summary":"?"}`, "", true},
+		{"bad status", `{"status":"halt","summary":"?"}`, "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -110,6 +102,13 @@ func TestRunnerPreflight(t *testing.T) {
 	h.ClaudeAvailable = func() bool { return false }
 	if _, err := Run(RunOptions{Root: root2, Slug: "p", Hooks: h, Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "claude") {
 		t.Errorf("expected claude-missing failure, got %v", err)
+	}
+
+	// Drift after approval: preflight refuses.
+	root3 := approvedRunnerWorkspace(t)
+	writeFile(t, filepath.Join(Dir(root3, "p"), "plan.md"), runnerPlan+"\n<!-- edit -->\n")
+	if _, err := Run(RunOptions{Root: root3, Slug: "p", Hooks: baseHooks(), Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "drift") {
+		t.Errorf("expected drift preflight failure, got %v", err)
 	}
 
 	// Doctor fails and the human declines the alert: the run closes.
@@ -147,217 +146,166 @@ func TestRunnerPreflight(t *testing.T) {
 	}
 }
 
-func TestRunnerRunsWithDirtyRunnerOwnedTree(t *testing.T) {
-	// The runner no longer polices the working tree: it never commits and never
-	// audits forbidden paths, so a pre-existing change under a formerly runner-
-	// owned path (docs/plans/, .csdd/) must NOT stop the run or be misattributed
-	// to a session as a hard failure. Whatever is dirty is the session's git to own.
+// TestRunnerCompletesAllFeats: a session that declares done for each feat drives
+// the plan to completion, one session per feat, recording each in the ledger.
+func TestRunnerCompletesAllFeats(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-	writeFile(t, filepath.Join(Dir(root, "p"), "log.md"), "pre-existing journal noise\n")
-	writeFile(t, filepath.Join(root, ".csdd", "state.json"), "{}\n")
-
-	h := baseHooks()
-	h.Session = func(Step, string, float64) (Verdict, error) {
-		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return Verdict{Status: VerdictDone}, nil
-	}
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
-		t.Fatalf("a dirty runner-owned tree must not stop the run, got %v", err)
+		t.Fatal(err)
 	}
-	if !sum.Completed {
-		t.Errorf("run should complete despite a pre-existing dirty tree, got %+v", sum)
+	if !sum.Completed || sum.Outcome != OutcomeComplete {
+		t.Fatalf("expected completion, got %+v", sum)
 	}
-	if _, blocked := ReadBlock(root, "p", "a"); blocked {
-		t.Errorf("feat a must not be blocked by pre-existing dirt")
+	if sum.Sessions != 2 || sum.Steps != 2 {
+		t.Errorf("expected 2 sessions / 2 feats delivered, got %+v", sum)
+	}
+	// The ledger records both feats.
+	l := LoadLedger(root, "p")
+	if !l.Done("a") || !l.Done("b") {
+		t.Errorf("ledger should mark both feats done: %+v", l.Feats)
+	}
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| a | done") || !strings.Contains(string(logData), "| b | done") {
+		t.Errorf("both feats should be journaled done: %s", logData)
 	}
 }
 
-// TestRunnerProgressHandsOffToTheNextSession: a progress verdict skips the gates
-// (the session says it is not done) and its summary becomes the successor's
-// handoff, so a step bigger than one context window still converges.
-func TestRunnerProgressHandsOffToTheNextSession(t *testing.T) {
+// TestRunnerContinueHandsOff: a `continue` verdict is honest partial work — its
+// summary becomes the successor's handoff, the same feat comes back, and a feat
+// bigger than one context window still converges.
+func TestRunnerContinueHandsOff(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-
 	var briefs []string
-	gateCalls := 0
-	h := baseHooks()
-	h.Gate = func(string, string) (bool, string) { gateCalls++; return true, "" }
 	calls := 0
-	h.Session = func(_ Step, brief string, _ float64) (Verdict, error) {
+	h := baseHooks()
+	h.Session = func(feat Feat, brief string, _ float64) (Verdict, error) {
 		briefs = append(briefs, brief)
 		calls++
 		if calls == 1 {
-			return Verdict{Status: VerdictProgress, Summary: "parser is in; the CLI wiring remains"}, nil
-		}
-		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return Verdict{Status: VerdictDone}, nil
-	}
-
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !sum.Completed || sum.Sessions != 2 {
-		t.Fatalf("progress then done should complete in 2 sessions, got %+v", sum)
-	}
-	if gateCalls != 1 {
-		t.Errorf("a progress verdict must not run the gates; expected 1 gate call (the done), got %d", gateCalls)
-	}
-	if !strings.Contains(briefs[1], "Handoff from the previous session") || !strings.Contains(briefs[1], "the CLI wiring remains") {
-		t.Errorf("the second session should read the handoff:\n%s", briefs[1])
-	}
-	if sum.Failures != 0 {
-		t.Errorf("progress is not a failure, got %d", sum.Failures)
-	}
-	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	if !strings.Contains(string(logData), "| a | progress") {
-		t.Errorf("progress not journaled: %s", logData)
-	}
-}
-
-// TestRunnerRebindsOnStackDecision: a session records an open decision as a new
-// Decided row mid-run. The next iteration sees the hash drift, recognizes the
-// core (plan.md + seeds) is untouched, re-binds the approval, journals it, and
-// the loop continues to completion instead of dying on drift.
-func TestRunnerRebindsOnStackDecision(t *testing.T) {
-	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-
-	h := baseHooks()
-	h.Session = func(step Step, _ string, _ float64) (Verdict, error) {
-		writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
-			"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
-			"| Frontend lint | ESLint | 9.x | Vite react-ts default | |\n")
-		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return Verdict{Status: VerdictDone, Summary: "done",
-			Decisions: []string{"Frontend lint = ESLint — Vite react-ts default, type-aware rules"}}, nil
-	}
-
-	var out bytes.Buffer
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &out})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !sum.Completed {
-		t.Fatalf("a recorded decision must not stop the loop, got %+v (%s)", sum, sum.Reason)
-	}
-	if sum.Decisions != 1 {
-		t.Errorf("the decision should be counted, got %d", sum.Decisions)
-	}
-	// The approval was re-bound to the contract that now includes the row.
-	if _, drift, err := IsApproved(root, "p"); err != nil || drift {
-		t.Errorf("the plan should be approved at the new hash (drift=%v, err=%v)", drift, err)
-	}
-	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	for _, want := range []string{"contract re-bound", "| a | decision", "Frontend lint = ESLint"} {
-		if !strings.Contains(string(logData), want) {
-			t.Errorf("journal missing %q: %s", want, logData)
-		}
-	}
-}
-
-// TestRunnerPreflightRebindsADecisionRecordedBetweenRuns: rows added to the
-// Decided table while no run was live (the human, or a session that got capped
-// right after recording) fold in at startup instead of demanding a re-approve.
-func TestRunnerPreflightRebindsADecisionRecordedBetweenRuns(t *testing.T) {
-	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [x] 1. done\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-	writeFile(t, filepath.Join(root, "docs", "stack.md"), "# Stack\n\n## Decided\n\n"+
-		"| Domain | Choice | Version | Why | Refs |\n|---|---|---|---|---|\n"+
-		"| Backend lint | Ruff | current | Fast | |\n")
-
-	var out bytes.Buffer
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), MaxIterations: 3, Out: &out})
-	if err != nil {
-		t.Fatalf("a stack-only drift at startup should re-bind, not refuse: %v", err)
-	}
-	if !sum.Completed {
-		t.Errorf("run should complete, got %+v", sum)
-	}
-	if !strings.Contains(out.String(), "contract re-bound") {
-		t.Errorf("the startup re-bind should be announced:\n%s", out.String())
-	}
-}
-
-func TestRunnerJournalFormat(t *testing.T) {
-	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-	h := baseHooks()
-	h.Session = func(Step, string, float64) (Verdict, error) {
-		writeFile(t, filepath.Join(root, "specs", "a", "tasks.md"), "- [x] 1. do it\n")
-		return Verdict{Status: VerdictDone}, nil
-	}
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}}); err != nil {
-		t.Fatal(err)
-	}
-	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	if !strings.Contains(string(logData), "## [2026-07-07] task 1 | a | done") {
-		t.Errorf("journal line format wrong: %s", logData)
-	}
-}
-
-func TestRunnerDriftStopsMidRun(t *testing.T) {
-	root := approvedRunnerWorkspace(t)
-	writeSpec(t, root, "a", allApproved, true, "- [ ] 1. do it\n")
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-	h := baseHooks()
-	// The "session" drifts the plan by editing plan.md — the runner must stop on
-	// the next iteration's drift check rather than keep going.
-	h.Session = func(Step, string, float64) (Verdict, error) {
-		writeFile(t, filepath.Join(Dir(root, "p"), "plan.md"), runnerPlan+"\n<!-- drift -->\n")
-		return Verdict{Status: VerdictDone}, nil
-	}
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sum.Outcome != OutcomeDrift {
-		t.Errorf("expected OutcomeDrift after mid-run edit, got %d (%s)", sum.Outcome, sum.Reason)
-	}
-}
-
-func TestRunnerSpecPhaseApproval(t *testing.T) {
-	// A pending feat drives the spec flow: the runner scaffolds, the session
-	// authors, and the runner approves each phase via the CSDD hook.
-	root := approvedRunnerWorkspace(t)
-	// Make b already done so only a is in play.
-	writeSpec(t, root, "b", allApproved, true, "- [x] 1. done\n")
-
-	approvals := map[string]bool{}
-	h := baseHooks()
-	h.CSDD = func(_ string, args ...string) (bool, string) {
-		// Simulate the spec lifecycle the real csdd would perform.
-		switch {
-		case len(args) >= 2 && args[0] == "plan" && args[1] == "generate":
-			writeSpec(t, root, "a", map[string]bool{}, false, "")
-		case len(args) >= 4 && args[0] == "spec" && args[1] == "approve":
-			phase := args[len(args)-1]
-			approvals[phase] = true
-			ready := approvals["requirements"] && approvals["design"] && approvals["tasks"]
-			tasks := ""
-			if ready {
-				tasks = "- [x] 1. done\n"
+			if feat.Slug != "a" {
+				t.Errorf("first session should be feat a, got %s", feat.Slug)
 			}
-			writeSpec(t, root, "a", approvals, ready, tasks)
+			return Verdict{Status: VerdictContinue, Summary: "parser is in; the CLI wiring remains"}, nil
 		}
-		return true, ""
+		return Verdict{Status: VerdictDone}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !sum.Completed {
-		t.Errorf("spec-phase-driven run should complete, got %+v", sum)
+		t.Fatalf("continue then done should complete, got %+v", sum)
 	}
-	if !approvals["requirements"] || !approvals["design"] || !approvals["tasks"] {
-		t.Errorf("all three phases should have been approved by the runner: %v", approvals)
+	// Session 2 works feat a again and reads the handoff.
+	if !strings.Contains(briefs[1], "Handoff from the previous session") || !strings.Contains(briefs[1], "the CLI wiring remains") {
+		t.Errorf("the second session should read the handoff:\n%s", briefs[1])
+	}
+	if sum.Failures != 0 {
+		t.Errorf("continue is not a failure, got %d", sum.Failures)
+	}
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| a | progress") {
+		t.Errorf("continue not journaled as progress: %s", logData)
 	}
 }
+
+// TestRunnerSessionErrorStalls: repeated session errors with no progress trip the
+// stall guard, and the failure trail lands on disk for the next run.
+func TestRunnerSessionErrorStalls(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	h := baseHooks()
+	h.Session = func(Feat, string, float64) (Verdict, error) {
+		return Verdict{}, errString("boom: compiler exploded")
+	}
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 20, Stall: 3, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Outcome != OutcomeStalled {
+		t.Fatalf("expected OutcomeStalled, got %d (%s)", sum.Outcome, sum.Reason)
+	}
+	if sum.Failures < 3 {
+		t.Errorf("expected at least 3 failed iterations, got %d", sum.Failures)
+	}
+	// The failure log for feat a exists and carries the error.
+	logPath := filepath.Join(root, ".csdd", "plan", "p", "failures", "a.log")
+	data, rerr := os.ReadFile(logPath)
+	if rerr != nil {
+		t.Fatalf("expected a failure log at %s: %v", logPath, rerr)
+	}
+	if !strings.Contains(string(data), "compiler exploded") {
+		t.Errorf("failure log should carry the session error: %s", data)
+	}
+}
+
+// TestRunnerContinueRunsToCap: a session that only ever reports `continue` makes
+// honest progress every iteration (never stalls) but never finishes, so the run
+// ends at the iteration cap — the wallet guard, not the stall guard.
+func TestRunnerContinueRunsToCap(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	h := baseHooks()
+	h.Session = func(Feat, string, float64) (Verdict, error) {
+		return Verdict{Status: VerdictContinue, Summary: "still going"}, nil
+	}
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, Stall: 2, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Outcome != OutcomeCapped {
+		t.Errorf("expected OutcomeCapped (continue never stalls), got %d (%s)", sum.Outcome, sum.Reason)
+	}
+	if sum.Sessions != 3 {
+		t.Errorf("expected 3 sessions before the cap, got %d", sum.Sessions)
+	}
+}
+
+// TestRunnerLedgerResumes: a feat already recorded in the ledger is skipped, so a
+// resumed run only spends sessions on what remains.
+func TestRunnerLedgerResumes(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	l := LoadLedger(root, "p")
+	l.MarkDone("a", "delivered earlier", fixedNow())
+	if err := l.Save(root, "p"); err != nil {
+		t.Fatal(err)
+	}
+	var worked []string
+	h := baseHooks()
+	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+		worked = append(worked, feat.Slug)
+		return Verdict{Status: VerdictDone}, nil
+	}
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Completed || sum.Sessions != 1 {
+		t.Fatalf("resume should spend one session on b only, got %+v", sum)
+	}
+	if len(worked) != 1 || worked[0] != "b" {
+		t.Errorf("only feat b should have been worked, got %v", worked)
+	}
+}
+
+func TestRunnerJournalFormat(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	h := baseHooks()
+	h.Session = func(Feat, string, float64) (Verdict, error) {
+		return Verdict{Status: VerdictDone, Summary: "shipped the thing"}, nil
+	}
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "## [2026-07-07] - | a | done") {
+		t.Errorf("journal line format wrong: %s", logData)
+	}
+	if !strings.Contains(string(logData), "shipped the thing") {
+		t.Errorf("done journal should carry the session summary: %s", logData)
+	}
+}
+
+// errString is a tiny error type so the test needs no fmt/errors import churn.
+type errString string
+
+func (e errString) Error() string { return string(e) }

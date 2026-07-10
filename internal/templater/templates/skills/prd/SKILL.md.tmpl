@@ -134,15 +134,15 @@ user the feat table and its `csdd plan status <slug>`, and tell them to review a
 run **`csdd plan approve <slug>`** themselves. Do not approve, generate specs, or
 start the runner.
 
-### Revise (later) — fold deviations back in
-When a run records `blocked` deviations in `docs/plans/<slug>/log.md`
-(surfaced by `csdd plan status`), re-open this skill: read each deviation's
-revision proposal. **If the proposal embodies a gate-positive decision, grill it
-and write a new ADR — or, when it overturns a recorded one, mark the superseded
-record (`status: superseded`, `superseded-by: <NNNN>`) and write its successor —
-BEFORE amending `plan.md`.** Then amend `plan.md`, re-`validate`, and hand back to
-the human for a fresh `csdd plan approve` (re-approval clears the drift). Editing
-an approved plan and its decisions is always a human-gated act, never done mid-run.
+### Revise (later) — amend the plan
+When the plan needs to change — a run recorded a decision you want to fold in
+(read `docs/plans/<slug>/log.md`), or the scope shifted — re-open this skill.
+**If a change embodies a gate-positive decision, grill it and write a new ADR —
+or, when it overturns a recorded one, mark the superseded record
+(`status: superseded`, `superseded-by: <NNNN>`) and write its successor — BEFORE
+amending `plan.md`.** Then amend `plan.md`, re-`validate`, and hand back to the
+human for a fresh `csdd plan approve` (re-approval clears the drift). Editing an
+approved plan and its decisions is always a human-gated act, never done mid-run.
 
 ## Gotchas
 

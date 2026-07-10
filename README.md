@@ -58,7 +58,7 @@ csdd spec generate my-feature --artifact requirements   # → validate → appro
 | `csdd copy <kind>/<name>` | cherry-pick one shipped artifact (skill · agent · rule · command · hook · template · steering) — the complement of `init --exclude` |
 | `/csdd-setup-init` · `/csdd-setup-update` | adapt / refresh the workflow for your stack — Claude Code slash commands |
 | `csdd spec init · generate · validate · approve · status · test-report` | the requirements → design → tasks gated lifecycle |
-| `csdd plan init · validate · approve · status · next · brief · generate · run · unblock` | decompose an initiative into feats; drive each feat → spec → shipped code |
+| `csdd plan init · validate · approve · status · next · brief · generate · run` | decompose an initiative into feats; drive each feat → spec → shipped code |
 | `csdd sandbox init · doctor` | scaffold a default-deny-egress devcontainer and prove its isolation |
 | `csdd graph build · query · path · explain · analyze · export` | the knowledge-base **brain** — a structured index over the whole workspace |
 | `csdd wiki init · lint` | the LLM-authored knowledge base under `docs/` |
@@ -272,7 +272,7 @@ A `plan.md` carries three machine-parsed sections that `csdd plan validate` chec
 | Section | What it declares |
 |---------|------------------|
 | `## Feats` | one row per feat: `Feat` (kebab slug → spec dir) · `Objective` · `Depends` (feat slugs, no cycles) · `Milestone` · `(P)` · `Refs` |
-| `## Quality Gates` | `- <label>: <command>` lines the runner executes after each step; ≥1 required |
+| `## Quality Gates` | `- <label>: <command>` lines injected into each feat's brief as checks the session runs itself before declaring done; ≥1 required |
 | `## Executor Notes` | opaque guidance inlined verbatim into every session brief |
 
 The `Refs` column is how a feat cites its *why*: `[[wiki-page]]`, `stack:<name>`, and `adr:<slug>` tokens — each must resolve, or validation breaks. Cited decision records are inlined **in full** into that feat's run brief.
@@ -284,25 +284,22 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
    (human gate)         (csdd-controlled)     (human gate)
 ```
 
-`csdd plan run <slug>` is the **runner**: a deliberately dumb, deterministic loop where **one iteration = one Claude session** (default cap 100). The session — Claude driving csdd — controls the whole flow: it authors the step, runs the dev-cycle, owns git (branch, `/csdd-commit`, the pre-push gate, the PR), and **makes and records open decisions** (a `docs/stack.md` Decided row, an ADR when the why needs more than a line, declared in its verdict's `decisions`). The runner owns verification and bookkeeping: it runs the gates, performs `csdd spec approve` when they pass, and journals everything to `log.md`. Nothing parks mid-run — **every failure becomes the next session's context** (the failure trail, the predecessor's handoff, the decisions recorded so far), which is what makes the loop self-correcting.
+`csdd plan run <slug>` is a **deliberately dumb, Ralph-style loop** where **one iteration = one Claude session** (default cap 100), and each session is handed **one whole feat as its mission**. The session — Claude driving csdd — owns the entire flow: it authors and approves the spec (`csdd spec generate/validate/approve`), implements every task, runs the dev-cycle, owns git (branch, `/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes (a `docs/stack.md` Decided row, an ADR when the why needs more than a line). **The loop trusts the session and does not verify** — there is no runner-side gate. It hands out feats in plan order, spawns the session, and records what it declares in a per-feat ledger (`.csdd/plan/<slug>/progress.json`). Nothing parks mid-run — **every failure becomes the next session's context** (the failure trail, the predecessor's handoff), which is what makes the loop self-correcting.
 
-The session's verdict declares its intent: `done` (verify me), `progress` (honest partial work; the summary is the handoff), or `halt` (something *outside* the workspace blocks the run — a missing credential, an external service). Approval stays bound to a **content hash**, split in two: new Decided rows are a *recorded decision* — the runner **re-binds automatically** and continues — while any edit to `plan.md`/`seeds/` is real drift and stops autonomy.
+The session's verdict declares one of two intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass) or `continue` (honest partial work; the summary is the handoff to the next session on the same feat).
 
-The run ends only four ways: the plan **completes**, a session **halts**, the **stall guard** trips (default: 10 consecutive sessions with no step advancing — the convergence guard), or the **iteration cap** is hit (the wallet guard). The last two leave a marker with the failure log; the next `plan run` clears every marker and retries.
+The run ends four ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), or a preflight refusal (unapproved or drifted plan).
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
-csdd plan unblock <slug> [feat…] [--all]    # clear post-run markers by hand (plan run already retries everything)
 ```
 
 #### When a run ends without completing
 
-A marker is the record of how a run **ended**, not a mid-run parking spot — `plan status` prints its kind, and the next `plan run` clears it and retries automatically.
-
-A **gate-failure** marker (stall or cap) points at `.csdd/plan/<slug>/failures/<feat>/<step>.log` with every attempt's untruncated output; the checkbox of a refuted task claim is retracted so the sequencer re-selects it. A **halt** marker carries the impediment the session reported — fix that, then just run again. Deviation markers only exist if written by an older csdd; they too are retried (in this loop, decisions are the session's to make), and `csdd plan approve` after a plan revision still retires the stale ones.
+There are no block markers to clear. Just `csdd plan run <slug>` again — it resumes from the ledger, re-handing whatever feat is not yet marked done, and the first session on a previously-failed feat is pointed at its failure log under `.csdd/plan/<slug>/failures/<feat>.log` (every attempt's untruncated output). `docs/plans/<slug>/log.md` journals every feat outcome for the audit trail.
 
 ### 🔒 `sandbox` — isolation before autonomy
 

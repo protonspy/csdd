@@ -51,7 +51,6 @@ status: draft
 | 5 | ready | rdy | — | M1 | | |
 | 6 | impl | imp | — | M1 | | |
 | 7 | done | dn | — | M1 | | |
-| 8 | blk | blk | — | M1 | | |
 
 ## Quality Gates
 
@@ -73,9 +72,6 @@ status: draft
 	writeSpec(t, root, "impl", allApproved, true, "- [x] 1. Done\n- [ ] 2. Not yet\n")
 	// done: all approved, every task checked.
 	writeSpec(t, root, "done", allApproved, true, "- [x] 1. Done\n- [x] 2. Also done\n")
-	// blk: has a runner block marker (spec state is irrelevant).
-	writeSpec(t, root, "blk", allApproved, true, "- [x] 1. Done\n")
-	writeFile(t, filepath.Join(stateDir(root, "p"), "blocked", "blk"), "gate failed twice\n")
 
 	doc, err := Load(root, "p")
 	if err != nil {
@@ -94,7 +90,6 @@ status: draft
 		"ready":    StateReady,
 		"impl":     StateImplementing,
 		"done":     StateDone,
-		"blk":      StateBlocked,
 	}
 	for slug, wantState := range want {
 		if got := stateOf(st, slug); got != wantState {
@@ -149,7 +144,9 @@ status: approved
 	}
 }
 
-func TestDeriveStatusDeviations(t *testing.T) {
+// TestDeriveStatusLedgerWins proves a feat the loop recorded delivered reads done
+// regardless of what the disk says — the ledger is the loop's source of truth.
+func TestDeriveStatusLedgerWins(t *testing.T) {
 	planMD := `---
 name: p
 status: draft
@@ -165,15 +162,15 @@ status: draft
 - verify: make check
 `
 	root := setupWorkspace(t, "p", planMD)
-	writeFile(t, filepath.Join(Dir(root, "p"), "log.md"), `# Run journal
-
-## [2026-07-07] spec-requirements | a | done
-## [2026-07-07] task 1.1 | a | blocked
-## [2026-07-07] task 1.2 | a | blocked
-`)
+	// No spec on disk → would derive as pending; the ledger overrides to done.
+	l := LoadLedger(root, "p")
+	l.MarkDone("a", "delivered", fixedNow())
+	if err := l.Save(root, "p"); err != nil {
+		t.Fatal(err)
+	}
 	doc, _ := Load(root, "p")
 	st, _ := DeriveStatus(root, doc)
-	if st.Deviations != 2 {
-		t.Errorf("Deviations = %d, want 2", st.Deviations)
+	if stateOf(st, "a") != StateDone {
+		t.Errorf("ledger-marked feat should read done, got %s", stateOf(st, "a"))
 	}
 }

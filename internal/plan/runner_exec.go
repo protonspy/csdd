@@ -8,16 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 )
 
-// installRealHooks fills any nil hook with its production implementation, so
-// tests can inject just the seams they care about and get real behavior for the
-// rest (in practice tests inject them all). The real hooks shell out to `claude`,
-// `csdd`, and the shell — the runner's process performs every gate and approval,
-// standing in for the human; the session authors and owns git (principle 3).
+// installRealHooks fills any nil hook with its production implementation, so tests
+// can inject just the seams they care about and get real behavior for the rest (in
+// practice tests inject them all). The only subprocess the runner spawns is
+// `claude`; everything else — gates, git, spec approvals — happens inside the
+// session, which the runner trusts.
 func installRealHooks(h *Hooks) {
 	if h.Now == nil {
 		h.Now = time.Now
@@ -37,19 +36,12 @@ func installRealHooks(h *Hooks) {
 	if h.Session == nil {
 		h.Session = execClaudeSession
 	}
-	if h.CSDD == nil {
-		h.CSDD = execCSDD
-	}
-	if h.Gate == nil {
-		h.Gate = execShellGate
-	}
 }
 
-// verdictSchema is the JSON schema the session must satisfy — the runner's
-// contract with the model (§5.6). Pinned here alongside the flags in one place.
-const verdictSchema = `{"type":"object","required":["status","summary"],` +
-	`"properties":{"status":{"enum":["done","progress","halt"]},"summary":{"type":"string"},` +
-	`"decisions":{"type":"array","items":{"type":"string"}}}}`
+// verdictSchema is the JSON schema the session must satisfy — the runner's contract
+// with the model (§5.6). The loop understands exactly two intents: done|continue.
+const verdictSchema = `{"type":"object","required":["status"],` +
+	`"properties":{"status":{"enum":["done","continue"]},"summary":{"type":"string"}}}`
 
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
@@ -63,10 +55,10 @@ var claudeFlags = struct {
 	bypass:       "--dangerously-skip-permissions",
 }
 
-// execClaudeSession spawns a fresh `claude -p` session for a step and parses its
+// execClaudeSession spawns a fresh `claude -p` session for a feat and parses its
 // verdict from the JSON output envelope. Every session runs bypass-mode; the
 // runner's preflight (sandbox doctor + human accept) is the gate in front of it.
-func execClaudeSession(step Step, brief string, budgetUSD float64) (Verdict, error) {
+func execClaudeSession(_ Feat, brief string, budgetUSD float64) (Verdict, error) {
 	args := []string{
 		claudeFlags.print, brief,
 		claudeFlags.outputFormat, "json",
@@ -125,33 +117,15 @@ func parseVerdict(output []byte) (Verdict, error) {
 func normalizeVerdict(v Verdict) (Verdict, error) {
 	v.Status = strings.ToLower(strings.TrimSpace(v.Status))
 	switch v.Status {
-	case VerdictDone, VerdictProgress, VerdictHalt, VerdictBlocked:
-		return v, nil // blocked is legacy: parsed, then coached into a decision
+	case VerdictDone, VerdictContinue:
+		return v, nil
 	}
-	return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|progress|halt)", v.Status)
-}
-
-// csddBinary is the path to the csdd binary the runner shells out to. It prefers
-// the currently-running executable so `plan run` uses the same version for the
-// gates and approvals it drives.
-func csddBinary() string {
-	if p, err := os.Executable(); err == nil {
-		return p
-	}
-	return "csdd"
-}
-
-// execCSDD runs a csdd subcommand in root, returning success and combined output.
-func execCSDD(root string, args ...string) (bool, string) {
-	full := append([]string{"--root", root}, args...)
-	cmd := exec.Command(csddBinary(), full...)
-	out, err := cmd.CombinedOutput()
-	return err == nil, string(out)
+	return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|continue)", v.Status)
 }
 
 // stdinConfirm prompts on stderr and reads one line from stdin; only an explicit
-// "y"/"yes" accepts. A non-interactive stdin (EOF) therefore declines, which is
-// the safe default for the unverified-sandbox alert.
+// "y"/"yes" accepts. A non-interactive stdin (EOF) therefore declines, which is the
+// safe default for the unverified-sandbox alert.
 func stdinConfirm(prompt string) bool {
 	fmt.Fprint(os.Stderr, prompt)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -163,17 +137,4 @@ func stdinConfirm(prompt string) bool {
 		return true
 	}
 	return false
-}
-
-// execShellGate runs a gate command through the platform shell in root.
-func execShellGate(root, command string) (bool, string) {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/c", command)
-	} else {
-		cmd = exec.Command("sh", "-c", command)
-	}
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	return err == nil, string(out)
 }

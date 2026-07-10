@@ -25,11 +25,10 @@ status: draft
 func planWorkspace(t *testing.T) string {
 	return tempWorkspace(t, map[string]string{
 		"docs/plans/photos/plan.md": webPlanMD,
-		// upload is done, thumbs is blocked, search is pending.
-		"specs/upload/spec.json":           `{"feature_name":"upload","ready_for_implementation":true,"approvals":{"requirements":{"approved":true},"design":{"approved":true},"tasks":{"approved":true}}}`,
-		"specs/upload/tasks.md":            "- [x] 1. done\n",
-		".csdd/plan/photos/blocked/thumbs": "gate failed\n",
-		"docs/plans/photos/log.md":         "# Journal\n## [2026-07-07] task 1 | upload | done\n",
+		// upload is done; thumbs and search have no spec yet → pending.
+		"specs/upload/spec.json":   `{"feature_name":"upload","ready_for_implementation":true,"approvals":{"requirements":{"approved":true},"design":{"approved":true},"tasks":{"approved":true}}}`,
+		"specs/upload/tasks.md":    "- [x] 1. done\n",
+		"docs/plans/photos/log.md": "# Journal\n## [2026-07-07] - | upload | done\n",
 	})
 }
 
@@ -49,9 +48,6 @@ func TestAPIPlansList(t *testing.T) {
 	if p.Done != 1 {
 		t.Errorf("expected 1 done feat (upload), got %d", p.Done)
 	}
-	if p.Blocked != 1 {
-		t.Errorf("expected 1 blocked feat (thumbs), got %d", p.Blocked)
-	}
 	if p.Approved {
 		t.Errorf("plan is unapproved; summary should reflect that")
 	}
@@ -70,10 +66,10 @@ func TestAPIPlanDetail(t *testing.T) {
 	for _, f := range d.Feats {
 		states[f.Slug] = f.State
 	}
-	if states["upload"] != "done" || states["thumbs"] != "blocked" || states["search"] != "pending" {
+	if states["upload"] != "done" || states["thumbs"] != "pending" || states["search"] != "pending" {
 		t.Errorf("derived feat states wrong: %v", states)
 	}
-	// Milestone progress: M1 has upload(done)+thumbs(blocked)=1/2, M2 search 0/1.
+	// Milestone progress: M1 has upload(done)+thumbs(pending)=1/2, M2 search 0/1.
 	var m1 milestoneProgress
 	for _, m := range d.Milestones {
 		if m.Name == "M1" {
@@ -88,9 +84,6 @@ func TestAPIPlanDetail(t *testing.T) {
 		if f.Slug == "thumbs" {
 			if f.Objective != "Thumbnails" || len(f.Depends) != 1 || f.Depends[0] != "upload" {
 				t.Errorf("thumbs metadata not merged: %+v", f)
-			}
-			if f.BlockReason == "" {
-				t.Errorf("blocked feat should carry its reason")
 			}
 		}
 	}

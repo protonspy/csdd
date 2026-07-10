@@ -26,13 +26,17 @@ status: draft
 Run gofmt before committing. Never touch generated files.
 `
 
-func briefFor(t *testing.T, root, slug string, step Step) string {
+func briefFor(t *testing.T, root, slug, feat string) string {
 	t.Helper()
 	doc, err := Load(root, slug)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := Brief(root, doc, step)
+	f, ok := doc.Feat(feat)
+	if !ok {
+		t.Fatalf("feat %q not in plan", feat)
+	}
+	out, err := FeatBrief(root, doc, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,11 +51,10 @@ func TestBriefContentAndDeterminism(t *testing.T) {
 	// A seed for the feat.
 	writeFile(t, filepath.Join(root, "docs", "plans", "p", "seeds", "upload", "requirements.md"), "# seed reqs\n")
 
-	step := Step{Feat: "upload", Step: StepSpecRequirements, Reason: "start requirements"}
-	out := briefFor(t, root, "p", step)
+	out := briefFor(t, root, "p", "upload")
 
-	// Determinism: same plan + step → byte-identical brief.
-	if out2 := briefFor(t, root, "p", step); out != out2 {
+	// Determinism: same plan + feat → byte-identical brief.
+	if out2 := briefFor(t, root, "p", "upload"); out != out2 {
 		t.Errorf("brief is not byte-deterministic")
 	}
 
@@ -80,29 +83,32 @@ func TestBriefContentAndDeterminism(t *testing.T) {
 	if !strings.Contains(out, "docs/plans/p/seeds/upload/requirements.md") {
 		t.Errorf("brief should list the feat's seeds")
 	}
-	// Step gate: the spec validator for this feat.
-	if !strings.Contains(out, "csdd spec validate upload") {
-		t.Errorf("requirements step should name the spec-validate gate")
-	}
 }
 
-func TestBriefTaskStepGates(t *testing.T) {
+func TestBriefSelfChecks(t *testing.T) {
 	root := setupWorkspace(t, "p", briefPlan)
-	step := Step{Feat: "upload", Step: "task 1.2", Reason: "implement task 1.2"}
-	out := briefFor(t, root, "p", step)
-	// Implementation task runs the plan's Quality Gates plus graph analyze.
-	if !strings.Contains(out, "make check") {
-		t.Errorf("task step should list the plan Quality Gates")
+	out := briefFor(t, root, "p", "upload")
+	// The self-checks the session runs before declaring done: spec validate, graph
+	// analyze, and the plan's own Quality Gates.
+	if !strings.Contains(out, "csdd spec validate upload") {
+		t.Errorf("brief should tell the session to run spec validate itself")
 	}
 	if !strings.Contains(out, "graph analyze --strict") {
-		t.Errorf("task step should list the graph traceability gate")
+		t.Errorf("brief should list the graph traceability self-check")
+	}
+	if !strings.Contains(out, "make check") {
+		t.Errorf("brief should inject the plan Quality Gates as self-checks")
+	}
+	// The verdict protocol is done|continue only.
+	if !strings.Contains(out, "`done`") || !strings.Contains(out, "`continue`") {
+		t.Errorf("brief should teach the done|continue verdict protocol")
 	}
 }
 
 func TestBriefUnknownFeat(t *testing.T) {
 	root := setupWorkspace(t, "p", briefPlan)
 	doc, _ := Load(root, "p")
-	if _, err := Brief(root, doc, Step{Feat: "ghost", Step: StepSpecRequirements}); err == nil {
-		t.Errorf("Brief should error for a feat not in the plan")
+	if _, err := FeatBrief(root, doc, Feat{Slug: "ghost"}); err == nil {
+		t.Errorf("FeatBrief should error for a feat not in the plan")
 	}
 }

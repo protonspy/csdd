@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/protonspy/csdd/internal/paths"
@@ -23,8 +22,7 @@ const (
 	StateTasks        = "tasks"        // design approved; tasks not yet approved
 	StateReady        = "ready"        // ready_for_implementation; no task checked yet
 	StateImplementing = "implementing" // some but not all tasks checked
-	StateDone         = "done"         // every task checked
-	StateBlocked      = "blocked"      // a runner block marker exists for the feat
+	StateDone         = "done"         // every task checked, or the ledger marks it delivered
 )
 
 // FeatStatus is one feat's derived state plus the evidence behind it.
@@ -35,26 +33,21 @@ type FeatStatus struct {
 	State        string `json:"state"`
 	TasksTotal   int    `json:"tasks_total,omitempty"`
 	TasksChecked int    `json:"tasks_checked,omitempty"`
-	BlockKind    string `json:"block_kind,omitempty"` // which way out applies (see Block)
-	BlockReason  string `json:"block_reason,omitempty"`
-	BlockLog     string `json:"block_log,omitempty"`
 }
 
-// PlanStatus is the whole-plan derived view: plan-level flags (approval, drift,
-// unprocessed deviations) plus per-feat states, in table order.
+// PlanStatus is the whole-plan derived view: plan-level flags (approval, drift)
+// plus per-feat states, in table order.
 type PlanStatus struct {
-	Slug       string       `json:"plan"`
-	Name       string       `json:"name,omitempty"`
-	Approved   bool         `json:"approved"`
-	Drift      bool         `json:"drift"`
-	Deviations int          `json:"deviations"`
-	Feats      []FeatStatus `json:"feats"`
+	Slug     string       `json:"plan"`
+	Name     string       `json:"name,omitempty"`
+	Approved bool         `json:"approved"`
+	Drift    bool         `json:"drift"`
+	Feats    []FeatStatus `json:"feats"`
 }
 
 // DeriveStatus computes the plan-level flags and every feat's state from disk
 // reality. It performs no writes and is deterministic given the workspace.
 func DeriveStatus(root string, doc *PlanDoc) (PlanStatus, error) {
-	dir := Dir(root, doc.Slug)
 	st := PlanStatus{Slug: doc.Slug, Name: doc.Name}
 
 	approved, drift, err := IsApproved(root, doc.Slug)
@@ -63,27 +56,22 @@ func DeriveStatus(root string, doc *PlanDoc) (PlanStatus, error) {
 	}
 	st.Approved = approved
 	st.Drift = drift
-	st.Deviations = countDeviations(dir)
 
+	done := LoadLedger(root, doc.Slug).doneSet()
 	for _, f := range doc.Feats {
-		st.Feats = append(st.Feats, deriveFeatStatus(root, doc.Slug, f))
+		st.Feats = append(st.Feats, deriveFeatStatus(root, f, done))
 	}
 	return st, nil
 }
 
-// deriveFeatStatus resolves a single feat's state. A block marker always wins —
-// clearing it is a runner or human act (`plan run` retires the repairable ones,
-// `plan approve` retires deviations against a revised plan, `plan unblock` retires
-// any) — otherwise the state follows spec approvals and, once ready, the tasks.md
-// checkbox progress.
-func deriveFeatStatus(root, slug string, f Feat) FeatStatus {
+// deriveFeatStatus resolves a single feat's state. The ledger wins: a feat the loop
+// has recorded delivered reads as done regardless of disk. Otherwise the state
+// follows spec approvals and, once ready, the tasks.md checkbox progress.
+func deriveFeatStatus(root string, f Feat, done map[string]bool) FeatStatus {
 	fs := FeatStatus{Slug: f.Slug, Num: f.Num, Milestone: f.Milestone}
 
-	if b, blocked := ReadBlock(root, slug, f.Slug); blocked {
-		fs.State = StateBlocked
-		fs.BlockKind = b.Kind
-		fs.BlockReason = b.Reason
-		fs.BlockLog = b.Log
+	if done[f.Slug] {
+		fs.State = StateDone
 		return fs
 	}
 
@@ -166,37 +154,4 @@ func taskProgress(specDir string) (total, checked int) {
 // regenerable and gitignored.
 func stateDir(root, slug string) string {
 	return filepath.Join(paths.State(root), "plan", slug)
-}
-
-// A deviation entry ends in a bare `blocked` outcome. A mechanical block is
-// journaled as `blocked (<kind>)` and an unblock as `unblocked`, so neither can be
-// mistaken for the thing the human owes the plan.
-var (
-	reDeviationEntry = regexp.MustCompile(`^##\s+\[\d{4}-\d{2}-\d{2}\].*\|\s*` + regexp.QuoteMeta(VerdictBlocked) + `\s*$`)
-	reUnblockedEntry = regexp.MustCompile(`^##\s+\[\d{4}-\d{2}-\d{2}\].*\|\s*unblocked\b`)
-)
-
-// countDeviations counts the deviations in the run journal (log.md) that nobody has
-// answered yet: blocked entries minus the unblocks that retired them. A deviation is
-// a structured objection the human must fold into the plan and re-approve
-// (principle 5); the outstanding count is surfaced as a plan-level flag (R5.2).
-func countDeviations(dir string) int {
-	data, err := os.ReadFile(filepath.Join(dir, "log.md"))
-	if err != nil {
-		return 0
-	}
-	blocked, unblocked := 0, 0
-	for _, line := range strings.Split(textutil.NormalizeNewlines(string(data)), "\n") {
-		line = strings.TrimRight(line, " \t")
-		switch {
-		case reDeviationEntry.MatchString(line):
-			blocked++
-		case reUnblockedEntry.MatchString(line):
-			unblocked++
-		}
-	}
-	if n := blocked - unblocked; n > 0 {
-		return n
-	}
-	return 0
 }

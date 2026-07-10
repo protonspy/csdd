@@ -11,65 +11,55 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// forbiddenActions is the contract every brief carries: the session authors the
-// step's artifact and returns a verdict. The runner owns the phase approvals,
-// standing in for the human gate; committing, branching, and the PR are the csdd
-// dev-cycle's job (/csdd-commit, the pre-push gate), which the session drives.
+// missionSteps is the whole-feat contract every brief carries: the session owns
+// the entire spec lifecycle and the implementation, drives its own git, and returns
+// a verdict. There is no runner-side gate — the loop trusts the session — so the
+// checks the runner used to enforce become checks the session runs itself before
+// declaring the feat done (see selfChecks).
+var missionSteps = []string{
+	"Author the spec if it does not exist yet: `csdd spec init <feat>`, then generate, validate, and approve each phase — `csdd spec generate <feat> --artifact requirements|design|tasks`, `csdd spec validate <feat>`, `csdd spec approve <feat> --phase requirements|design|tasks`.",
+	"Implement every task in specs/<feat>/tasks.md, checking each box as you finish it.",
+	"You own git and the csdd dev-cycle: branch, commit via /csdd-commit (the pre-push gate runs there), and open the PR.",
+	"Record any technology or hard-to-reverse trade-off the contract does not already cover — a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line. Prefer the option that deviates least from the decided stack.",
+}
+
+// forbiddenActions is the short list the session must not touch: the approved plan
+// is the contract, and .csdd/ is the loop's operational state.
 var forbiddenActions = []string{
-	"Do NOT edit plan.md or plan.json — the approved plan is the contract; editing it is real drift and stops the run. Leave .csdd/ (the runner's operational state) alone.",
-	"Do NOT run `csdd spec approve` or `csdd plan approve` — the runner performs every approval after its own gates pass.",
-	"Do NOT adopt a technology or make a hard-to-reverse trade-off SILENTLY: an adoption is only legitimate once it is recorded (a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line) and declared in your verdict's `decisions`.",
+	"Do NOT edit plan.md or plan.json — the approved plan is the contract. Leave .csdd/ (the loop's operational state, including progress.json) alone.",
 }
 
-// verdictProtocol teaches the session how to talk to the loop: decisions are the
-// session's to make and record (the runner re-binds the contract, it never stops
-// on one), and the verdict status is a declaration of intent — done asks to be
-// verified, progress hands off, halt ends the run. This text is what retired the
-// legacy `blocked` verdict: a loop that parks a feat on every open decision is
-// not autonomous, it is a queue for the human.
-var verdictProtocol = []string{
-	"**Open decisions are YOURS.** When this step needs a technology or trade-off the contract does not cover (no stack row, no ADR), decide it — prefer the option that deviates least from the decided stack — record it (docs/stack.md Decided row; docs/adr when the why needs more than a line), and list it in your verdict's `decisions`. The runner re-binds the contract to the recorded decision and the loop continues.",
-	"`done` — this step's contract is fulfilled. The runner verifies with the gates above; if they fail, the next session inherits your failure output, so never claim done on hope.",
-	"`progress` — honest partial work: you are out of room before the step is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).",
-	"`halt` — something OUTSIDE the workspace blocks the work (missing credential, unreachable external service, access only a human has). A halt ends the WHOLE run, so never halt on anything you could fix, decide, or record yourself.",
-}
-
-// Brief assembles the deterministic context pack for one step (R7). It draws only
-// on explicit content — the feat row, its seeds, resolved stack rows, resolved
-// wiki refs (path + description, never the body), the Executor Notes, and the
-// step contract — so the same plan and step always produce a byte-identical
-// brief (R7.3). It inlines stack rows in full but never wiki bodies (R7.2).
-func Brief(root string, doc *PlanDoc, step Step) (string, error) {
-	feat, ok := doc.Feat(step.Feat)
-	if !ok {
-		return "", fmt.Errorf("feat %q is not in plan %q", step.Feat, doc.Slug)
+// FeatBrief assembles the deterministic mission pack for one whole feat (R7). It
+// draws only on explicit content — the feat row, its seeds, resolved stack rows,
+// resolved wiki refs (path + description, never the body), the Executor Notes, and
+// the feat's own quality gates — so the same plan and feat always produce a
+// byte-identical brief (R7.3). It inlines stack rows in full but never wiki bodies
+// (R7.2). The autonomous run context (handoff, failure trail) is appended after
+// this by the runner, so this prefix stays stable across a feat's sessions.
+func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
+	if _, ok := doc.Feat(feat.Slug); !ok {
+		return "", fmt.Errorf("feat %q is not in plan %q", feat.Slug, doc.Slug)
 	}
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 
-	w("# Brief — %s / %s\n\n", doc.Slug, feat.Slug)
-	w("You are a fresh session executing ONE step of an approved csdd plan. Do exactly\n")
-	w("this step's contract, then return the verdict schema. Nothing more.\n\n")
+	w("# Mission — %s / %s\n\n", doc.Slug, feat.Slug)
+	w("You are a fresh session in a self-correcting autonomous loop. Your mission is to\n")
+	w("fully deliver ONE feat of an approved csdd plan: %s. Drive the entire spec\n", feat.Slug)
+	w("lifecycle and its implementation yourself, then return the verdict schema.\n\n")
 
-	// 1. Step contract.
-	produce, gates := stepContract(doc, step)
-	w("## Step: %s\n\n", step.Step)
-	if step.Reason != "" {
-		w("%s\n\n", step.Reason)
-	}
-	w("**Produce:** %s\n\n", produce)
-	w("**Gates that will run (all must pass before this step advances):**\n")
-	for _, g := range gates {
-		w("- %s\n", g)
+	// 1. The mission contract.
+	w("## Your mission (own the whole flow)\n\n")
+	for i, s := range missionSteps {
+		w("%d. %s\n", i+1, s)
 	}
 	w("\n**Forbidden actions:**\n")
 	for _, f := range forbiddenActions {
 		w("- %s\n", f)
 	}
-	w("\n**Decisions and the verdict protocol:**\n")
-	for _, p := range verdictProtocol {
-		w("- %s\n", p)
-	}
+	w("\n**Verdict protocol:**\n")
+	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop trusts this and moves to the next feat, so never claim done on hope.\n")
+	w("- `continue` — honest partial work: you are out of room before the feat is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).\n")
 	w("\n")
 
 	// 2. Feat context.
@@ -77,7 +67,7 @@ func Brief(root string, doc *PlanDoc, step Step) (string, error) {
 	w("- Objective: %s\n", orDash(feat.Objective))
 	w("- Milestone: %s\n", orDash(feat.Milestone))
 	if len(feat.Depends) > 0 {
-		w("- Depends on (already done): %s\n", strings.Join(feat.Depends, ", "))
+		w("- Depends on (delivered earlier in the plan): %s\n", strings.Join(feat.Depends, ", "))
 	}
 	w("\n")
 
@@ -161,34 +151,21 @@ func Brief(root string, doc *PlanDoc, step Step) (string, error) {
 	w("- `csdd graph query <term>` — find the nodes for a concept.\n")
 	w("- `csdd graph explain <id>` — see a node's neighborhood and provenance.\n")
 	w("- `csdd graph path <a> <b>` — trace how two artifacts connect.\n")
-	w("Traverse the graph to locate the relevant code; do not grep the whole tree.\n")
+	w("Traverse the graph to locate the relevant code; do not grep the whole tree.\n\n")
+
+	// 8. Self-checks — what the runner used to gate on, now the session runs itself.
+	w("## Before you declare `done` — run these checks YOURSELF\n\n")
+	w("The loop does NOT verify your work; it trusts your verdict. So the feat is done\n")
+	w("only when ALL of these pass and every task box in specs/%s/tasks.md is checked:\n\n", feat.Slug)
+	w("- `csdd spec validate %s` (the spec is structurally sound: EARS, traceability, tasks)\n", feat.Slug)
+	w("- `csdd graph analyze --strict` (spec↔task↔component traceability holds)\n")
+	for _, g := range planGateCommands(doc) {
+		w("- %s\n", g)
+	}
+	w("\nOnly then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
+	w("`{\"status\":\"continue\"}` with the handoff in `summary`.\n")
 
 	return b.String(), nil
-}
-
-// stepContract returns the artifact to produce and the gates that will run for a
-// step (R7.1). Spec-phase steps are gated by the spec validator; an implementation
-// task is gated by the plan's own Quality Gates plus graph traceability.
-func stepContract(doc *PlanDoc, step Step) (produce string, gates []string) {
-	feat := step.Feat
-	switch {
-	case step.Step == StepSpecRequirements:
-		return fmt.Sprintf("specs/%s/requirements.md (EARS acceptance criteria) via `csdd spec generate %s --artifact requirements`", feat, feat),
-			[]string{fmt.Sprintf("`csdd spec validate %s`", feat)}
-	case step.Step == StepSpecDesign:
-		return fmt.Sprintf("specs/%s/design.md (components, traceability, file plan) via `csdd spec generate %s --artifact design`", feat, feat),
-			[]string{fmt.Sprintf("`csdd spec validate %s`", feat)}
-	case step.Step == StepSpecTasks:
-		return fmt.Sprintf("specs/%s/tasks.md (boundary/depends-annotated tasks) via `csdd spec generate %s --artifact tasks`", feat, feat),
-			[]string{fmt.Sprintf("`csdd spec validate %s`", feat)}
-	case strings.HasPrefix(step.Step, StepTaskPrefix):
-		id := strings.TrimSpace(strings.TrimPrefix(step.Step, StepTaskPrefix))
-		g := planGateCommands(doc)
-		g = append(g, "`csdd graph analyze --strict` (traceability holds)")
-		return fmt.Sprintf("the implementation and tests for task %s in specs/%s/tasks.md; check the box when done", id, feat), g
-	default:
-		return step.Step, planGateCommands(doc)
-	}
 }
 
 // planGateCommands renders the plan's Quality Gates as backticked commands, or a

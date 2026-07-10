@@ -83,20 +83,20 @@ func TestPlanNextAndBriefCLI(t *testing.T) {
 	if code, _, e := run(t, "plan", "generate", "photos", "upload", "--root", dir); code != 0 {
 		t.Fatalf("generate failed: %s", e)
 	}
-	// upload now has a generated (unapproved) requirements → next is its requirements step.
+	// upload is the only feat and is not yet delivered → next hands out the feat.
 	code, out, _ := run(t, "plan", "next", "photos", "--root", dir, "--json")
 	if code != 0 {
 		t.Fatalf("plan next exit=%d out=%s", code, out)
 	}
-	if !strings.Contains(out, `"feat": "upload"`) || !strings.Contains(out, `"step": "spec-requirements"`) {
-		t.Errorf("unexpected next step: %s", out)
+	if !strings.Contains(out, `"feat": "upload"`) {
+		t.Errorf("unexpected next feat: %s", out)
 	}
-	// brief prints a context pack for that step.
+	// brief prints the whole-feat mission pack for that feat.
 	code, out, errOut := run(t, "plan", "brief", "photos", "--root", dir)
 	if code != 0 {
 		t.Fatalf("plan brief failed (code=%d): %s", code, errOut)
 	}
-	if !strings.Contains(out, "Brief — photos / upload") || !strings.Contains(out, "Forbidden actions") {
+	if !strings.Contains(out, "Mission — photos / upload") || !strings.Contains(out, "Forbidden actions") {
 		t.Errorf("brief output incomplete: %s", out)
 	}
 }
