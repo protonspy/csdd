@@ -1,7 +1,7 @@
 ---
-description: Drive a csdd plan's autonomous loop — one Claude session per iteration, verified and approved by the runner, self-correcting on failure. Requires an approved, drift-free plan.
+description: Drive a csdd plan's autonomous loop — one Claude session per iteration, each handed one whole feat as its mission. The loop trusts the session; it does not verify. Requires an approved, drift-free plan.
 argument-hint: <plan-slug> [--yes]
-allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(csdd plan unblock:*), Bash(npx @protonspy/csdd plan:*)
+allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(csdd plan next:*), Bash(csdd plan brief:*), Bash(npx @protonspy/csdd plan:*)
 ---
 
 ## Task
@@ -12,41 +12,40 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
 **drift-free**. Then:
 
 - `csdd plan run <slug>` — the loop spawns one fresh session per iteration with
-  `--dangerously-skip-permissions` (default cap 100, `--max-iterations`), runs the
-  gates, and approves each phase only on green. Run it inside the hardened
-  sandbox: the runner checks `csdd sandbox doctor` first, and when isolation is
-  NOT verified it alerts and asks for confirmation — declining closes the run.
+  `--dangerously-skip-permissions` (default cap 100, `--max-iterations`). Each
+  session is handed ONE whole feat's mission brief and drives the entire flow
+  itself. Run it inside the hardened sandbox: the runner checks
+  `csdd sandbox doctor` first, and when isolation is NOT verified it alerts and
+  asks for confirmation — declining closes the run.
 - `--yes` pre-accepts that alert (non-interactive runs); only pass it when the
   human has explicitly accepted running bypass-mode outside a verified sandbox.
 
-The runner is only the loop and the verifier: it owns the phase approvals and the
-journal, while the session controls the flow — it runs the csdd dev-cycle, owns
-git (branch, `/csdd-commit`, the pre-push gate, the PR), and **makes and records
-open decisions** (docs/stack.md Decided row / ADR, declared in the verdict's
-`decisions`; the runner re-binds the approval automatically). Failures never park
-a feat mid-run: each one becomes the next session's context, and the loop
-self-corrects until the plan completes, a session halts, the stall guard trips
-(`--stall`, default 10 sessions with no advancement), or the cap is hit.
+The runner is deliberately dumb: it hands out feats in plan order, spawns the
+session, and records what the session declares — nothing more. **The session owns
+everything else**: it authors and approves the spec (`csdd spec generate/validate/
+approve`), implements every task, runs the csdd dev-cycle, owns git (branch,
+`/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes
+(docs/stack.md Decided row / ADR). There is **no runner-side gate** — the loop
+trusts the session's verdict.
+
+The verdict is one of two intents:
+
+- **`done`** — the whole feat is delivered and the session's own checks pass
+  (`csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates).
+  The runner records the feat in `.csdd/plan/<slug>/progress.json` and moves on.
+- **`continue`** — honest partial work: the same feat comes back next iteration
+  with the session's handoff carried forward.
 
 ## When the run ends without completing
 
-`csdd plan status <slug>` prints each marker's **kind**. A marker records how the
-run ENDED — the next `csdd plan run <slug>` clears it and retries automatically,
-so the usual move is: read, fix if needed, run again. Never `rm` a marker under
-`.csdd/` by hand.
+The run ends four ways: the plan completes, the iteration cap is hit (the wallet
+guard), the stall guard trips (`--stall`, default 10 consecutive *failed* sessions
+— a session error, not a large feat mid-flight), or a preflight refusal. There are
+no block markers to clear: just `csdd plan run <slug>` again — it resumes from the
+ledger, re-handing whatever feat is not yet marked done, and the first session on a
+previously-failed feat is pointed at its failure log under
+`.csdd/plan/<slug>/failures/<feat>.log`.
 
-- **`gate-failure`** — the run stalled or hit the cap on this step. Every
-  attempt's output is in `.csdd/plan/<slug>/failures/<feat>/<step>.log`; **read
-  that log first**. If something outside the loop's reach broke (tooling, env),
-  fix it, then just re-run — the next run's first session is pointed at the log.
-- **`halt`** — a session declared an impediment outside the workspace (missing
-  credential, unreachable service, human-only access). Fix the impediment, then
-  re-run. Do not `--force` past it without fixing anything.
-- **`deviation`** (written by older csdd versions only) — an open decision the
-  old runner parked on. The current loop retries it and lets the session decide
-  and record; alternatively, fold the recorded proposal into the plan via the
-  `prd` skill's Revise workflow and `csdd plan approve <slug>`.
-
-Audit an autonomous run through `docs/plans/<slug>/log.md`: every step outcome,
-failure, recorded decision, and contract re-bind is journaled there — ratify the
-sessions' decisions by reading it after the run.
+Audit an autonomous run through `docs/plans/<slug>/log.md`: every feat outcome
+(done / progress / failed) is journaled there — ratify the sessions' work by
+reading it after the run.

@@ -219,10 +219,8 @@ export interface PlanSummary {
   name: string
   approved: boolean
   drift: boolean
-  deviations: number
   feats: number
   done: number
-  blocked: number
 }
 
 export interface PlanFeat {
@@ -235,9 +233,6 @@ export interface PlanFeat {
   state: string
   tasks_total: number
   tasks_checked: number
-  block_kind?: string
-  block_reason?: string
-  block_log?: string
 }
 
 export interface MilestoneProgress {
@@ -251,7 +246,6 @@ export interface PlanDetail {
   name: string
   approved: boolean
   drift: boolean
-  deviations: number
   feats: PlanFeat[]
   milestones: MilestoneProgress[]
 }

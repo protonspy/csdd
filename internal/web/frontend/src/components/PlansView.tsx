@@ -36,10 +36,8 @@ export function PlansView({ version }: { version: number }) {
             <div className="stat-grid">
               <Stat label="feats" value={p.feats} />
               <Stat label="done" value={p.done} tone="ok" />
-              <Stat label="blocked" value={p.blocked} tone={p.blocked > 0 ? 'bad' : undefined} />
             </div>
             <ProgressBar pct={p.feats > 0 ? Math.round((p.done * 100) / p.feats) : 0} />
-            {p.deviations > 0 && <div className="badge warn">{p.deviations} deviation(s)</div>}
           </button>
         ))}
       </div>
@@ -119,7 +117,6 @@ function FeatRow({ f }: { f: PlanFeat }) {
       <StateBadge state={f.state} />
       <span className="feat-progress muted small">
         {f.tasks_total > 0 ? `${f.tasks_checked}/${f.tasks_total} tasks` : ''}
-        {f.block_reason ? f.block_reason : ''}
       </span>
     </div>
   )
@@ -146,7 +143,7 @@ function ApprovalBadge({ approved, drift }: { approved: boolean; drift: boolean 
 
 function StateBadge({ state }: { state: string }) {
   const tone =
-    state === 'done' ? 'ready' : state === 'blocked' ? 'warn' : state === 'implementing' || state === 'ready' ? 'info' : 'muted'
+    state === 'done' ? 'ready' : state === 'implementing' || state === 'ready' ? 'info' : 'muted'
   return <span className={`badge ${tone}`}>{state}</span>
 }
 

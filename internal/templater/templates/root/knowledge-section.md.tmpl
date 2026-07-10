@@ -63,14 +63,15 @@ an initiative into **feats**, each becoming exactly one spec.
   lighter `quick-prd` on-ramp.
 - **Never edit an approved plan, and never execute approvals, during a run.**
   `csdd plan run` is a dumb loop plus a verifier: it runs the gates, owns
-  `csdd spec approve`, and journals — while the session controls the flow, runs
-  the csdd dev-cycle, and owns git (branch, `/csdd-commit`, the PR). Don't run
-  `csdd spec/plan approve` yourself, and don't edit `plan.md`/`plan.json` — editing
-  an approved plan is real drift and stops autonomy until re-approval.
-- **Decisions are recorded, never improvised silently.** When a step needs a
-  technology or trade-off the contract doesn't cover, the session decides it,
-  records it (a `docs/stack.md` Decided row; a `docs/adr` record when the why
-  needs more than a line), and declares it in the verdict's `decisions` — the
-  runner re-binds the approval automatically and the loop continues. Audit the
-  run's decisions afterwards in `docs/plans/<slug>/log.md`; plan-shape changes
-  still go through the PRD skill's **Revise** workflow and re-approval.
+  a per-feat ledger and journals — while the session controls the whole flow: it
+  authors and approves the spec, runs the csdd dev-cycle, and owns git (branch,
+  `/csdd-commit`, the PR). Don't edit `plan.md`/`plan.json` — editing an approved
+  plan is real drift and stops autonomy until re-approval.
+- **The loop trusts the session; it does not verify.** A session is handed one
+  whole feat and declares `done` only when its OWN checks pass (`csdd spec
+  validate`, `csdd graph analyze --strict`, the plan's Quality Gates) — never on
+  hope. When a feat needs a technology or trade-off the contract doesn't cover,
+  the session decides it and records it (a `docs/stack.md` Decided row; a
+  `docs/adr` record when the why needs more than a line). Audit the run afterwards
+  in `docs/plans/<slug>/log.md`; plan-shape changes go through the PRD skill's
+  **Revise** workflow and re-approval.

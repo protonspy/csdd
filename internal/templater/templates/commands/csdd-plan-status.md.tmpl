@@ -1,5 +1,5 @@
 ---
-description: Show a csdd plan's derived status — per-feat state (pending/…/done/blocked), approval, drift, and unprocessed deviations.
+description: Show a csdd plan's derived status — per-feat state (pending/…/done), approval, and drift.
 argument-hint: <plan-slug>
 allowed-tools: Bash(csdd plan status:*), Bash(npx @protonspy/csdd plan status:*)
 ---
@@ -7,7 +7,5 @@ allowed-tools: Bash(csdd plan status:*), Bash(npx @protonspy/csdd plan status:*)
 ## Task
 
 Run `csdd plan status $ARGUMENTS` and summarize: which feats are done, in
-progress, pending, or blocked; whether the plan is approved and drift-free; and
-whether `log.md` holds unprocessed deviations (which route to the `prd` skill's
-Revise workflow). State is derived from `specs/` reality — there is nothing to
-edit here.
+progress, or pending; and whether the plan is approved and drift-free. State is
+derived from `specs/` reality and the run ledger — there is nothing to edit here.

@@ -76,16 +76,15 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 	mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [ ] 1. Implement upload\n")
 
 	// 4. Run the plan with a stub runner (no real claude/git): the session authors
-	//    the change and checks its task box, gates pass, and Next advances. The
-	//    runner never touches git — commit/branch/PR are the session's dev-cycle.
+	//    the change, checks its task box, and declares done. The loop trusts the
+	//    verdict, records the feat in the ledger, and advances. The runner never
+	//    touches git — commit/branch/PR are the session's dev-cycle.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
-		Session: func(plan.Step, string, float64) (plan.Verdict, error) {
+		Session: func(plan.Feat, string, float64) (plan.Verdict, error) {
 			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
 			return plan.Verdict{Status: plan.VerdictDone}, nil
 		},
-		CSDD:            func(string, ...string) (bool, string) { return true, "" },
-		Gate:            func(string, string) (bool, string) { return true, "" },
 		Doctor:          func() plan.SandboxReport { return plan.SandboxReport{OK: true} },
 		ClaudeAvailable: func() bool { return true },
 		Now:             func() time.Time { return now },
@@ -159,7 +158,7 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 
 	// The runner journaled the completion with the deterministic timestamp.
 	logData, _ := os.ReadFile(filepath.Join(dir, "docs", "plans", "photos", "log.md"))
-	if !strings.Contains(string(logData), "## [2026-07-07] task 1 | upload | done") {
+	if !strings.Contains(string(logData), "## [2026-07-07] - | upload | done") {
 		t.Errorf("run journal missing the completion line:\n%s", logData)
 	}
 }

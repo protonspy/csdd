@@ -86,15 +86,15 @@ func TestADRValidateE2E(t *testing.T) {
 	}
 
 	// The brief inlines the cited ADR in full.
-	code, out, _ := run(t, "plan", "brief", "photos", "--feat", "upload", "--step", "task 1.1", "--root", dir)
+	code, out, _ := run(t, "plan", "brief", "photos", "--feat", "upload", "--root", dir)
 	if code != 0 {
 		t.Fatalf("plan brief failed: %d", code)
 	}
 	if !strings.Contains(out, "Store under docs/adr") || !strings.Contains(out, "BODY_TOKEN") {
 		t.Errorf("brief should inline the cited ADR in full:\n%s", out)
 	}
-	if !strings.Contains(out, "Open decisions are YOURS") {
-		t.Errorf("brief should carry the open-decision ownership line")
+	if !strings.Contains(out, "docs/stack.md Decided row") {
+		t.Errorf("brief should carry the record-your-decisions mission line")
 	}
 
 	// Broken citation: rewrite the ADR to a different slug.
