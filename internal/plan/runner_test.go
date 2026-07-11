@@ -52,6 +52,7 @@ func baseHooks() Hooks {
 		Confirm:         func(string) bool { return false },
 		ClaudeAvailable: func() bool { return true },
 		Now:             fixedNow,
+		Sleep:           func(time.Duration) {},
 	}
 }
 
@@ -302,6 +303,98 @@ func TestRunnerJournalFormat(t *testing.T) {
 	}
 	if !strings.Contains(string(logData), "shipped the thing") {
 		t.Errorf("done journal should carry the session summary: %s", logData)
+	}
+}
+
+// TestDetectLimit covers recognizing the account-limit notice and resolving the
+// reset moment from its "resets 10:10pm (America/Sao_Paulo)" clause.
+func TestDetectLimit(t *testing.T) {
+	// Not a limit notice.
+	if _, ok := detectLimit("claude session failed: exit status 1"); ok {
+		t.Errorf("a plain failure must not be read as a limit")
+	}
+
+	// Full notice with a parsable reset in an explicit zone.
+	lim, ok := detectLimit("You've hit your session limit · resets 10:10pm (America/Sao_Paulo)")
+	if !ok {
+		t.Fatal("expected the notice to be detected as a limit")
+	}
+	if !lim.known || lim.Hour != 22 || lim.Minute != 10 {
+		t.Errorf("expected reset 22:10, got %+v", lim)
+	}
+	// now is before 22:10 São Paulo, so the reset is the same day.
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	now := time.Date(2026, 7, 10, 15, 0, 0, 0, loc)
+	reset, ok := lim.Reset(now)
+	if !ok {
+		t.Fatal("expected a resolvable reset time")
+	}
+	if reset.Hour() != 22 || reset.Minute() != 10 || reset.Day() != 10 {
+		t.Errorf("reset should be same-day 22:10, got %s", reset)
+	}
+	// A reset already past today rolls to tomorrow.
+	if r2, _ := lim.Reset(time.Date(2026, 7, 10, 23, 0, 0, 0, loc)); r2.Day() != 11 {
+		t.Errorf("a past reset should roll to tomorrow, got %s", r2)
+	}
+
+	// A notice with no parsable reset still detects, but Reset falls back.
+	bare, ok := detectLimit("You've hit your usage limit. Try again later.")
+	if !ok || bare.known {
+		t.Errorf("bare notice should detect without a known reset, got ok=%v %+v", ok, bare)
+	}
+	if _, ok := bare.Reset(fixedNow()); ok {
+		t.Errorf("an unparsed reset must report ok=false")
+	}
+}
+
+// TestRunnerLimitSleepsAndResumes: a session-limit stop is not a failure — the
+// runner sleeps until the reset and retries the SAME feat, so the run completes
+// without incrementing failures or the stall guard, and no failure log is written.
+func TestRunnerLimitSleepsAndResumes(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	var slept []time.Duration
+	calls := 0
+	h := baseHooks()
+	h.Sleep = func(d time.Duration) { slept = append(slept, d) }
+	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+		calls++
+		// Feat a hits the limit twice, then delivers; feat b delivers directly.
+		if feat.Slug == "a" && calls <= 2 {
+			return Verdict{}, &LimitError{Raw: "hit your session limit", Hour: 22, Minute: 10, known: true}
+		}
+		return Verdict{Status: VerdictDone}, nil
+	}
+	var out bytes.Buffer
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Stall: 2, Out: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Completed || sum.Outcome != OutcomeComplete {
+		t.Fatalf("limit stops should not fail the run, got %+v (%s)", sum, sum.Reason)
+	}
+	if sum.Failures != 0 {
+		t.Errorf("a limit stop is not a failure, got %d", sum.Failures)
+	}
+	if sum.Sessions != 2 {
+		t.Errorf("limit retries are not counted as sessions; expected 2, got %d", sum.Sessions)
+	}
+	if len(slept) != 2 {
+		t.Errorf("expected two limit sleeps, got %d: %v", len(slept), slept)
+	}
+	for _, d := range slept {
+		if d < limitMinWait {
+			t.Errorf("every wait must be floored at %s, got %s", limitMinWait, d)
+		}
+	}
+	// The limit stop must not pollute the failure log.
+	if _, err := os.Stat(filepath.Join(root, ".csdd", "plan", "p", "failures", "a.log")); err == nil {
+		t.Errorf("a limit stop must not write a failure log")
+	}
+	if !strings.Contains(out.String(), "session limit") {
+		t.Errorf("the run log should announce the limit pause:\n%s", out.String())
 	}
 }
 
