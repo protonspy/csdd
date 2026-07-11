@@ -1,6 +1,7 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,21 @@ import (
 	"unicode/utf8"
 
 	"github.com/protonspy/csdd/internal/paths"
+)
+
+// Account-limit wait tuning. When a session stops because the Claude account hit
+// its limit, the runner sleeps until the window reopens instead of counting the
+// stop as a failure.
+const (
+	// limitResetBuffer pads the parsed reset moment so the runner wakes just after
+	// the window reopens, never a hair before it.
+	limitResetBuffer = 1 * time.Minute
+	// limitMinWait floors every limit sleep so a reset that resolves into the past
+	// (clock skew, an already-elapsed window) can't spin the loop hot.
+	limitMinWait = 1 * time.Minute
+	// limitFallbackWait is how long the runner waits when the notice carried no
+	// parsable reset time.
+	limitFallbackWait = 30 * time.Minute
 )
 
 // Hooks are the runner's seams onto the outside world. Every field has a real
@@ -32,6 +48,10 @@ type Hooks struct {
 	ClaudeAvailable func() bool
 	// Now returns the current time (journal/ledger timestamps; injected for tests).
 	Now func() time.Time
+	// Sleep pauses the loop for d. The only caller is the account-limit wait, which
+	// sleeps until the session window reopens; tests inject a stub that records the
+	// duration and returns immediately.
+	Sleep func(d time.Duration)
 }
 
 // RunOptions configures a `csdd plan run` invocation. The loop is deliberately
@@ -190,8 +210,8 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		return iterFailed
 	}
 
+	verdict, err := sessionOrWait(opts, feat, base+runContext(st, key))
 	sum.Sessions++
-	verdict, err := h.Session(feat, base+runContext(st, key), opts.SessionBudget)
 	if err != nil {
 		hist.add("session error", err.Error())
 		st.logs[key] = writeFailureLog(opts, feat, hist)
@@ -226,6 +246,46 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		logf("  ✗ unknown verdict status %q", verdict.Status)
 		return iterFailed
 	}
+}
+
+// sessionOrWait runs one session, transparently absorbing account-limit stops:
+// when the session reports "you've hit your session limit", the runner sleeps
+// until the reset window reopens and retries the SAME feat, looping until it gets
+// a real result. From executeFeat's view a limit is invisible — it never counts as
+// a failure, burns the stall guard, or pollutes the failure log. The iteration is
+// not consumed either, since the caller only advances once this returns.
+func sessionOrWait(opts RunOptions, feat Feat, brief string) (Verdict, error) {
+	h := opts.Hooks
+	for {
+		v, err := h.Session(feat, brief, opts.SessionBudget)
+		var lim *LimitError
+		if errors.As(err, &lim) {
+			waitForLimit(opts, feat, lim)
+			continue
+		}
+		return v, err
+	}
+}
+
+// waitForLimit logs the account-limit pause and sleeps until the session window
+// reopens. The reset moment comes from the notice ("resets 10:10pm
+// (America/Sao_Paulo)"); when it can't be parsed the runner falls back to a fixed
+// wait, and every wait is floored so a stale/past reset can't spin the loop.
+func waitForLimit(opts RunOptions, feat Feat, lim *LimitError) {
+	logf := runLogf(opts)
+	now := opts.Hooks.Now()
+	wait, label := limitFallbackWait, "an unknown reset time"
+	if reset, ok := lim.Reset(now); ok {
+		wait = reset.Sub(now) + limitResetBuffer
+		label = reset.Format("2006-01-02 15:04 MST")
+	}
+	if wait < limitMinWait {
+		wait = limitMinWait
+	}
+	logf("  ⏸ hit the Claude session limit — sleeping %s until %s, then resuming %s",
+		wait.Round(time.Second), label, feat.Slug)
+	journal(opts, feat.Slug, "waiting", "session limit — resuming after "+label)
+	opts.Hooks.Sleep(wait)
 }
 
 // --- run state: the loop's memory across iterations ---------------------------
