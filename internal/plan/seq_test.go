@@ -97,20 +97,30 @@ func TestNextFeatDeterministic(t *testing.T) {
 	}
 }
 
-// TestNextFeatIgnoresDiskState proves the ledger, not disk-derived feat state, is
-// what the sequencer advances on (the loop trusts the session's `done` verdict).
-func TestNextFeatIgnoresDiskState(t *testing.T) {
+// TestNextFeatCountsDiskDelivered proves a feat fully delivered on disk — every
+// phase approved and every task checked — counts as done for sequencing even when
+// the ledger has no entry, so a plan advanced by hand (developed directly in a
+// session) resumes from where disk reality left off instead of redoing finished
+// feats. A merely partial spec is NOT skipped.
+func TestNextFeatCountsDiskDelivered(t *testing.T) {
 	root := setupWorkspace(t, "p", seqPlan)
-	// Fully implement feat a on disk, but do NOT mark it in the ledger.
 	allApproved := map[string]bool{"requirements": true, "design": true, "tasks": true}
+
+	// Feat a fully delivered on disk, no ledger entry → the sequencer skips it.
 	writeSpec(t, root, "a", allApproved, true, "- [x] 1. done\n")
-	// The sequencer still hands out a — the ledger has not recorded it.
-	if f, _ := nextFeatFor(t, root, "p", false); f.Slug != "a" {
-		t.Errorf("sequencer should follow the ledger, not disk; got %s", f.Slug)
-	}
-	// Once the ledger marks it, it advances.
-	markFeatDone(t, root, "p", "a")
 	if f, _ := nextFeatFor(t, root, "p", false); f.Slug != "b" {
-		t.Errorf("expected b after ledger marks a, got %s", f.Slug)
+		t.Errorf("a is delivered on disk; sequencer should advance to b, got %s", f.Slug)
+	}
+
+	// Feat b only partially implemented on disk → still handed out (not delivered).
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. one\n- [ ] 2. two\n")
+	if f, _ := nextFeatFor(t, root, "p", false); f.Slug != "b" {
+		t.Errorf("b is partial; sequencer should still hand it out, got %s", f.Slug)
+	}
+
+	// Finishing b on disk advances to c.
+	writeSpec(t, root, "b", allApproved, true, "- [x] 1. one\n- [x] 2. two\n")
+	if f, _ := nextFeatFor(t, root, "p", false); f.Slug != "c" {
+		t.Errorf("b now delivered on disk; sequencer should advance to c, got %s", f.Slug)
 	}
 }

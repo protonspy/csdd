@@ -76,11 +76,22 @@ func (n *Notifier) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			n.flush()
 			return nil
 		case <-ticker.C:
 			n.tick(ctx)
 		}
 	}
+}
+
+// flush relays one final round after the context is cancelled, so a run that just
+// finished still delivers the journal lines appended since the last poll (the
+// embedded plan-run notifier cancels the moment the loop returns). It uses a
+// fresh, short-lived context because the caller's is already done.
+func (n *Notifier) flush() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	n.tick(ctx)
 }
 
 // tick relays one round of both feeds.

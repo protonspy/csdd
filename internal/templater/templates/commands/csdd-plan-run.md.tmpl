@@ -19,6 +19,10 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
   asks for confirmation — declining closes the run.
 - `--yes` pre-accepts that alert (non-interactive runs); only pass it when the
   human has explicitly accepted running bypass-mode outside a verified sandbox.
+- When a Telegram bot is configured (`csdd telegram init` wrote `.csdd/bot.json`),
+  the run auto-starts the read-only notifier for its duration and relays each
+  feat's done/progress/failed line — plus every spec approval — to the chat; no
+  separate `csdd telegram run` is needed. Pass `--no-telegram` to suppress it.
 
 The runner is deliberately dumb: it hands out feats in plan order, spawns the
 session, and records what the session declares — nothing more. **The session owns

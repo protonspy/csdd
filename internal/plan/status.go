@@ -104,6 +104,24 @@ func deriveFeatStatus(root string, f Feat, done map[string]bool) FeatStatus {
 	return fs
 }
 
+// deliveredSet is the set of feats that count as delivered for sequencing: those
+// the ledger records done, UNION those whose spec is fully delivered on disk
+// (StateDone — every phase approved and every task checked). It is read-only, so a
+// `plan next` query matches what a resumed `plan run` would skip: a feat developed
+// by hand in a session (which never writes the ledger) or delivered by an earlier
+// run whose transient ledger was cleaned still reads as done, instead of being
+// re-handed from scratch. It never removes a ledger-done feat — the union only adds
+// completion the ledger could not have known about.
+func deliveredSet(root string, doc *PlanDoc, ledgerDone map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(doc.Feats))
+	for _, f := range doc.Feats {
+		if ledgerDone[f.Slug] || deriveFeatStatus(root, f, ledgerDone).State == StateDone {
+			out[f.Slug] = true
+		}
+	}
+	return out
+}
+
 // readSpecApprovals returns which of the three phases are approved in spec.json.
 // A missing or malformed spec.json yields no approvals (state "requirements"),
 // never a crash — the spec folder exists, so work has begun but nothing is

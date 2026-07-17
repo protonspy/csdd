@@ -1,10 +1,17 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestDiffSpecs(t *testing.T) {
@@ -112,6 +119,75 @@ func TestPlanUpdatesRelaysPlansAppearingAfterStartup(t *testing.T) {
 		t.Fatalf("a plan created after startup should relay from the top; got %v", got)
 	}
 	assertContains(t, got["late"], "spec:requirements")
+}
+
+// TestNotifierFlushesFinalLinesOnCancel proves the embedded plan-run integration
+// delivers a run's last journal lines: with a ticker that never fires, the only
+// way the appended line reaches the chat is the flush the notifier runs when its
+// context is cancelled (which is exactly what `plan run` does when the loop ends).
+func TestNotifierFlushesFinalLinesOnCancel(t *testing.T) {
+	root := t.TempDir()
+	log := writePlanLog(t, root, "ship-it", "## [old] seed | x | ok\n")
+
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		got = append(got, body.Text)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	has := func(sub string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, m := range got {
+			if strings.Contains(m, sub) {
+				return true
+			}
+		}
+		return false
+	}
+
+	n := NewNotifier(Options{
+		Root:     root,
+		Client:   NewClient("t", "1", srv.URL),
+		Interval: time.Hour, // the ticker must never fire — only startup + flush send
+		Out:      io.Discard,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = n.Run(ctx); close(done) }()
+
+	// Wait until Run has seeded the log to EOF and sent its startup banner.
+	waitFor(t, func() bool { return has("csdd telegram ligado") })
+
+	// A run line appended after seeding; the hourly ticker will not fire, so only
+	// the cancel-flush can deliver it.
+	appendFile(t, log, "## [2026-07-08] - | feat-a | done\n")
+	cancel()
+	<-done
+
+	if !has("feat-a") {
+		t.Fatalf("cancel-flush should relay the final journal line; got %v", got)
+	}
+}
+
+// waitFor polls cond until it holds or a short deadline passes.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met within the timeout")
 }
 
 // --- helpers ---------------------------------------------------------------

@@ -42,7 +42,10 @@ func NextFeat(root string, doc *PlanDoc, requireApproved bool) (Feat, int, error
 			return Feat{}, SeqNotReady, nil
 		}
 	}
-	f, ok := nextFeat(doc, LoadLedger(root, doc.Slug).doneSet())
+	// The done set unions the ledger with disk-delivered feats so `plan next` agrees
+	// with a resumed `plan run` (which reconciles the same disk state into its ledger)
+	// — a plan advanced by hand still resumes from where disk reality left off.
+	f, ok := nextFeat(doc, deliveredSet(root, doc, LoadLedger(root, doc.Slug).doneSet()))
 	if !ok {
 		return Feat{}, SeqComplete, nil
 	}

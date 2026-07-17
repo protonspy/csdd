@@ -146,6 +146,11 @@ func Run(opts RunOptions) (RunSummary, error) {
 		opts.Slug, budgetLabel(opts.SessionBudget), opts.MaxIterations, opts.Stall)
 
 	ledger := LoadLedger(opts.Root, opts.Slug)
+	// Resume honestly: a feat already delivered on disk — developed by hand in a
+	// session, or shipped by an earlier run whose transient ledger was cleaned —
+	// is imported into the ledger so the loop skips it instead of redoing finished
+	// work. This never unmarks; it only records completion the ledger did not know.
+	reconcileLedgerFromDisk(opts, doc, ledger, logf)
 	st := newRunState()
 	var sum RunSummary
 	stall := 0
@@ -286,6 +291,35 @@ func waitForLimit(opts RunOptions, feat Feat, lim *LimitError) {
 		wait.Round(time.Second), label, feat.Slug)
 	journal(opts, feat.Slug, "waiting", "session limit — resuming after "+label)
 	opts.Hooks.Sleep(wait)
+}
+
+// reconcileLedgerFromDisk seeds the ledger from disk reality before the loop so a
+// plan advanced outside this run resumes correctly. For every feat whose spec is
+// fully delivered on disk (StateDone: all phases approved and all tasks checked)
+// but that the ledger does not yet record, it marks the feat done and journals it
+// as reconciled. It never unmarks a feat — the ledger stays the loop's source of
+// truth; this only imports completion the loop could not have observed (hand
+// development in a session, or an earlier run whose transient ledger was cleaned).
+func reconcileLedgerFromDisk(opts RunOptions, doc *PlanDoc, ledger *Ledger, logf func(string, ...any)) {
+	done := ledger.doneSet()
+	changed := false
+	for _, f := range doc.Feats {
+		if done[f.Slug] {
+			continue
+		}
+		if deriveFeatStatus(opts.Root, f, done).State != StateDone {
+			continue
+		}
+		ledger.MarkDone(f.Slug, "reconciled: spec fully delivered on disk before this run", opts.Hooks.Now())
+		journal(opts, f.Slug, "done", "reconciled from disk (spec fully delivered before this run)")
+		logf("  ✓ %s already delivered on disk — recorded in the ledger", f.Slug)
+		changed = true
+	}
+	if changed {
+		if err := ledger.Save(opts.Root, opts.Slug); err != nil {
+			logf("  ⚠ could not persist the reconciled ledger: %v", err)
+		}
+	}
 }
 
 // --- run state: the loop's memory across iterations ---------------------------
