@@ -125,6 +125,20 @@ func TestBriefApprovalAuthority(t *testing.T) {
 	}
 }
 
+// TestBriefDelegatesImplementation: the mission must route task implementation to
+// the `implementer` sub-agent (the orchestrator decides, the fast sub-agent
+// executes), not have the orchestrating session hand-write task code inline.
+func TestBriefDelegatesImplementation(t *testing.T) {
+	root := setupWorkspace(t, "p", briefPlan)
+	out := briefFor(t, root, "p", "upload")
+	if !strings.Contains(out, "implementer") {
+		t.Errorf("brief should delegate task implementation to the implementer sub-agent:\n%s", out)
+	}
+	if !strings.Contains(out, "DELEGATING") && !strings.Contains(out, "delegat") {
+		t.Errorf("brief should tell the session to delegate implementation, not hand-write it inline")
+	}
+}
+
 func TestBriefUnknownFeat(t *testing.T) {
 	root := setupWorkspace(t, "p", briefPlan)
 	doc, _ := Load(root, "p")

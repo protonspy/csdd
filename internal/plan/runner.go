@@ -64,7 +64,14 @@ type RunOptions struct {
 	Slug          string
 	AssumeYes     bool    // accept the unverified-sandbox alert without prompting (--yes)
 	SessionBudget float64 // per-session --max-budget-usd; 0 = no cap (Claude account limits)
-	MaxIterations int     // sessions the run may spend; default 100
+	// Model and Effort are the claude --model / --effort each orchestrating session
+	// runs on. The orchestrator authors and decides (spec phases); it delegates task
+	// implementation to the `implementer` sub-agent, which runs on that agent's own
+	// (cheaper, faster) model. Empty means "inherit the ambient default" — the flag
+	// is omitted. The CLI defaults these to opus / high.
+	Model         string
+	Effort        string
+	MaxIterations int // sessions the run may spend; default 100
 	// Stall ends the run after this many consecutive iterations that FAILED (a
 	// session error or an unparseable verdict) with no forward motion. Honest
 	// partial work (`continue`) resets it, so the stall guard catches a broken
@@ -142,8 +149,8 @@ func Run(opts RunOptions) (RunSummary, error) {
 		}
 		logf("continuing WITHOUT a verified sandbox (explicitly accepted)")
 	}
-	logf("plan run %s (bypass mode, %s, max %d sessions, stall guard %d)",
-		opts.Slug, budgetLabel(opts.SessionBudget), opts.MaxIterations, opts.Stall)
+	logf("plan run %s (bypass mode, %s, %s, max %d sessions, stall guard %d)",
+		opts.Slug, sessionModelLabel(opts.Model, opts.Effort), budgetLabel(opts.SessionBudget), opts.MaxIterations, opts.Stall)
 
 	ledger := LoadLedger(opts.Root, opts.Slug)
 	// Resume honestly: a feat already delivered on disk — developed by hand in a
@@ -509,7 +516,7 @@ func fillRunDefaults(opts *RunOptions) {
 	if opts.Out == nil {
 		opts.Out = io.Discard
 	}
-	installRealHooks(&opts.Hooks)
+	installRealHooks(&opts.Hooks, opts.Model, opts.Effort)
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
@@ -537,4 +544,21 @@ func budgetLabel(budgetUSD float64) string {
 		return "budget: account limit"
 	}
 	return fmt.Sprintf("budget: $%.2f/session", budgetUSD)
+}
+
+// sessionModelLabel describes the orchestrating session's model/effort for the run
+// log. Either field may be empty ("inherit the ambient default"), so it renders
+// only what was pinned and falls back to "session default" when neither is set.
+func sessionModelLabel(model, effort string) string {
+	m, e := strings.TrimSpace(model), strings.TrimSpace(effort)
+	switch {
+	case m != "" && e != "":
+		return "orchestrator: " + m + "/" + e
+	case m != "":
+		return "orchestrator: " + m
+	case e != "":
+		return "orchestrator: effort " + e
+	default:
+		return "orchestrator: session default"
+	}
 }

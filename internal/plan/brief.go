@@ -17,8 +17,8 @@ import (
 // checks the runner used to enforce become checks the session runs itself before
 // declaring the feat done (see selfChecks).
 var missionSteps = []string{
-	"Author the spec if it does not exist yet: `csdd spec init <feat>`, then generate, validate, and approve each phase — `csdd spec generate <feat> --artifact requirements|design|tasks`, `csdd spec validate <feat>`, `csdd spec approve <feat> --phase requirements|design|tasks`.",
-	"Implement every task in specs/<feat>/tasks.md, checking each box as you finish it.",
+	"Author the spec if it does not exist yet: `csdd spec init <feat>`, then generate, validate, and approve each phase — `csdd spec generate <feat> --artifact requirements|design|tasks`, `csdd spec validate <feat>`, `csdd spec approve <feat> --phase requirements|design|tasks`. This authoring is YOUR job — the decisions run on your (orchestrator) model.",
+	"Implement the tasks by DELEGATING each one to the `implementer` sub-agent (Agent/Task tool) — one leaf task per sub-agent. You orchestrate and decide; the implementer executes the already-made decision test-first on its own (fast) model, so do NOT hand-write task code inline. Dispatch `(P)` tasks in DIFFERENT `_Boundary:_` groups concurrently (worktree isolation); honor every `_Depends:_` and keep same-boundary tasks sequential. Check each task's box `[x]` in specs/<feat>/tasks.md as its implementer lands it green. (If the `implementer` sub-agent is not installed in this workspace, fall back to running the `tdd-cycle` skill yourself, one task at a time.)",
 	"You own git and the csdd dev-cycle: branch, commit via /csdd-commit (the pre-push gate runs there), and open the PR.",
 	"Record any technology or hard-to-reverse trade-off the contract does not already cover — a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line. Prefer the option that deviates least from the decided stack.",
 }
