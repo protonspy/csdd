@@ -20,6 +20,18 @@ import (
 // keeps the disk reads trivial.
 const defaultInterval = 5 * time.Second
 
+// sendTimeout bounds one Telegram sendMessage. Applied per message (not per
+// round) so a single slow request can never starve the others queued in the same
+// tick — the failure mode the shared per-round budget used to cause. It stays
+// under the client's transport timeout so this deadline is the effective one.
+const sendTimeout = 10 * time.Second
+
+// flushBudget caps the final round the notifier runs after its context is
+// cancelled (the run just ended). Generous enough for the several messages that
+// pile up at the end — each still bounded by sendTimeout — but finite so a dead
+// network can't hang process exit.
+const flushBudget = 30 * time.Second
+
 // Options configures a Notifier.
 type Options struct {
 	Root     string
@@ -87,9 +99,11 @@ func (n *Notifier) Run(ctx context.Context) error {
 // flush relays one final round after the context is cancelled, so a run that just
 // finished still delivers the journal lines appended since the last poll (the
 // embedded plan-run notifier cancels the moment the loop returns). It uses a
-// fresh, short-lived context because the caller's is already done.
+// fresh context because the caller's is already done, bounded by flushBudget so a
+// dead network cannot hang exit; each message inside is separately bounded by
+// sendTimeout, so the final round's messages never starve one another.
 func (n *Notifier) flush() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), flushBudget)
 	defer cancel()
 	n.tick(ctx)
 }
@@ -107,9 +121,14 @@ func (n *Notifier) tick(ctx context.Context) {
 	n.lastSpec = cur
 }
 
-// send relays one message and logs the outcome locally. A send failure is
-// warned but never fatal — the notifier keeps polling.
+// send relays one message and logs the outcome locally. Each message gets its own
+// sendTimeout-bounded context derived from the round's ctx, so one slow request
+// cannot starve the others in the same tick (and a normal tick's deadline-free ctx
+// still can't block indefinitely). A send failure is warned but never fatal — the
+// notifier keeps polling.
 func (n *Notifier) send(ctx context.Context, text string) {
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
 	if err := n.client.Send(ctx, text); err != nil {
 		_, _ = fmt.Fprintln(n.out, render.Yellow("!")+" telegram: "+err.Error())
 		return
