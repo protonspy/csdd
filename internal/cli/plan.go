@@ -54,7 +54,7 @@ func runPlan(args []string, templates embed.FS) int {
 
 func planRun(args []string) int {
 	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
-	var root string
+	var root, model, effort string
 	var autonomous, assumeYes, noTelegram bool
 	var sessionBudget float64
 	var maxIterations, stall, maxRetries, maxRepairs int
@@ -62,6 +62,8 @@ func planRun(args []string) int {
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
 	fs.BoolVar(&noTelegram, "no-telegram", false, "Do not auto-start the Telegram notifier even when a bot is configured (.csdd/bot.json).")
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
+	fs.StringVar(&model, "model", "opus", "Model the orchestrating session runs on (claude --model): sonnet|opus|haiku|fable or a full model ID. It authors and decides the spec; task implementation is delegated to the `implementer` sub-agent (which runs on its own, cheaper model). Empty inherits the ambient default.")
+	fs.StringVar(&effort, "effort", "high", "Reasoning effort the orchestrating session runs at (claude --effort): low|medium|high|xhigh|max. Empty inherits the ambient default.")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
 	fs.IntVar(&maxIterations, "max-iterations", 100, "Sessions the run may spend; one iteration is one claude session.")
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
@@ -72,7 +74,11 @@ func planRun(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--yes] [--session-budget N] [--max-iterations N] [--stall N]")
+		render.Err("usage: " + prog() + " plan run SLUG [--model M] [--effort E] [--yes] [--session-budget N] [--max-iterations N] [--stall N]")
+		return 1
+	}
+	if err := validateEffort(effort); err != nil {
+		render.Err(err.Error())
 		return 1
 	}
 	if autonomous {
@@ -104,6 +110,8 @@ func planRun(args []string) int {
 		Slug:          slug,
 		AssumeYes:     assumeYes,
 		SessionBudget: sessionBudget,
+		Model:         model,
+		Effort:        effort,
 		MaxIterations: maxIterations,
 		Stall:         stall,
 		Out:           os.Stdout,

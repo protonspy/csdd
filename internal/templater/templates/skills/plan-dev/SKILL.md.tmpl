@@ -1,6 +1,6 @@
 ---
 name: plan-dev
-description: Use inside a `csdd plan run` session to deliver ONE approved-plan feat end-to-end — author + self-approve its spec phases, implement every task test-first, own git/PR, then return the done|continue verdict. This is the autonomous loop, so YOU are the approver; do not stop for a human at the phase gates.
+description: Use inside a `csdd plan run` session to deliver ONE approved-plan feat end-to-end — author + self-approve its spec phases, delegate each task to the `implementer` sub-agent (test-first), own git/PR, then return the done|continue verdict. This is the autonomous loop, so YOU are the approver; do not stop for a human at the phase gates.
 ---
 
 # Plan Dev — Autonomous Feat Delivery
@@ -8,10 +8,11 @@ description: Use inside a `csdd plan run` session to deliver ONE approved-plan f
 ## Goal
 
 Fully deliver **one** feat of an approved csdd plan in a single autonomous
-`plan run` session: drive its spec through `requirements → design → tasks`,
-implement every task test-first, own the git dev-cycle and the PR, then return
-the verdict schema. The loop **trusts your verdict** — it never re-checks your
-work — so `done` means the whole feat is really delivered, not hoped.
+`plan run` session: drive its spec through `requirements → design → tasks`
+(you author and decide), delegate each task to the `implementer` sub-agent
+(test-first), own the git dev-cycle and the PR, then return the verdict schema.
+The loop **trusts your verdict** — it never re-checks your work — so `done` means
+the whole feat is really delivered, not hoped.
 
 ## Your authority — non-negotiable (this overrides CLAUDE.md's human gate)
 
@@ -68,13 +69,26 @@ self-approve**; the gate refuses the next phase until the current one is approve
 - `ready_for_implementation` flips to true only after all three approvals — and
   only csdd flips it. Never hand-edit `spec.json`.
 
-### 5) Implement — one task at a time, test-first
+### 5) Implement — delegate each task to the `implementer` sub-agent
+You authored and approved the spec; those were the decisions and they ran on your
+(orchestrator) model. Implementation is the *execution* of a decision already made,
+so **delegate it** — do not hand-write task code inline.
 - Branch before the first task: `git switch -c feat/<feat>` (kebab-case).
-- For **each** leaf task, run the **`tdd-cycle`** skill: RED (failing test) →
-  GREEN (minimal code) → REFACTOR, then record evidence with
-  `csdd spec test-report <feat> --run --lang <lang>` and
-  `csdd spec diff-report <feat>`, and check **only** that task's box `[x]` in
-  `specs/<feat>/tasks.md`. Stay inside the approved design boundary.
+- For **each** leaf task, spawn the **`implementer`** sub-agent (Agent/Task tool),
+  one task per sub-agent. It runs the `tdd-cycle` (RED → GREEN → REFACTOR) and the
+  `verify-change` gate on its own fast model, records evidence
+  (`csdd spec test-report <feat> --run --lang <lang>`,
+  `csdd spec diff-report <feat>`), checks **only** that task's box `[x]` in
+  `specs/<feat>/tasks.md`, and reports back — staying inside the approved design
+  boundary.
+- **Parallelize across boundaries:** dispatch `(P)` tasks in *different*
+  `_Boundary:_` groups concurrently (spawn each implementer with worktree
+  isolation); honor every `_Depends:_` and keep same-boundary tasks sequential.
+- **Review each slice** with the read-only `code-reviewer` sub-agent (add
+  `security-reviewer` when auth / secrets / input handling is touched); resolve
+  blockers before the next task.
+- If the `implementer` sub-agent is not installed in this workspace, fall back to
+  running the `tdd-cycle` skill yourself, one task at a time.
 
 ### 6) Own the git dev-cycle
 - Commit each clean slice via `/csdd-commit` (the pre-push gate runs on push).
@@ -115,7 +129,9 @@ Return exactly one, as the JSON schema the runner gave you:
 
 - You are the approver here — stalling at a phase "waiting for a human" is the
   single most common failure of this loop. Approve your own validated phases.
-- One task per `tdd-cycle` pass; do not batch tasks or skip the RED test.
+- You orchestrate; the `implementer` sub-agent implements. One task per implementer
+  (it runs one `tdd-cycle` pass); do not batch tasks, hand-write task code inline,
+  or skip the RED test.
 - Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
 - Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
   `continue` summary instead, and keep working what you can.
@@ -134,7 +150,8 @@ Return exactly one, as the JSON schema the runner gave you:
 ## Completion Criteria
 - [ ] `requirements`, `design`, `tasks` each generated, validated, and
       self-approved (`csdd spec approve … --phase …`).
-- [ ] Every leaf task implemented test-first (via `tdd-cycle`) and its box `[x]`.
+- [ ] Every leaf task delivered by an `implementer` sub-agent (test-first via
+      `tdd-cycle`) — or by a fallback `tdd-cycle` pass — and its box `[x]`.
 - [ ] `csdd spec validate <feat>` and `csdd graph analyze --strict` pass.
 - [ ] Every plan Quality Gate command passes.
 - [ ] Any new technology / hard-to-reverse decision recorded (stack row / ADR).

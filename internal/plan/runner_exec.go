@@ -17,8 +17,12 @@ import (
 // can inject just the seams they care about and get real behavior for the rest (in
 // practice tests inject them all). The only subprocess the runner spawns is
 // `claude`; everything else — gates, git, spec approvals — happens inside the
-// session, which the runner trusts.
-func installRealHooks(h *Hooks) {
+// session, which the runner trusts. runModel/runEffort are the run's per-session
+// model and effort (captured into the default Session hook): the orchestrating
+// session runs on these, while task implementation it delegates to the
+// `implementer` sub-agent runs on that agent's own (cheaper) model. Empty values
+// mean "inherit the ambient default" — the corresponding flag is simply omitted.
+func installRealHooks(h *Hooks, runModel, runEffort string) {
 	if h.Now == nil {
 		h.Now = time.Now
 	}
@@ -35,7 +39,9 @@ func installRealHooks(h *Hooks) {
 		h.Confirm = stdinConfirm
 	}
 	if h.Session == nil {
-		h.Session = execClaudeSession
+		h.Session = func(feat Feat, brief string, budgetUSD float64) (Verdict, error) {
+			return execClaudeSession(feat, brief, budgetUSD, runModel, runEffort)
+		}
 	}
 	if h.Sleep == nil {
 		h.Sleep = time.Sleep
@@ -50,23 +56,32 @@ const verdictSchema = `{"type":"object","required":["status"],` +
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
 var claudeFlags = struct {
-	print, outputFormat, jsonSchema, maxBudget, bypass string
+	print, outputFormat, jsonSchema, maxBudget, model, effort, bypass string
 }{
 	print:        "-p",
 	outputFormat: "--output-format",
 	jsonSchema:   "--json-schema",
 	maxBudget:    "--max-budget-usd",
+	model:        "--model",
+	effort:       "--effort",
 	bypass:       "--dangerously-skip-permissions",
 }
 
-// execClaudeSession spawns a fresh `claude -p` session for a feat and parses its
-// verdict from the JSON output envelope. Every session runs bypass-mode; the
-// runner's preflight (sandbox doctor + human accept) is the gate in front of it.
-func execClaudeSession(_ Feat, brief string, budgetUSD float64) (Verdict, error) {
+// sessionArgs builds the `claude` argument vector for one plan session. It is pure
+// (no I/O) so the flag wiring is unit-testable without spawning a subprocess. An
+// empty model or effort omits its flag, letting the session inherit the ambient
+// default; a non-positive budget omits --max-budget-usd (the account's own limits).
+func sessionArgs(brief string, budgetUSD float64, model, effort string) []string {
 	args := []string{
 		claudeFlags.print, brief,
 		claudeFlags.outputFormat, "json",
 		claudeFlags.jsonSchema, verdictSchema,
+	}
+	if strings.TrimSpace(model) != "" {
+		args = append(args, claudeFlags.model, model)
+	}
+	if strings.TrimSpace(effort) != "" {
+		args = append(args, claudeFlags.effort, effort)
 	}
 	// A positive budget pins --max-budget-usd; the default (<=0) leaves it off so
 	// the session runs under the Claude account's own limits.
@@ -74,7 +89,14 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64) (Verdict, error)
 		args = append(args, claudeFlags.maxBudget, fmt.Sprintf("%.2f", budgetUSD))
 	}
 	args = append(args, claudeFlags.bypass)
-	cmd := exec.Command("claude", args...)
+	return args
+}
+
+// execClaudeSession spawns a fresh `claude -p` session for a feat and parses its
+// verdict from the JSON output envelope. Every session runs bypass-mode; the
+// runner's preflight (sandbox doctor + human accept) is the gate in front of it.
+func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string) (Verdict, error) {
+	cmd := exec.Command("claude", sessionArgs(brief, budgetUSD, model, effort)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
