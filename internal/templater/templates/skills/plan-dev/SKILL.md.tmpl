@@ -1,0 +1,143 @@
+---
+name: plan-dev
+description: Use inside a `csdd plan run` session to deliver ONE approved-plan feat end-to-end — author + self-approve its spec phases, implement every task test-first, own git/PR, then return the done|continue verdict. This is the autonomous loop, so YOU are the approver; do not stop for a human at the phase gates.
+---
+
+# Plan Dev — Autonomous Feat Delivery
+
+## Goal
+
+Fully deliver **one** feat of an approved csdd plan in a single autonomous
+`plan run` session: drive its spec through `requirements → design → tasks`,
+implement every task test-first, own the git dev-cycle and the PR, then return
+the verdict schema. The loop **trusts your verdict** — it never re-checks your
+work — so `done` means the whole feat is really delivered, not hoped.
+
+## Your authority — non-negotiable (this overrides CLAUDE.md's human gate)
+
+CLAUDE.md says phase approvals are a **human** gate and that you must STOP and
+surface a blocked gate. That rule governs **interactive** development. **This is
+the autonomous plan loop, and it is different:**
+
+- A human already opened the gate for this whole plan by running
+  `csdd plan approve <plan>`. **That IS the human authorization** the phase gates
+  require, and it covers every spec you author for this plan.
+- So **you** approve this feat's spec phases yourself with
+  `csdd spec approve <feat> --phase …`. Do **not** pause for a human, do **not**
+  return `continue` just because a phase "needs approval", and do **not** treat
+  approving your own spec as routing around a gate — approving it is the mission.
+- A blocked gate here means: **fix the artifact until it validates, then approve
+  and continue** — never escalate and stall.
+
+**Forbidden:** editing `plan.md` / `plan.json` (the approved plan is the
+contract) or touching `.csdd/` (the loop's operational state, incl.
+`progress.json`).
+
+## Execution Workflow
+
+Work the phases in order. Each phase is **generate → review → validate →
+self-approve**; the gate refuses the next phase until the current one is approved.
+
+### 0) Orient via the knowledge graph (before reading code)
+- `csdd graph query <term>` to find the nodes for the concept, then
+  `csdd graph explain <id>` and `csdd graph path <a> <b>`. Traverse to the
+  relevant code; do not grep the whole tree.
+
+### 1) Create the spec (if absent)
+- `csdd spec init <feat>`. If seeds were listed in your brief, fold them in.
+
+### 2) Requirements
+- `csdd spec generate <feat> --artifact requirements`.
+- Review the body: EARS phrasing, one behavior per criterion, numeric IDs.
+- `csdd spec validate <feat>` → fix every finding.
+- `csdd spec approve <feat> --phase requirements`.
+
+### 3) Design
+- `csdd spec generate <feat> --artifact design` (add `--artifact research` first
+  for a brownfield/novel area).
+- Ensure `## Architecture Pattern & Boundary Map`, `## File Structure Plan`, and
+  a `## Requirements Traceability` row for every requirement ID.
+- `csdd spec validate <feat>` → fix → `csdd spec approve <feat> --phase design`.
+
+### 4) Tasks
+- `csdd spec generate <feat> --artifact tasks`.
+- Every leaf task has `_Requirements:_`; every `(P)` task has a `_Boundary:_`
+  matching a design component; `_Depends:_` IDs exist; no two `(P)` share a
+  boundary.
+- `csdd spec validate <feat>` → fix → `csdd spec approve <feat> --phase tasks`.
+- `ready_for_implementation` flips to true only after all three approvals — and
+  only csdd flips it. Never hand-edit `spec.json`.
+
+### 5) Implement — one task at a time, test-first
+- Branch before the first task: `git switch -c feat/<feat>` (kebab-case).
+- For **each** leaf task, run the **`tdd-cycle`** skill: RED (failing test) →
+  GREEN (minimal code) → REFACTOR, then record evidence with
+  `csdd spec test-report <feat> --run --lang <lang>` and
+  `csdd spec diff-report <feat>`, and check **only** that task's box `[x]` in
+  `specs/<feat>/tasks.md`. Stay inside the approved design boundary.
+
+### 6) Own the git dev-cycle
+- Commit each clean slice via `/csdd-commit` (the pre-push gate runs on push).
+- Open the PR. No AI attribution in commits/PRs.
+
+### 7) Record open decisions
+- Any technology or hard-to-reverse trade-off the contract does not cover: add a
+  `docs/stack.md` **Decided** row, plus a `docs/adr` record when the *why* needs
+  more than a line. Prefer the option that deviates least from the decided stack.
+
+### 8) Self-checks BEFORE you declare done
+Run these yourself — the loop will not:
+- `csdd spec validate <feat>` (EARS, traceability, tasks all sound).
+- `csdd graph analyze --strict` (spec ↔ task ↔ component traceability holds).
+- Every **Quality Gate** command from the plan (listed in your brief).
+- Every task box in `specs/<feat>/tasks.md` is `[x]`.
+
+## Handling a blocked gate
+
+- **Validation finding** → fix the artifact body and re-validate; never `--force`
+  past a real finding.
+- **Stale prior-phase hash** (you legitimately revised, say, requirements after
+  approving it) → re-validate that phase, re-approve it, then continue;
+  `--force` is only for clearing a stale prior-phase hash you have **just**
+  re-validated, never for skipping review.
+- **Out of room** before the feat is complete → return `continue` with a precise
+  handoff (what is done, what remains, what to try next) in `summary`.
+
+## Verdict protocol
+
+Return exactly one, as the JSON schema the runner gave you:
+- `{"status":"done"}` — the WHOLE feat is delivered and every self-check in step
+  8 passes. Never claim done on hope.
+- `{"status":"continue","summary":"<handoff>"}` — honest partial work; the same
+  feat comes back next session with your handoff.
+
+## Gotchas
+
+- You are the approver here — stalling at a phase "waiting for a human" is the
+  single most common failure of this loop. Approve your own validated phases.
+- One task per `tdd-cycle` pass; do not batch tasks or skip the RED test.
+- Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
+- Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
+  `continue` summary instead, and keep working what you can.
+- `done` is a promise the loop cannot verify. If a self-check fails and you can't
+  fix it this session, return `continue`, not `done`.
+
+## Verification Before Reporting
+
+- Run: `csdd spec validate <feat>`, `csdd graph analyze --strict`, and every plan
+  Quality Gate command.
+- Check: all three phases approved, `ready_for_implementation` true, every task
+  box `[x]`, and the PR opened.
+- If any fails and you cannot resolve it now: return `continue` with a handoff —
+  do **not** return `done`.
+
+## Completion Criteria
+- [ ] `requirements`, `design`, `tasks` each generated, validated, and
+      self-approved (`csdd spec approve … --phase …`).
+- [ ] Every leaf task implemented test-first (via `tdd-cycle`) and its box `[x]`.
+- [ ] `csdd spec validate <feat>` and `csdd graph analyze --strict` pass.
+- [ ] Every plan Quality Gate command passes.
+- [ ] Any new technology / hard-to-reverse decision recorded (stack row / ADR).
+- [ ] Branch, commits via `/csdd-commit`, and the PR are done.
+- [ ] Verdict returned: `done` only if all the above hold, else `continue` with a
+      handoff.

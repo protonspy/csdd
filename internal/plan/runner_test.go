@@ -288,6 +288,41 @@ func TestRunnerLedgerResumes(t *testing.T) {
 	}
 }
 
+// TestRunnerReconcilesDiskDelivered: a feat delivered on disk before the run (all
+// phases approved, all tasks checked) but absent from the ledger is imported at
+// startup, so the loop spends no session on it and journals it reconciled. This is
+// the resume path for a plan advanced by hand in a session.
+func TestRunnerReconcilesDiskDelivered(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	// Feat a is fully delivered on disk; the ledger knows nothing about it.
+	allApproved := map[string]bool{"requirements": true, "design": true, "tasks": true}
+	writeSpec(t, root, "a", allApproved, true, "- [x] 1. done\n")
+
+	var worked []string
+	h := baseHooks()
+	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+		worked = append(worked, feat.Slug)
+		return Verdict{Status: VerdictDone}, nil
+	}
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sum.Completed || sum.Sessions != 1 {
+		t.Fatalf("disk-delivered a should be reconciled, spending one session on b only, got %+v", sum)
+	}
+	if len(worked) != 1 || worked[0] != "b" {
+		t.Errorf("only feat b should have been worked; a was already delivered on disk, got %v", worked)
+	}
+	if l := LoadLedger(root, "p"); !l.Done("a") {
+		t.Errorf("reconcile should have recorded a in the ledger")
+	}
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "reconciled from disk") {
+		t.Errorf("reconciled feat should be journaled: %s", logData)
+	}
+}
+
 func TestRunnerJournalFormat(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	h := baseHooks()

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/plan"
 	"github.com/protonspy/csdd/internal/render"
+	"github.com/protonspy/csdd/internal/telegram"
 	"github.com/protonspy/csdd/internal/templater"
 	"github.com/protonspy/csdd/internal/workspace"
 )
@@ -53,11 +55,12 @@ func runPlan(args []string, templates embed.FS) int {
 func planRun(args []string) int {
 	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
 	var root string
-	var autonomous, assumeYes bool
+	var autonomous, assumeYes, noTelegram bool
 	var sessionBudget float64
 	var maxIterations, stall, maxRetries, maxRepairs int
 	addRoot(fs, &root)
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
+	fs.BoolVar(&noTelegram, "no-telegram", false, "Do not auto-start the Telegram notifier even when a bot is configured (.csdd/bot.json).")
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
 	fs.IntVar(&maxIterations, "max-iterations", 100, "Sessions the run may spend; one iteration is one claude session.")
@@ -88,6 +91,14 @@ func planRun(args []string) int {
 		render.Err(err.Error())
 		return 1
 	}
+	// Auto-start the Telegram notifier for the life of the run when a bot is
+	// configured, so run progress reaches the chat without a separate
+	// `csdd telegram run`. No-op when unconfigured or suppressed with --no-telegram.
+	if !noTelegram {
+		stopTelegram := startPlanTelegram(r)
+		defer stopTelegram()
+	}
+
 	sum, err := plan.Run(plan.RunOptions{
 		Root:          r,
 		Slug:          slug,
@@ -104,6 +115,41 @@ func planRun(args []string) int {
 	// Surface the run outcome as a distinct exit code (R9.4/R9.7); the summary is
 	// already printed by the runner.
 	return sum.Outcome
+}
+
+// startPlanTelegram auto-starts the read-only Telegram notifier for the duration
+// of a plan run when a bot is configured (.csdd/bot.json). The notifier polls the
+// run journal (docs/plans/<slug>/log.md) the runner appends to, so each feat's
+// done/progress/failed line — and every spec approval the sessions make — reaches
+// the chat live. It returns a stop function that cancels the notifier and lets it
+// flush the run's final journal lines. When no bot is configured (or the config is
+// invalid) it is a silent no-op: Telegram stays opt-in via `csdd telegram init`.
+func startPlanTelegram(root string) func() {
+	cfg, err := telegram.Load(root)
+	if err != nil || cfg.Validate() != nil {
+		return func() {}
+	}
+	notifier := telegram.NewNotifier(telegram.Options{
+		Root:     root,
+		Client:   telegram.NewClient(cfg.Token, cfg.ChatID, apiBase()),
+		Interval: time.Duration(cfg.IntervalSeconds) * time.Second,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = notifier.Run(ctx)
+	}()
+	render.Info("telegram bot configured — relaying plan-run status to chat " + cfg.ChatID)
+	return func() {
+		cancel()
+		// Bound the wait so a slow or unreachable Telegram never wedges the CLI
+		// after the run itself has finished.
+		select {
+		case <-done:
+		case <-time.After(6 * time.Second):
+		}
+	}
 }
 
 // requireWorkspaceMarker enforces R1.3: every plan command operates inside an

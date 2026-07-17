@@ -105,6 +105,26 @@ func TestBriefSelfChecks(t *testing.T) {
 	}
 }
 
+// TestBriefApprovalAuthority: the brief must grant the autonomous session authority
+// to approve its own spec phases, so CLAUDE.md's interactive "a human authorizes"
+// STOP rules do not stall the loop at approval.
+func TestBriefApprovalAuthority(t *testing.T) {
+	root := setupWorkspace(t, "p", briefPlan)
+	out := briefFor(t, root, "p", "upload")
+	if !strings.Contains(out, "YOU are the approver") {
+		t.Errorf("brief should assert the session's approval authority: %s", out)
+	}
+	if !strings.Contains(out, "csdd plan approve p") {
+		t.Errorf("brief should point at the plan-level human gate already given")
+	}
+	if !strings.Contains(out, "csdd spec approve upload") {
+		t.Errorf("brief should tell the session to self-approve its spec phases")
+	}
+	if !strings.Contains(out, "plan-dev") {
+		t.Errorf("brief should point the session at the plan-dev skill")
+	}
+}
+
 func TestBriefUnknownFeat(t *testing.T) {
 	root := setupWorkspace(t, "p", briefPlan)
 	doc, _ := Load(root, "p")
