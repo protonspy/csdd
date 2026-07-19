@@ -57,7 +57,7 @@ func planRun(args []string) int {
 	var root, model, effort string
 	var autonomous, assumeYes, noTelegram bool
 	var sessionBudget float64
-	var maxIterations, stall, maxRetries, maxRepairs int
+	var maxIterations, stall, featAttempts, maxRetries, maxRepairs int
 	var sessionIdle time.Duration
 	addRoot(fs, &root)
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
@@ -69,6 +69,7 @@ func planRun(args []string) int {
 	fs.IntVar(&maxIterations, "max-iterations", 100, "Sessions the run may spend; one iteration is one claude session.")
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
 	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
+	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 8). Bounds a feat whose `done` the verdict gate keeps refusing.")
 	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
 	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
 	positionals, err := parseFlags(fs, args)
@@ -76,7 +77,7 @@ func planRun(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--model M] [--effort E] [--yes] [--session-budget N] [--max-iterations N] [--stall N]")
+		render.Err("usage: " + prog() + " plan run SLUG [--model M] [--effort E] [--yes] [--session-budget N] [--max-iterations N] [--stall N] [--feat-attempts N]")
 		return 1
 	}
 	if err := validateEffort(effort); err != nil {
@@ -116,6 +117,7 @@ func planRun(args []string) int {
 		Effort:        effort,
 		MaxIterations: maxIterations,
 		Stall:         stall,
+		FeatAttempts:  featAttempts,
 		SessionIdle:   sessionIdle,
 		Out:           os.Stdout,
 	})

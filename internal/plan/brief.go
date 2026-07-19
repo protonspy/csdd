@@ -13,7 +13,8 @@ import (
 
 // missionSteps is the whole-feat contract every brief carries: the session owns
 // the entire spec lifecycle and the implementation, drives its own git, and returns
-// a verdict. There is no runner-side gate — the loop trusts the session — so the
+// a verdict. The runner runs no gates of its own — it checks only the artifacts a
+// `done` verdict implies (R10) — so the
 // checks the runner used to enforce become checks the session runs itself before
 // declaring the feat done (see selfChecks).
 var missionSteps = []string{
@@ -164,16 +165,29 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	w("- `csdd graph path <a> <b>` — trace how two artifacts connect.\n")
 	w("Traverse the graph to locate the relevant code; do not grep the whole tree.\n\n")
 
-	// 8. Self-checks — what the runner used to gate on, now the session runs itself.
+	// 8. Self-checks. The loop trusts the session's judgment but verifies its
+	// artifacts (R10), so the brief states both halves: what only the session can
+	// check, and what the gate will check regardless of what the verdict claims.
 	w("## Before you declare `done` — run these checks YOURSELF\n\n")
-	w("The loop does NOT verify your work; it trusts your verdict. So the feat is done\n")
-	w("only when ALL of these pass and every task box in specs/%s/tasks.md is checked:\n\n", feat.Slug)
+	w("Run each of these ONCE, here at feat exit — not after every task:\n\n")
 	w("- `csdd spec validate %s` (the spec is structurally sound: EARS, traceability, tasks)\n", feat.Slug)
 	w("- `csdd graph analyze --strict` (spec↔task↔component traceability holds)\n")
 	for _, g := range planGateCommands(doc) {
 		w("- %s\n", g)
 	}
-	w("\nOnly then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
+	w("\n## What the loop checks before accepting `done`\n\n")
+	w("The loop trusts your JUDGMENT — it never reviews your code or re-runs your\n")
+	w("suites — but it does check your ARTIFACTS. A `done` verdict is accepted only\n")
+	w("when all of these hold on disk:\n\n")
+	w("- every task box in specs/%s/tasks.md is `[x]`\n", feat.Slug)
+	w("- specs/%s/spec.json has all three phases approved and `ready_for_implementation` true\n", feat.Slug)
+	w("- specs/%s/test-report.json is green with no open attentions\n\n", feat.Slug)
+	w("If any of them fails, your `done` becomes a `continue` and comes back to the\n")
+	w("next session with a note naming what was missing — and it costs this feat one\n")
+	w("of its attempts. A feat that spends its whole attempt budget is stopped and\n")
+	w("surfaced for a human, so an honest `continue` is always cheaper than a `done`\n")
+	w("the gate refuses.\n\n")
+	w("Only then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
 	w("`{\"status\":\"continue\"}` with the handoff in `summary`.\n")
 
 	return b.String(), nil

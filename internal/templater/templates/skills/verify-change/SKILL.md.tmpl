@@ -1,6 +1,6 @@
 ---
 name: verify-change
-description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.
+description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks, at the tier the claim requires.
 ---
 
 # Verify Change
@@ -8,17 +8,50 @@ description: Use before claiming a task is complete, a fix works, or tests pass 
 ## Goal
 
 Turn "I think it works" into evidence a reviewer can trust. This skill runs the
-project's own checks and reports their real output.
+project's own checks — at the tier the claim needs, and **no more than once**.
 
 ## The Iron Law
 
-> **No "done", "it works", or "tests pass" claim without fresh output from the project's
-> real commands, read and confirmed in this session.**
+> **No "done", "it works", or "tests pass" claim without recorded output from the
+> project's real commands, at a scope that covers the claim.**
 
-No exceptions:
-- A prior run doesn't count — edits since then may have broken it.
-- "Should pass" is a prediction, not evidence.
-- A skipped or failing check appears in the report. Never hide it.
+The law polices the link between a claim and its evidence. It has never been
+satisfied by running things twice, and re-running a check you already have output
+for buys nothing.
+
+What satisfies it:
+- A run made **earlier in this session** whose scope covers the claim, and whose
+  result you recorded. You do not re-run it to say the same thing again.
+- For an orchestrator: a **sub-agent's reported result** is evidence for that
+  sub-agent's task. You do not re-verify a slice a sub-agent already verified.
+
+What never satisfies it:
+- No recorded output at all. "Should pass" is a prediction, not evidence.
+- Output whose scope is **narrower** than the claim — a focused test does not
+  entitle you to say the suite is green, and a task-level run does not entitle
+  you to say the feat is green.
+- A skipped or failing check hidden from the report.
+
+If nothing recorded covers the claim's scope, run it fresh. That is the whole test.
+
+## The verification tiers
+
+Verification runs at three tiers. Each has a declared command scope and a
+declared claim scope, and **the claim you may make equals the evidence you have**:
+
+| | Tier 1 — inner loop | Tier 2 — task exit | Tier 3 — integration |
+|---|---|---|---|
+| Trigger | each RED→GREEN step | one task finishes | batch merge; feat exit |
+| Tests | the focused test(s) | the full suite, fast mode | the full suite |
+| Lint | — | the touched files | the whole tree |
+| Typecheck | — | — | yes |
+| Build | — | — | yes |
+| Coverage | — | — | feat exit only |
+| Claim it earns | "this behavior works" | "this task is green" | "the feat is green" |
+
+Cheap checks stay eager. Lint costs ~0, so it runs at Tier 2 rather than waiting
+for integration. Typecheck, build, and coverage are the expensive ones, and they
+move to Tier 3.
 
 ## Default Operation Mode
 
@@ -27,27 +60,42 @@ commands run and their results — never a claim without output.
 
 ## Collect Inputs First
 
+- **Which tier does this claim need?** Naming it first is what stops a task-exit
+  check from silently growing into a full integration gate.
 - What are the project's verification commands? Discover them from
   `.claude/steering/tech.md`, `CLAUDE.md`, `Makefile`, `package.json`,
   `go.mod`, `pyproject.toml`, etc. Do not assume `npm test`.
-- What is the scope? (the touched package/module first, then the full suite)
+- What already ran in this session, and at what scope?
 
 ## Execution Workflow
 
-### 1) Focused checks
-Run the tests closest to the change first — fast feedback. Fix and re-run until green.
+### 1) Tier 1 — focused checks (inside the red→green loop)
+Run the tests closest to the change. Fix and re-run until green. This earns
+"this behavior works" and nothing wider.
 
-### 2) Full gate
-Run, in order, whichever of these the project defines:
-1. tests
-2. lint
+### 2) Tier 2 — the task-exit gate
+Run **once**, when the task is finished:
+1. the full suite in fast mode (no coverage)
+2. lint on the touched files
+
+Record it through csdd so the spec carries the evidence:
+`npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>`.
+This earns "this task is green". Do **not** add a typecheck or a build here.
+
+### 3) Tier 3 — the integration gate
+Run **once** per batch merge and once at feat exit, whichever applies:
+1. tests (full suite, with coverage at feat exit)
+2. lint (whole tree)
 3. typecheck / static analysis
 4. build
 
-### 3) Capture evidence
+This is the only tier that earns "the feat is green". If it fails, name the
+failing check and fix it before dispatching more work.
+
+### 4) Capture evidence
 Record each command and its pass/fail result. Keep output trimmed but real.
 
-### 4) Frontend e2e (only if the project has a UI)
+### 5) Frontend e2e (only if the project has a UI)
 **Skippable.** If — and only if — the change touches a frontend the project ships
 (e.g. a web app directory), run the `frontend-e2e-qa` skill to drive the golden
 and top error flows through the Playwright MCP server. If the project has no
@@ -63,39 +111,45 @@ the rule is violating its spirit.**
 |---|---|
 | "It should pass now." | "Should" is a prediction, not evidence. Run it. |
 | "It compiled, so it works." | Compiling is not passing. Different checks catch different failures. |
-| "The linter passed, the build's fine." | Linter ≠ compiler ≠ tests. Run each one. |
-| "I ran it a few edits ago." | Edits since then may have broken it. Fresh run only. |
+| "The linter passed, the build's fine." | Linter ≠ compiler ≠ tests. Run each one, at its tier. |
 | "I'm confident it's right." | Confidence is not output. Paste the output. |
+| "The task suite was green, so the feat is green." | Wrong scope. A Tier-2 run says nothing about the merged result. |
+| "I'll re-run the suite to be safe." | You already have the output. Re-running the same scope is not more evidence, it is the same evidence again. |
 
 ## Red Flags — STOP
 
 - You're reaching for "should", "probably", or "seems to".
 - You feel satisfaction before running anything ("Done!", "Perfect!").
-- You're about to open a PR without a fresh run.
-- You're trusting a previous run, or an agent's "success", instead of output you just saw.
+- You're about to open a PR with no Tier-3 run.
+- You're claiming something **wider** than what you actually ran.
+- You're running a check purely because you don't trust a result you already have.
 
-If any fire, stop and run the real command.
+If any fire, stop — and fix the mismatch between the claim and the evidence.
 
 ## Gotchas
 
 - Use the project's actual commands; a wrong guessed command that "passes" is worse than none.
 - A green build with no new tests for new behavior is not verified — flag the gap.
 - Do not hide a failing step. A skipped or failing check must appear in the report.
+- An evidence report carrying an **open attention** is not green, whatever its
+  test counts say — resolve or explain the attention.
 
 ## Verification Before Reporting
 
-- Run: every defined check for the touched scope, then the full gate.
+- Run: whatever tier the claim requires, and no wider tier "for safety".
 - Check: all green, or failures clearly reported with output.
 
 ## Completion Criteria
+- [ ] The tier this claim needs is named.
 - [ ] Each check command is listed with its real result.
+- [ ] The claim's scope matches the evidence's scope.
 - [ ] Failures (if any) are reported, not masked.
 - [ ] Output is suitable to paste into a PR "Verification" section.
 
 ```
-## Verification
+## Verification (Tier <1|2|3>)
 - `<test cmd>`      ✅ / ❌
 - `<lint cmd>`      ✅ / ❌
-- `<typecheck cmd>` ✅ / ❌
-- `<build cmd>`     ✅ / ❌
+- `<typecheck cmd>` ✅ / ❌   (Tier 3 only)
+- `<build cmd>`     ✅ / ❌   (Tier 3 only)
 ```

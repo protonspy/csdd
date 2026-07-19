@@ -3,10 +3,9 @@ import { api } from '../api'
 import type { SpecDetail, SpecReport } from '../types'
 import { Markdown } from './Markdown'
 import { TaskBoard } from './TaskBoard'
-import { DiffView, DiffHint } from './DiffView'
 import { ProgressBar, PhasePill, covColor } from './bits'
 
-type Tab = 'overview' | 'requirements' | 'design' | 'tasks' | 'changes'
+type Tab = 'overview' | 'requirements' | 'design' | 'tasks'
 
 export function SpecView({
   feature,
@@ -57,7 +56,6 @@ export function SpecView({
     { id: 'requirements', label: 'Requirements', enabled: has('requirements.md') },
     { id: 'design', label: 'Design', enabled: has('design.md') },
     { id: 'tasks', label: 'Tasks', enabled: has('tasks.md') },
-    { id: 'changes', label: 'Changes', enabled: true },
   ]
 
   return (
@@ -93,8 +91,6 @@ export function SpecView({
         {tab === 'requirements' && <ArtifactTab feature={feature} file="requirements.md" version={version} />}
         {tab === 'design' && <ArtifactTab feature={feature} file="design.md" version={version} />}
         {tab === 'tasks' && <TaskBoard phases={detail.phases} />}
-        {tab === 'changes' &&
-          (detail.diff ? <DiffView diff={detail.diff} /> : <DiffHint feature={feature} />)}
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 ---
-description: Drive a csdd plan's autonomous loop — one Claude session per iteration, each handed one whole feat as its mission. The loop trusts the session; it does not verify. Requires an approved, drift-free plan.
+description: Drive a csdd plan's autonomous loop — one Claude session per iteration, each handed one whole feat as its mission. The loop trusts the session's judgment and verifies the artifacts behind its verdict. Requires an approved, drift-free plan.
 argument-hint: <plan-slug> [--yes]
 allowed-tools: Bash(csdd plan run:*), Bash(csdd plan status:*), Bash(csdd plan next:*), Bash(csdd plan brief:*), Bash(npx @protonspy/csdd plan:*)
 ---
@@ -29,8 +29,11 @@ session, and records what the session declares — nothing more. **The session o
 everything else**: it authors and approves the spec (`csdd spec generate/validate/
 approve`), implements every task, runs the csdd dev-cycle, owns git (branch,
 `/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes
-(docs/stack.md Decided row / ADR). There is **no runner-side gate** — the loop
-trusts the session's verdict.
+(docs/stack.md Decided row / ADR). The runner runs **no gates of its own** — it
+trusts the session's judgment — but a `done` verdict is checked against the
+artifacts it implies: every task box `[x]`, the spec approved and ready, and the
+recorded test evidence green with no open attentions. A `done` those contradict is
+converted to `continue` and handed back naming what failed.
 
 The verdict is one of two intents:
 

@@ -36,10 +36,17 @@ func TestExecClaudeSessionAgainstRealCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live session failed: %v", err)
 	}
-	if v.Status != VerdictDone && v.Status != VerdictContinue {
-		t.Fatalf("want a done|continue verdict, got %q", v.Status)
+	if v.Verdict.Status != VerdictDone && v.Verdict.Status != VerdictContinue {
+		t.Fatalf("want a done|continue verdict, got %q", v.Verdict.Status)
 	}
-	t.Logf("verdict=%s summary=%q view=%q", v.Status, strings.TrimSpace(v.Summary), view.String())
+	// The same `result` event that carried the verdict must also have yielded the
+	// session's cost (R9.1). A live session that reports no duration and no tokens
+	// means the envelope's field names drifted — which the fixture tests cannot see.
+	if v.Metrics.Empty() {
+		t.Errorf("a completed live session must report metrics, got %+v", v.Metrics)
+	}
+	t.Logf("verdict=%s summary=%q metrics=%+v view=%q",
+		v.Verdict.Status, strings.TrimSpace(v.Verdict.Summary), v.Metrics, view.String())
 }
 
 // TestFleetViewAgainstRealDispatch proves the live view end-to-end: a real session
@@ -64,12 +71,12 @@ func TestFleetViewAgainstRealDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("live session failed: %v", err)
 	}
-	if v.Status == "" {
+	if v.Verdict.Status == "" {
 		t.Fatal("no verdict from the dispatching session")
 	}
 	got := view.String()
 	if !strings.Contains(got, "dispatched") {
 		t.Fatalf("the live view never reported a dispatch; the task protocol may have drifted.\nview:\n%s", got)
 	}
-	t.Logf("verdict=%s\nlive view:\n%s", v.Status, got)
+	t.Logf("verdict=%s\nlive view:\n%s", v.Verdict.Status, got)
 }

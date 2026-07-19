@@ -49,8 +49,12 @@ design → tasks → implementation. Columns (all required, matched by header na
 ## Quality Gates
 
 <!--
-The plan's own verification contract: `- <label>: <command>` lines. The runner
-executes every gate after each implementation step; a red gate blocks advance.
+The plan's own verification contract: `- <label>: <command>` lines. These are
+Tier-3 checks: the delivering session runs every gate ONCE at feat exit, as part
+of the self-check behind its `done` verdict — not after each implementation step.
+The runner itself executes no gates; it verifies the artifacts the session leaves
+behind (all task boxes checked, the spec approved and ready, the recorded test
+evidence green) and refuses a `done` that they contradict.
 At least one gate is required for the plan to validate.
 -->
 

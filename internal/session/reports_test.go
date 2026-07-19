@@ -1,7 +1,11 @@
 package session
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -221,5 +225,174 @@ func TestLoadTestReportEmpty(t *testing.T) {
 	}
 	if rep.Sources == nil {
 		t.Errorf("sources should be non-nil []")
+	}
+}
+
+// --- evidence integrity, attribution, and command modes (plan r4) ------------
+
+// TestDetectTestScopeFlags: the marker check proves only that the right TOOL ran.
+// This proves we also notice when the command told that tool to run less than the
+// whole suite — the failure that wrote a green report with a test file excluded.
+func TestDetectTestScopeFlags(t *testing.T) {
+	cases := []struct {
+		name string
+		lang string
+		cmd  string
+		want []string
+	}{
+		{
+			// The exact command from the reference run that recorded green with a
+			// test file excluded, twice, raising no attention at all.
+			name: "the real-world exclusion",
+			lang: "python",
+			cmd:  "uv run pytest --junitxml=junit.xml --cov --cov-report=xml --ignore=tests/unit/test_pinned_embedder.py",
+			want: []string{"--ignore"},
+		},
+		{"pytest -k selection", "python", "pytest -k not_slow --junitxml=junit.xml", []string{"-k"}},
+		{"pytest several", "py", "pytest --deselect a::b -x", []string{"--deselect", "-x"}},
+		{"jest ignore", "typescript", "npx jest --ci --testPathIgnorePatterns=e2e", []string{"--testPathIgnorePatterns"}},
+		{"jest -t", "js", "npx jest -t 'only this'", []string{"-t"}},
+		{"go -run", "go", "gotestsum --junitfile=junit.xml -- -run TestFoo ./...", []string{"-run"}},
+		{"maven -Dtest", "java", "mvn -q test -Dtest=FooTest", []string{"-Dtest"}},
+		{"rust --skip", "rust", "cargo nextest run --profile ci --skip slow", []string{"--skip"}},
+
+		// The honest defaults must never raise an attention, or the signal is noise.
+		{"python default is clean", "python", langTestCommands["python"], nil},
+		{"typescript default is clean", "typescript", langTestCommands["typescript"], nil},
+		{"java default is clean", "java", langTestCommands["java"], nil},
+		{"go default is clean", "go", langTestCommands["go"], nil},
+		{"rust default is clean", "rust", langTestCommands["rust"], nil},
+
+		// Token-based matching: these LOOK like flags as substrings but are not.
+		{"substring is not a flag", "python", "pytest --junitxml=junit.xml # covers -k cases", []string{"-k"}},
+		{"path containing -m is clean", "go", "gotestsum --junitfile=junit.xml -- ./cmd/foo-m/...", nil},
+		{"unknown language yields nothing", "cobol", "cobol-test --ignore x", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DetectTestScopeFlags(tc.lang, tc.cmd)
+			if len(got) != len(tc.want) {
+				t.Fatalf("flags = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("flags = %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestFastTestCommandParity: every language with an evidence command has a fast
+// one, the fast one drops coverage, and it still emits the JUnit report the
+// evidence contract is parsed from. A fast command with no JUnit output would
+// silently record nothing.
+func TestFastTestCommandParity(t *testing.T) {
+	covMarkers := []string{"--cov", "--coverage", "coverageReporters", "jacoco:report", "-coverprofile", "llvm-cov"}
+	for alias, evidence := range langTestCommands {
+		fast, ok := FastTestCommand(alias)
+		if !ok {
+			t.Errorf("%s has an evidence command but no fast one", alias)
+			continue
+		}
+		for _, m := range covMarkers {
+			if strings.Contains(fast, m) {
+				t.Errorf("fast command for %s still collects coverage (%s): %s", alias, m, fast)
+			}
+		}
+		if strings.Contains(evidence, "junit") && !strings.Contains(fast, "junit") {
+			t.Errorf("fast command for %s dropped its JUnit report: %s", alias, fast)
+		}
+		if DetectTestScopeFlags(alias, fast) != nil {
+			t.Errorf("fast command for %s narrows the suite: %s", alias, fast)
+		}
+	}
+	if _, ok := FastTestCommand("cobol"); ok {
+		t.Errorf("an unsupported language must not report a fast command")
+	}
+}
+
+// TestWriteSpecReportPreservesConcurrentTasks (R6.1, R6.2): two implementers
+// recording evidence for different tasks of the same spec must both survive. The
+// old writer rebuilt the file from scratch, so the second one erased the first.
+func TestWriteSpecReportPreservesConcurrentTasks(t *testing.T) {
+	dir := t.TempDir()
+	write := func(taskID string, passed int) {
+		if err := WriteSpecReport(dir, taskID, SpecReport{
+			Feature:   "f",
+			UpdatedAt: "2026-07-19T00:0" + taskID + ":00Z",
+			Command:   "pytest --junitxml=junit.xml",
+			Tests:     &SpecTestCounts{Total: passed, Passed: passed},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("1", 5)
+	write("2", 7)
+
+	got := LoadSpecReport(dir)
+	if got == nil {
+		t.Fatal("no report written")
+	}
+	if len(got.Tasks) != 2 {
+		t.Fatalf("both tasks' results must survive, got %+v", got.Tasks)
+	}
+	if got.Tasks["1"].Tests.Passed != 5 || got.Tasks["2"].Tests.Passed != 7 {
+		t.Errorf("per-task counts wrong: %+v", got.Tasks)
+	}
+	// R6.3: the top level stays the latest run's rollup, so the dashboard and the
+	// plan runner's verdict gate keep reading the same shape they always did.
+	if got.Tests == nil || got.Tests.Passed != 7 {
+		t.Errorf("top-level rollup should be the latest run, got %+v", got.Tests)
+	}
+	if got.Feature != "f" {
+		t.Errorf("rollup lost the feature name: %+v", got)
+	}
+
+	// A run with no task ID still preserves the per-task history.
+	if err := WriteSpecReport(dir, "", SpecReport{
+		Feature: "f", UpdatedAt: "z", Tests: &SpecTestCounts{Total: 12, Passed: 12},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if after := LoadSpecReport(dir); len(after.Tasks) != 2 || after.Tests.Passed != 12 {
+		t.Errorf("a feat-exit run must keep per-task history: %+v", after)
+	}
+	// No lock or temp file is left behind.
+	for _, leftover := range []string{SpecReportFile + ".lock", SpecReportFile + ".tmp"} {
+		if _, err := os.Stat(filepath.Join(dir, leftover)); err == nil {
+			t.Errorf("%s should not survive a completed write", leftover)
+		}
+	}
+}
+
+// TestWriteSpecReportUnderRealConcurrency drives the lock with actual goroutines:
+// every task's result must be present afterwards, with no lost update.
+func TestWriteSpecReportUnderRealConcurrency(t *testing.T) {
+	dir := t.TempDir()
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs <- WriteSpecReport(dir, fmt.Sprintf("task-%d", i), SpecReport{
+				Feature:   "f",
+				UpdatedAt: "2026-07-19T00:00:00Z",
+				Tests:     &SpecTestCounts{Total: i + 1, Passed: i + 1},
+			})
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent write failed: %v", err)
+		}
+	}
+	got := LoadSpecReport(dir)
+	if got == nil || len(got.Tasks) != n {
+		t.Fatalf("expected %d task results to survive, got %d", n, len(got.Tasks))
 	}
 }
