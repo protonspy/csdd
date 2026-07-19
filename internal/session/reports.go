@@ -141,9 +141,21 @@ func WriteSpecReport(specDir, taskID string, rep SpecReport) error {
 // lock, not contention.
 const specReportLockWait = 10 * time.Second
 
+// specReportLockStale is how old a lock must be before a waiter may take it over.
+// It is longer than the wait budget so a writer that is merely slow is never
+// evicted while still working.
+const specReportLockStale = 2 * specReportLockWait
+
 // lockSpecReport takes an exclusive lock on the spec's report file, returning the
-// release function. A lock left behind by a killed process is broken once it is
-// older than the wait budget — a crashed agent must never wedge every later run.
+// release function. A lock left behind by a killed process is taken over once it
+// is stale — a crashed agent must never wedge every later run.
+//
+// Takeover is a rename, not a Stat-then-Remove. Removing the lock file directly
+// is unsafe: between observing it as stale and deleting it, its owner may release
+// it and a third writer may create a fresh one, so the delete would evict a lock
+// that was legitimately held and let two writers into the same read-modify-write.
+// Rename is atomic and names the exact file it moves, so of N racers exactly one
+// succeeds and the losers simply retry.
 func lockSpecReport(specDir string) (func(), error) {
 	path := filepath.Join(specDir, SpecReportFile+".lock")
 	deadline := time.Now().Add(specReportLockWait)
@@ -156,8 +168,14 @@ func lockSpecReport(specDir string) (func(), error) {
 		if !os.IsExist(err) {
 			return nil, err
 		}
-		if st, serr := os.Stat(path); serr == nil && time.Since(st.ModTime()) > specReportLockWait {
-			_ = os.Remove(path) // stale: its owner died holding it
+		if st, serr := os.Stat(path); serr == nil && time.Since(st.ModTime()) > specReportLockStale {
+			// Claim the stale lock by moving it aside under a name only this
+			// caller knows. If another waiter got there first, the rename fails
+			// on the file it already moved and we fall through to the retry.
+			aside := fmt.Sprintf("%s.stale.%d", path, os.Getpid())
+			if os.Rename(path, aside) == nil {
+				_ = os.Remove(aside)
+			}
 			continue
 		}
 		if time.Now().After(deadline) {
@@ -524,7 +542,7 @@ func DetectTestScopeFlags(lang, cmd string) []string {
 	}
 	var out []string
 	seen := map[string]bool{}
-	for _, tok := range strings.Fields(cmd) {
+	for _, tok := range commandTokens(cmd) {
 		// A flag may carry its value as `--ignore=path` or `-Dtest=Foo`; compare
 		// the flag half only.
 		name := tok
@@ -536,6 +554,54 @@ func DetectTestScopeFlags(lang, cmd string) []string {
 			out = append(out, name)
 		}
 	}
+	return out
+}
+
+// commandTokens splits a shell command into argument tokens, dropping anything
+// after an unquoted `#`.
+//
+// A plain strings.Fields would read a trailing comment as arguments, so
+//
+//	pytest --junitxml=junit.xml  # covers -k cases
+//
+// would record a `-k` attention — and since an attention blocks the definition of
+// done and the verdict gate, a false positive here does not merely add noise: it
+// refuses a `done` on evidence that was honest and complete. Quote tracking keeps
+// a `#` inside an argument (a pytest `-k` expression, a regex) from truncating
+// the command.
+func commandTokens(cmd string) []string {
+	var (
+		out   []string
+		cur   strings.Builder
+		quote rune // 0, '\'' or '"'
+	)
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range cmd {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '#' && cur.Len() == 0:
+			// A comment only starts where a token would — `foo#bar` is one word.
+			flush()
+			return out
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
 	return out
 }
 

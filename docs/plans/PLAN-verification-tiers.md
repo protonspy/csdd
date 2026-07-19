@@ -11,7 +11,7 @@
 > deliberately reversed here: `docs/plans/` is revived as hand-authored plan storage,
 > alongside the CLI-written `docs/graph/`. This file is the first entry back.
 
-### Revision history
+## Revision history
 
 **r1 → r2** corrected four material errors: blast radius (4 → 7+ files —
 `rules/definition-of-done.md.tmpl` alone would have nullified the change); the time

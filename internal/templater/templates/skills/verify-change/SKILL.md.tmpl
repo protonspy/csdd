@@ -79,12 +79,14 @@ Run **once**, when the task is finished:
 2. lint on the touched files
 
 Record it through csdd so the spec carries the evidence:
-`npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>`.
+`npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`.
+`--fast` is what selects the coverage-free command; omitting it here pays for
+coverage once per task to collect a number only Tier 3 reads.
 This earns "this task is green". Do **not** add a typecheck or a build here.
 
 ### 3) Tier 3 — the integration gate
 Run **once** per batch merge and once at feat exit, whichever applies:
-1. tests (full suite, with coverage at feat exit)
+1. tests (full suite; at feat exit drop `--fast` so coverage is collected)
 2. lint (whole tree)
 3. typecheck / static analysis
 4. build

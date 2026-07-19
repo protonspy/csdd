@@ -25,7 +25,8 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
   separate `csdd telegram run` is needed. Pass `--no-telegram` to suppress it.
 
 The runner is deliberately dumb: it hands out feats in plan order, spawns the
-session, and records what the session declares — nothing more. **The session owns
+session, and records what the session declares — after checking that claim against
+the artifacts on disk. **The session owns
 everything else**: it authors and approves the spec (`csdd spec generate/validate/
 approve`), implements every task, runs the csdd dev-cycle, owns git (branch,
 `/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes

@@ -132,12 +132,25 @@ func TestTaskExitGateDropsTypecheckAndBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rules, err := RuleFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every template that shows a Tier-2 command must show it in fast mode. The
+	// rule file is included because it is the ambient one: its example omitted
+	// --fast while its own table one line above demanded fast mode, and copying
+	// that command reintroduces per-task coverage everywhere at once.
 	for name, body := range map[string]string{
-		"skills/tdd-cycle/SKILL.md": skills["tdd-cycle/SKILL.md"],
-		"agents/implementer.md":     agents["implementer.md"],
+		"skills/tdd-cycle/SKILL.md":     skills["tdd-cycle/SKILL.md"],
+		"agents/implementer.md":         agents["implementer.md"],
+		"rules/definition-of-done.md":   rules["definition-of-done.md"],
+		"skills/verify-change/SKILL.md": skills["verify-change/SKILL.md"],
 	} {
 		if !strings.Contains(body, "--fast") {
 			t.Errorf("%s should record the Tier-2 run in fast mode (R8.2)", name)
+		}
+		if name == "rules/definition-of-done.md" || name == "skills/verify-change/SKILL.md" {
+			continue // these state the contract; the per-task wording below is the agents'''
 		}
 		if !strings.Contains(strings.ToLower(body), "no typecheck and no build") {
 			t.Errorf("%s should state that typecheck and build are not task-exit checks (R2.3)", name)

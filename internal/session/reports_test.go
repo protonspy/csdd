@@ -264,7 +264,12 @@ func TestDetectTestScopeFlags(t *testing.T) {
 		{"rust default is clean", "rust", langTestCommands["rust"], nil},
 
 		// Token-based matching: these LOOK like flags as substrings but are not.
-		{"substring is not a flag", "python", "pytest --junitxml=junit.xml # covers -k cases", []string{"-k"}},
+		// A false positive is not merely noise — an attention blocks the definition
+		// of done and the verdict gate, so it would refuse a `done` backed by
+		// honest, complete evidence.
+		{"a trailing comment is not an argument", "python", "pytest --junitxml=junit.xml # covers -k cases", nil},
+		{"a quoted # does not truncate the command", "python", `pytest -k "issue#42" --junitxml=junit.xml`, []string{"-k"}},
+		{"a # inside a word is not a comment", "go", "gotestsum --junitfile=junit.xml -- ./cmd/a#b/...", nil},
 		{"path containing -m is clean", "go", "gotestsum --junitfile=junit.xml -- ./cmd/foo-m/...", nil},
 		{"unknown language yields nothing", "cobol", "cobol-test --ignore x", nil},
 	}

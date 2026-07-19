@@ -70,7 +70,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("- %s\n", f)
 	}
 	w("\n**Verdict protocol:**\n")
-	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop trusts this and moves to the next feat, so never claim done on hope.\n")
+	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop checks this claim against your artifacts before accepting it (see below), so never claim done on hope.\n")
 	w("- `continue` — honest partial work: you are out of room before the feat is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).\n")
 	w("\n")
 
@@ -183,10 +183,12 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	w("- specs/%s/spec.json has all three phases approved and `ready_for_implementation` true\n", feat.Slug)
 	w("- specs/%s/test-report.json is green with no open attentions\n\n", feat.Slug)
 	w("If any of them fails, your `done` becomes a `continue` and comes back to the\n")
-	w("next session with a note naming what was missing — and it costs this feat one\n")
-	w("of its attempts. A feat that spends its whole attempt budget is stopped and\n")
-	w("surfaced for a human, so an honest `continue` is always cheaper than a `done`\n")
-	w("the gate refuses.\n\n")
+	w("next session with a note naming what was missing. A feat that spends its whole\n")
+	w("attempt budget is stopped and surfaced for a human.\n\n")
+	w("An honest `continue` and a refused `done` cost the same one attempt — but the\n")
+	w("`continue` spends it carrying YOUR handoff, which says what you learned and\n")
+	w("what to try next. A refused `done` spends it to be told what you could have\n")
+	w("checked yourself.\n\n")
 	w("Only then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
 	w("`{\"status\":\"continue\"}` with the handoff in `summary`.\n")
 

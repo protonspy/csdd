@@ -39,7 +39,7 @@ move to Tier 3.
 - [ ] The **Tier-2 gate** passed: the full suite (fast mode) plus lint on the touched
       files. Typecheck and build are **not** required at task exit — they belong to Tier 3.
 - [ ] The Tier-2 run was made **through the csdd CLI** so the spec carries the evidence (**every flow**):
-      `npx @protonspy/csdd spec test-report <feature> --run --lang <lang>` wrote `specs/<feature>/test-report.json`
+      `npx @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>` wrote `specs/<feature>/test-report.json`
       (tests green, no open attentions). Missing this evidence is a blocked item.
 - [ ] Scope was respected — no opportunistic refactors or unrelated changes.
 - [ ] `## Implementation Notes` in tasks.md updated with any cross-task learning.

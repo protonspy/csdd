@@ -62,8 +62,9 @@ an initiative into **feats**, each becoming exactly one spec.
   validated plan for you to `csdd plan approve`. A single feature stays on the
   lighter `quick-prd` on-ramp.
 - **Never edit an approved plan, and never execute approvals, during a run.**
-  `csdd plan run` is a dumb loop plus a verifier: it runs the gates, owns
-  a per-feat ledger and journals — while the session controls the whole flow: it
+  `csdd plan run` is a dumb loop plus a verifier: it runs no gates itself, but
+  checks the artifacts behind a `done` verdict, and owns a per-feat ledger and
+  journals — while the session controls the whole flow: it
   authors and approves the spec, runs the csdd dev-cycle, and owns git (branch,
   `/csdd-commit`, the PR). Don't edit `plan.md`/`plan.json` — editing an approved
   plan is real drift and stops autonomy until re-approval.
