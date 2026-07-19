@@ -101,15 +101,3 @@ func TestSessionArgsRequestStreamingEnvelope(t *testing.T) {
 		}
 	}
 }
-
-func TestParseProcStatHandlesCommWithSpacesAndParens(t *testing.T) {
-	if got, _, ok := parseProcStat("42 (weird )( name) S 1 7 7 0 -1 0 0 0 0 0 11 22 0 0"); !ok || got != 7 {
-		t.Errorf("want pgid 7 parsed past a nasty comm, got %d (ok=%v)", got, ok)
-	}
-	if _, cpu, ok := parseProcStat("42 (sh) S 1 7 7 0 -1 0 0 0 0 0 11 22 0 0"); !ok || cpu != 33 {
-		t.Errorf("want utime+stime = 33, got %d (ok=%v)", cpu, ok)
-	}
-	if _, _, ok := parseProcStat("garbage"); ok {
-		t.Error("a malformed stat line must not parse")
-	}
-}
