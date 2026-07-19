@@ -78,8 +78,13 @@ type RunOptions struct {
 	// loop, not a large feat that legitimately spans many sessions; the iteration
 	// cap is the real wallet guard. Default 10.
 	Stall int
-	Out   io.Writer
-	Hooks Hooks
+	// SessionIdle bounds how long a session may make no progress at all — no
+	// output on its event stream and no CPU anywhere in its process group — before
+	// the runner kills it as hung. It is NOT a time limit on a session: honest work
+	// of any duration keeps resetting it. Default 15 minutes (--session-idle).
+	SessionIdle time.Duration
+	Out         io.Writer
+	Hooks       Hooks
 }
 
 // Run outcomes, chosen so the CLI can surface them as distinct exit codes.
@@ -297,7 +302,44 @@ func waitForLimit(opts RunOptions, feat Feat, lim *LimitError) {
 	logf("  ⏸ hit the Claude session limit — sleeping %s until %s, then resuming %s",
 		wait.Round(time.Second), label, feat.Slug)
 	journal(opts, feat.Slug, "waiting", "session limit — resuming after "+label)
-	opts.Hooks.Sleep(wait)
+	sleepWithCountdown(opts, wait, label)
+}
+
+// limitTick is how often the account-limit wait reports the time still remaining.
+const limitTick = 5 * time.Minute
+
+// sleepWithCountdown sleeps for total, reporting what is left while it waits.
+//
+// A limit wait can legitimately run for hours. Spending it in one silent Sleep is
+// what made a rate-limited run indistinguishable from a crashed one: the runner
+// was behaving exactly as designed and the operator had no way to know that.
+//
+// The countdown runs on its own ticker rather than by chopping the wait into
+// several Sleep calls, which keeps the Sleep hook's contract intact — one call per
+// limit, carrying the full duration — so it stays a faithful seam for tests. With
+// an instant Sleep stub the ticker simply never fires. The countdown reads the wall
+// clock directly for the same reason: it reports real waiting, not loop time.
+func sleepWithCountdown(opts RunOptions, total time.Duration, label string) {
+	logf := runLogf(opts)
+	deadline := time.Now().Add(total)
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(limitTick)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				if left := time.Until(deadline); left > 0 {
+					logf("    · still waiting on the session limit — %s left (until %s)",
+						compactDuration(left), label)
+				}
+			}
+		}
+	}()
+	opts.Hooks.Sleep(total)
+	close(stop)
 }
 
 // reconcileLedgerFromDisk seeds the ledger from disk reality before the loop so a
@@ -516,7 +558,17 @@ func fillRunDefaults(opts *RunOptions) {
 	if opts.Out == nil {
 		opts.Out = io.Discard
 	}
-	installRealHooks(&opts.Hooks, opts.Model, opts.Effort)
+	if opts.SessionIdle <= 0 {
+		opts.SessionIdle = defaultSessionIdle
+	}
+	// Hooks.Now may still be nil here; the reporter resolves that itself, and
+	// installRealHooks fills the hook right after.
+	installRealHooks(&opts.Hooks, opts.Model, opts.Effort, sessionEnv{
+		idle: opts.SessionIdle,
+		out:  opts.Out,
+		tty:  isTerminal(opts.Out),
+		now:  opts.Hooks.Now,
+	})
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
