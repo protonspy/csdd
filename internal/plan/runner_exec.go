@@ -2,9 +2,9 @@ package plan
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -22,7 +22,7 @@ import (
 // session runs on these, while task implementation it delegates to the
 // `implementer` sub-agent runs on that agent's own (cheaper) model. Empty values
 // mean "inherit the ambient default" — the corresponding flag is simply omitted.
-func installRealHooks(h *Hooks, runModel, runEffort string) {
+func installRealHooks(h *Hooks, runModel, runEffort string, sess sessionEnv) {
 	if h.Now == nil {
 		h.Now = time.Now
 	}
@@ -40,12 +40,25 @@ func installRealHooks(h *Hooks, runModel, runEffort string) {
 	}
 	if h.Session == nil {
 		h.Session = func(feat Feat, brief string, budgetUSD float64) (Verdict, error) {
-			return execClaudeSession(feat, brief, budgetUSD, runModel, runEffort)
+			return execClaudeSession(feat, brief, budgetUSD, runModel, runEffort, sess)
 		}
 	}
 	if h.Sleep == nil {
 		h.Sleep = time.Sleep
 	}
+}
+
+// sessionEnv carries what the real Session hook needs beyond the feat itself: the
+// watchdog's idle budget and the seams the live session view reports through. It is
+// passed rather than read from globals so a test can drive a real session end-to-end.
+type sessionEnv struct {
+	idle time.Duration
+	// out is where the live session view is drawn, and tty says whether that
+	// destination can take cursor control (a terminal) or must get plain
+	// append-only lines (a pipe or a redirected log).
+	out io.Writer
+	tty bool
+	now func() time.Time
 }
 
 // verdictSchema is the JSON schema the session must satisfy — the runner's contract
@@ -56,10 +69,11 @@ const verdictSchema = `{"type":"object","required":["status"],` +
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
 var claudeFlags = struct {
-	print, outputFormat, jsonSchema, maxBudget, model, effort, bypass string
+	print, outputFormat, verbose, jsonSchema, maxBudget, model, effort, bypass string
 }{
 	print:        "-p",
 	outputFormat: "--output-format",
+	verbose:      "--verbose",
 	jsonSchema:   "--json-schema",
 	maxBudget:    "--max-budget-usd",
 	model:        "--model",
@@ -74,7 +88,13 @@ var claudeFlags = struct {
 func sessionArgs(brief string, budgetUSD float64, model, effort string) []string {
 	args := []string{
 		claudeFlags.print, brief,
-		claudeFlags.outputFormat, "json",
+		// stream-json (not json) so the session reports as it works: each NDJSON
+		// event is both a liveness tick for the watchdog and the material for the
+		// runner's heartbeat. The verdict still arrives in the final `result` event,
+		// in the same envelope parseVerdict already reads. --verbose is what makes
+		// the stream emit those per-step events rather than the result alone.
+		claudeFlags.outputFormat, "stream-json",
+		claudeFlags.verbose,
 		claudeFlags.jsonSchema, verdictSchema,
 	}
 	if strings.TrimSpace(model) != "" {
@@ -95,23 +115,45 @@ func sessionArgs(brief string, budgetUSD float64, model, effort string) []string
 // execClaudeSession spawns a fresh `claude -p` session for a feat and parses its
 // verdict from the JSON output envelope. Every session runs bypass-mode; the
 // runner's preflight (sandbox doctor + human accept) is the gate in front of it.
-func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string) (Verdict, error) {
+// It streams the session under a progress watchdog rather than waiting on it
+// blindly. Previously this buffered the whole run and called cmd.Run(), which had
+// no bound at all: a session that stopped making progress hung `plan run` forever,
+// silently, and that is the failure this addresses. The watchdog kills a session
+// only when it has produced neither output nor CPU for the idle budget, so long
+// honest work is never cut short — see watchdog.go.
+func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (Verdict, error) {
 	cmd := exec.Command("claude", sessionArgs(brief, budgetUSD, model, effort)...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+
+	stream := newSessionStream(sess.now)
+	stop := make(chan struct{})
+	if sess.out != nil {
+		go newReporter(sess.out, sess.tty, sess.now).run(stream, stop)
+	}
+
+	stdout, stderr, err := supervised{
+		cmd:          cmd,
+		idle:         sess.idle,
+		onLine:       stream.line,
+		lastActivity: func() string { a, _ := stream.snapshot(); return a },
+	}.run()
+	close(stop)
+
 	// An account-limit stop is not a work failure: surface it as a typed error so
 	// the runner sleeps until the window reopens and retries, rather than counting
 	// it against the stall guard. The notice can land on either stream, so scan
 	// both regardless of the exit code.
-	if lim, ok := detectLimit(stdout.String() + "\n" + stderr.String()); ok {
+	if lim, ok := detectLimit(stdout + "\n" + stderr); ok {
 		return Verdict{}, lim
 	}
 	if err != nil {
-		return Verdict{}, fmt.Errorf("claude session failed: %v: %s", err, strings.TrimSpace(stderr.String()))
+		return Verdict{}, fmt.Errorf("claude session failed: %v: %s", err, strings.TrimSpace(stderr))
 	}
-	return parseVerdict(stdout.Bytes())
+	// The verdict rides in the final `result` event; fall back to the whole stream
+	// so a stream that ended unusually still gets parseVerdict's last-ditch scan.
+	if src, ok := stream.verdictSource(); ok {
+		return parseVerdict([]byte(src))
+	}
+	return parseVerdict([]byte(stdout))
 }
 
 // LimitError signals the claude session stopped because the Claude account hit
