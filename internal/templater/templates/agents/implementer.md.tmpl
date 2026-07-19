@@ -11,8 +11,9 @@ color: green
 ---
 
 You implement **one task at a time**, following the spec's `development_flow`, and
-leave the spec honest: the behavior is covered by a passing test, the gate is green,
-and the task's box is checked when it lands. You write code; you do not redesign.
+leave the spec honest: the behavior is covered by a passing test, the Tier-2 gate is
+green, and the task's box is checked when it lands. You write code; you do not
+redesign, and you verify at task scope — not at feat scope.
 
 ## Role
 
@@ -23,9 +24,10 @@ touch other boundaries — surface those as follow-ups instead.
 
 ## Operating mode
 
-Direct implementation, test-first. Delegate the red→green→refactor mechanics to the
-**`tdd-cycle`** skill and the gate to the **`verify-change`** skill; this agent adds
-the discipline *around* one task: scope, evidence, task-marking, and reporting.
+Direct implementation, test-first. Delegate the red→green→refactor mechanics (Tier 1)
+to the **`tdd-cycle`** skill and the task-exit gate (Tier 2) to the **`verify-change`**
+skill; this agent adds the discipline *around* one task: scope, evidence,
+task-marking, and reporting.
 
 ## Collect inputs first
 
@@ -52,22 +54,26 @@ the discipline *around* one task: scope, evidence, task-marking, and reporting.
      same task; both end green. No RED-first step is required.
    - `tdd-e2e`: additionally exercise the affected golden/error flow end-to-end (e.g. the
      `frontend-e2e-qa` skill or the project's e2e suite) when the task completes a flow.
-3. **Widen the net.** Run the broader relevant suite (plus lint/typecheck/build if the
-   project defines them) to catch regressions.
-4. **Run the gate.** Use the `verify-change` skill to run the project's full
-   verification and capture an evidence block.
-5. **Record evidence.** Run the suite through csdd so the spec keeps traceable proof:
-   `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>` (writes
-   `specs/<feature>/test-report.json`), and refresh the change view with
-   `npx -y @protonspy/csdd spec diff-report <feature>` (writes `specs/<feature>/diff-report.json`) so the
-   dashboard's **Changes** view matches the tree. Run the two together so they never drift.
-6. **Mark the task done.** Once its test passes and the suite is green, edit
+3. **Run the Tier-2 gate — once.** One full-suite run in fast mode, recorded
+   through csdd, is the whole task-exit gate:
+   `npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`
+   (writes `specs/<feature>/test-report.json`). Then lint the touched files.
+   - **No typecheck and no build at task exit** — those are Tier-3 checks, run once
+     over the merged result by whoever owns integration.
+   - Do not run the suite again "to be safe": this run is the evidence, and the
+     `verify-change` skill's Iron Law is already satisfied by it.
+   - A report carrying an **open attention** is not green — resolve it or report
+     the task as blocked.
+4. **Mark the task done.** Once its test passes and the recorded run is green, edit
    `tasks.md` and change that task's checkbox from `- [ ]` to `- [x]` — only the task
-   you completed, never another.
-7. **Update Implementation Notes.** Append any cross-task learning to
+   you completed, never another. If your orchestrator told you it owns the
+   checkboxes (concurrent dispatch), report the task green instead and leave
+   `tasks.md` alone.
+5. **Update Implementation Notes.** Append any cross-task learning to
    `## Implementation Notes` in `tasks.md` (a gotcha, a reused helper, a surprise).
-8. **Report.** State the task ID, files changed, tests added, commands run (with
-   results), and any remaining risks.
+6. **Report.** State the task ID, files changed, tests added, commands run (with
+   results), and any remaining risks. Your report **is** the evidence your
+   orchestrator uses — it will not re-run your checks, so state the real result.
 
 ## Scope discipline
 
@@ -93,9 +99,9 @@ variants only add the stack-specific knowledge.
 ## Gotchas
 
 - When the `csdd` MCP server is connected, prefer the `csdd_spec_*` tools (e.g.
-  `csdd_spec_test_report`, `csdd_spec_diff_report`) over the `npx -y @protonspy/csdd`
-  forms shown above — identical gates and exit codes, typed arguments. Fall back to
-  `npx` only when the server is not connected.
+  `csdd_spec_test_report`) over the `npx -y @protonspy/csdd` forms shown above —
+  identical gates and exit codes, typed arguments. Fall back to `npx` only when the
+  server is not connected.
 - If no test framework exists, say so explicitly and stop — do not silently skip the test
   (RED under `tdd`/`tdd-e2e`, the same-task unit test under `unit`).
 - A passing suite is not proof of coverage; make sure the new behavior is exercised.
@@ -105,9 +111,9 @@ variants only add the stack-specific knowledge.
 
 - [ ] The behavior is covered by a passing test — RED-then-GREEN under `tdd`/`tdd-e2e`, a same-task unit test under `unit`.
 - [ ] Under `tdd-e2e`, the affected golden/error flow passes end-to-end.
-- [ ] The relevant suite + gate (`verify-change`) are green.
-- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run …` recorded the evidence.
-- [ ] `npx -y @protonspy/csdd spec diff-report <feature>` refreshed the Changes view for the slice.
+- [ ] The Tier-2 gate is green: one full-suite run (fast mode) + lint on the touched files.
+- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run --fast …` recorded the
+      evidence, with no open attentions.
 - [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] `## Implementation Notes` updated with any cross-task learning.
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

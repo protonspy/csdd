@@ -14,7 +14,7 @@ red → green → refactor.
 
 > **Under `tdd`/`tdd-e2e`, production code does not exist until a test has failed for the
 > expected reason. The first artifact you produce is a failing test — and no task is marked
-> `[x]` until `npx -y @protonspy/csdd spec test-report` has recorded it green.**
+> `[x]` until the Tier-2 gate (`npx -y @protonspy/csdd spec test-report`) has recorded it green.**
 
 No exceptions:
 - Don't write the implementation "just to see if it works" and back-fill the test.
@@ -59,36 +59,38 @@ test, not production code.
 - Improve names/structure only while the test stays green. Re-run after each change.
 - Do not add behavior here; new behavior means a new RED test.
 
-### 4) Widen the net
-- Run the broader relevant suite (not just the focused test) to catch regressions.
-- Run lint / typecheck if the project has them.
+### 4) Tier 2 — the task-exit gate (ONE run, via the csdd CLI)
+Steps 1–3 are Tier 1: they earn "this behavior works". This step is the single
+Tier-2 gate that earns "this task is green" — run it **once**, through `csdd`, so
+the result lands in the spec's traceable evidence file
+(`specs/<feature>/test-report.json`):
 
-### 5) Record the spec evidence (via the csdd CLI)
-- Run the suite **through `csdd`** so the result is parsed into the spec's
-  traceable evidence file (`specs/<feature>/test-report.json`):
+```bash
+npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <python|typescript|java|go|rust> --path <tests-dir>
+```
 
-  ```bash
-  npx -y @protonspy/csdd spec test-report <feature> --run --lang <python|typescript|java|go|rust> --path <tests-dir>
-  ```
+- `--run` executes the language's default test command (or your `--cmd "..."`),
+  then parses the JUnit report it produces into the JSON contract.
+- `--fast` selects the coverage-free command. Coverage belongs to Tier 3 (feat
+  exit), where it is collected once instead of once per task.
+- A custom `--cmd` is validated against the language's expected tooling
+  (e.g. Python → `pytest`, Java → `mvn`/`jacoco`), **and** against test-exclusion
+  or test-selection flags (`--ignore`, `-k`, `--deselect`, `-run`, …). Either
+  problem is recorded as an attention, and a report with an open attention does
+  not count as green — a suite that passes because tests were excluded is worse
+  evidence than none.
+- The command exits non-zero when tests fail, so it gates the task.
 
-  - `--run` executes the language's default test command (or your `--cmd "..."`),
-    then parses the JUnit + coverage reports it produces into the JSON contract.
-  - A custom `--cmd` is validated against the language's expected tooling
-    (e.g. Python → `pytest`, Java → `mvn`/`jacoco`); a mismatch is recorded as an attention.
-  - The command exits non-zero when tests fail, so it gates the task.
-- The dashboard (`npx -y @protonspy/csdd web`) surfaces these per-spec metrics, paths, and attentions.
-- Refresh the diff in the **same step** so the dashboard's **Changes** view reflects
-  exactly the work in the tree:
+Then lint the touched files. That is the whole gate: **no typecheck and no build
+at task exit** — both are Tier-3 checks, run once over the merged result.
 
-  ```bash
-  npx -y @protonspy/csdd spec diff-report <feature>
-  ```
+There is no separate "widen the net" run. This full-suite pass *is* the wider net;
+running it twice catches nothing the first run missed.
 
-  Read-only git (base → working tree, untracked work included); writes
-  `specs/<feature>/diff-report.json`, the sibling of `test-report.json`. Pair it with the
-  test-report run so the test metrics and the change view never show different states.
+The dashboard (`npx -y @protonspy/csdd web`) surfaces these per-spec metrics,
+paths, and attentions.
 
-### 6) Mark the task done
+### 5) Mark the task done
 - Once the focused test passes (GREEN) and the relevant suite is green, edit
   `specs/<feature>/tasks.md` and change this task's checkbox from `- [ ]` to `- [x]`.
 - Mark **only** the task you just completed — never another task. Leave blocked or
@@ -113,6 +115,7 @@ the rule is violating its spirit.**
 - The test passed on its very first run.
 - You can't quote the failure message from the RED step.
 - You're thinking "I'll record the csdd evidence later."
+- You're about to run the full suite a second time for the same task.
 - You're about to mark more than one task `[x]`.
 
 If any fire, stop and return to the workflow above.
@@ -126,18 +129,18 @@ If any fire, stop and return to the workflow above.
 
 ## Verification Before Reporting
 
-- Run: the focused test (RED then GREEN), then the relevant suite.
-- Record: the run via `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>` and
-  `npx -y @protonspy/csdd spec diff-report <feature>` so the spec carries up-to-date test/coverage evidence
-  and the Changes view matches the tree.
-- Check: the new behavior is exercised and the suite is green.
+- Run: the focused test (RED then GREEN), then the Tier-2 gate — once.
+- Record: that run via `npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`,
+  so the spec carries the evidence for this task.
+- Check: the new behavior is exercised, the suite is green, and the report carries
+  no open attentions.
 - If blocked: report the blocked step explicitly; do not mark the task done.
 
 ## Completion Criteria
 - [ ] A test existed that failed before the change (or documented why not).
 - [ ] The test passes after the minimal implementation.
-- [ ] The relevant suite + lint/typecheck pass.
-- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run …` recorded the evidence (tests green, coverage updated).
-- [ ] `npx -y @protonspy/csdd spec diff-report <feature>` refreshed the Changes view for this slice.
+- [ ] The Tier-2 gate passed: full suite (fast mode) + lint on the touched files.
+- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run --fast …` recorded the
+      evidence (tests green, no open attentions).
 - [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

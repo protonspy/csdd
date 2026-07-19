@@ -35,9 +35,12 @@ const (
 // commit, and the PR all happen inside the session. The runner only spawns the
 // session, records what it declared, and carries context to the next one.
 type Hooks struct {
-	// Session runs one claude session for a feat and returns its parsed verdict.
-	// Every session runs bypass-mode (--dangerously-skip-permissions).
-	Session func(feat Feat, brief string, budgetUSD float64) (Verdict, error)
+	// Session runs one claude session for a feat and returns what it produced:
+	// the verdict it declared plus the metrics its `result` event reported. The
+	// outcome is returned even alongside an error, so a failed attempt's cost is
+	// still recorded (R9.2). Every session runs bypass-mode
+	// (--dangerously-skip-permissions).
+	Session func(feat Feat, brief string, budgetUSD float64) (SessionOutcome, error)
 	// Doctor proves sandbox isolation before the bypass-mode loop starts.
 	Doctor func() SandboxReport
 	// Confirm asks the human a yes/no question (the unverified-sandbox alert)
@@ -78,6 +81,15 @@ type RunOptions struct {
 	// loop, not a large feat that legitimately spans many sessions; the iteration
 	// cap is the real wallet guard. Default 10.
 	Stall int
+	// FeatAttempts bounds how many sessions ONE feat may consume before the runner
+	// stops handing it out and surfaces it as blocked (R10.4, R10.5).
+	//
+	// It exists because the verdict gate converts a refused `done` into a
+	// `continue`, and `continue` resets the stall guard — so without this bound a
+	// session that is confidently wrong about being finished would be re-dispatched
+	// until the global iteration cap, turning a silent false-done into a silent
+	// infinite loop. The two ship together. Default 8.
+	FeatAttempts int
 	// SessionIdle bounds how long a session may make no progress at all — no
 	// output on its event stream and no CPU anywhere in its process group — before
 	// the runner kills it as hung. It is NOT a time limit on a session: honest work
@@ -92,13 +104,16 @@ const (
 	OutcomeComplete = 0 // every feat is delivered
 	OutcomeCapped   = 6 // hit the iteration cap without finishing
 	OutcomeStalled  = 8 // the stall guard tripped: consecutive failures with no progress
+	OutcomeBlocked  = 9 // a feat exhausted its attempt bound; the run finished around it
 )
 
 // RunSummary is the totals reported on exit (R9.7).
 type RunSummary struct {
-	Sessions  int // claude sessions spent (= iterations that reached a session)
-	Steps     int // feats delivered (the ledger gained a done row)
-	Failures  int // iterations that failed and became context for the next one
+	Sessions  int      // claude sessions spent (= iterations that reached a session)
+	Steps     int      // feats delivered (the ledger gained a done row)
+	Failures  int      // iterations that failed and became context for the next one
+	Gated     int      // `done` verdicts the gate refused and converted to `continue` (R10.3)
+	Blocked   []string // feats that exhausted their attempt bound (R10.5)
 	Completed bool
 	Reason    string
 	Outcome   int
@@ -168,22 +183,43 @@ func Run(opts RunOptions) (RunSummary, error) {
 	stall := 0
 
 	for iter := 1; iter <= opts.MaxIterations; iter++ {
-		feat, ok := nextFeat(doc, ledger.doneSet())
+		// A blocked feat is out of the rotation: it exhausted its attempt bound, so
+		// re-handing it would burn the remaining iterations on the one feat that has
+		// already proven it cannot converge. The rest of the plan still runs.
+		feat, ok := nextFeat(doc, unionSets(ledger.doneSet(), st.blocked))
 		if !ok {
-			sum.Completed = true
-			sum.Outcome = OutcomeComplete
-			sum.Reason = "plan complete: every feat is delivered"
+			sum.Completed = len(sum.Blocked) == 0
+			if sum.Completed {
+				sum.Outcome = OutcomeComplete
+				sum.Reason = "plan complete: every feat is delivered"
+			} else {
+				sum.Outcome = OutcomeBlocked
+				sum.Reason = fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s",
+					len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "))
+			}
 			logf(sum.Reason)
 			return summarize(out, sum), nil
 		}
 
 		logf("→ %s (session %d/%d)", feat.Slug, iter, opts.MaxIterations)
-		switch executeFeat(opts, doc, feat, ledger, st, &sum) {
+		res := executeFeat(opts, doc, feat, ledger, st, &sum, iter)
+		switch res {
 		case iterAdvanced, iterContinue:
 			stall = 0 // a delivered feat or honest partial work is forward motion
 		case iterFailed:
 			sum.Failures++
 			stall++
+		}
+		// R10.5: an unfinished feat that has spent its whole attempt budget is
+		// surfaced, not retried forever. This is checked outside the stall guard on
+		// purpose — the guard only counts FAILURES, and the loop a rejected `done`
+		// creates is made of `continue`s, which reset it.
+		if res != iterAdvanced && st.attempts[feat.Slug] >= opts.FeatAttempts {
+			st.blocked[feat.Slug] = true
+			sum.Blocked = append(sum.Blocked, feat.Slug)
+			reason := fmt.Sprintf("blocked after %d attempts without delivering", opts.FeatAttempts)
+			journal(opts, feat.Slug, "blocked", reason)
+			logf("  ⛔ %s %s — moving on; it needs a human or a revised plan", feat.Slug, reason)
 		}
 		if stall >= opts.Stall {
 			sum.Outcome = OutcomeStalled
@@ -209,11 +245,16 @@ const (
 )
 
 // executeFeat runs exactly one session for the feat and records what it declared.
-// Nothing here verifies the work — the loop trusts the session (Ralph-style). A
-// `done` verdict marks the feat in the ledger and advances; a `continue` stores the
-// handoff for the successor; a session error lands on the feat's rolling history,
-// which the next iteration's brief carries.
-func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *runState, sum *RunSummary) iterResult {
+// The loop still trusts the session's JUDGMENT — it does not review the code, run
+// the suite, or second-guess the reasoning — but it no longer trusts unchecked
+// CLAIMS about files it can read in milliseconds: a `done` verdict passes through
+// the verdict gate first (R10, §5.5). A gate rejection becomes a `continue`
+// carrying a handoff that names each failed check, so the next session self-heals.
+// A `continue` stores its handoff for the successor; a session error lands on the
+// feat's rolling history, which the next iteration's brief carries.
+//
+// Every path records one session attempt with its cost (R9.2) before returning.
+func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *runState, sum *RunSummary, iter int) iterResult {
 	h := opts.Hooks
 	logf := runLogf(opts)
 	key := feat.Slug
@@ -227,9 +268,19 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		return iterFailed
 	}
 
-	verdict, err := sessionOrWait(opts, feat, base+runContext(st, key))
+	attempt := st.nextAttempt(key)
+	outcome, err := sessionOrWait(opts, feat, base+runContext(st, key))
 	sum.Sessions++
+	record := func(status, detail string, gated bool) {
+		rec := newSessionRecord(feat.Slug, iter, attempt, status, detail, outcome.Metrics, h.Now())
+		rec.Gated = gated
+		if err := AppendSessionRecord(opts.Root, opts.Slug, rec); err != nil {
+			// Instrumentation must never end a run: note it and carry on.
+			logf("  ⚠ could not record this session's metrics: %v", err)
+		}
+	}
 	if err != nil {
+		record("failed", firstLine(err.Error()), false)
 		hist.add("session error", err.Error())
 		st.logs[key] = writeFailureLog(opts, feat, hist)
 		journal(opts, feat.Slug, "failed", "session error: "+firstLine(err.Error()))
@@ -237,20 +288,38 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		return iterFailed
 	}
 
+	verdict := outcome.Verdict
 	switch verdict.Status {
 	case VerdictContinue:
+		record("continue", oneLine(verdict.Summary), false)
 		st.handoffs[key] = strings.TrimSpace(verdict.Summary)
 		journal(opts, feat.Slug, "progress", "handoff: "+oneLine(verdict.Summary))
 		logf("  … progress — handing off to the next session")
 		return iterContinue
 	case VerdictDone:
+		// R10.1: the three on-disk checks, before the ledger records anything.
+		if findings := gateDone(opts.Root, feat); len(findings) > 0 {
+			sum.Gated++
+			names := gateCheckNames(findings)
+			record("continue", "verdict gate refused `done`: "+names, true)
+			st.handoffs[key] = gateHandoff(feat, findings, verdict.Summary)
+			journal(opts, feat.Slug, "progress", "verdict gate refused `done`: "+names)
+			logf("  ⚠ %s claimed done but the on-disk checks refused it (%s) — handing back for %d more attempt(s)",
+				feat.Slug, names, opts.FeatAttempts-attempt)
+			for _, f := range findings {
+				logf("      ✗ %s: %s", f.check, f.detail)
+			}
+			return iterContinue
+		}
 		ledger.MarkDone(feat.Slug, oneLine(verdict.Summary), h.Now())
 		if err := ledger.Save(opts.Root, opts.Slug); err != nil {
+			record("failed", "ledger save: "+firstLine(err.Error()), false)
 			hist.add("ledger save failed", err.Error())
 			journal(opts, feat.Slug, "failed", "ledger save: "+firstLine(err.Error()))
 			logf("  ✗ could not record %s as delivered: %v", feat.Slug, err)
 			return iterFailed
 		}
+		record("done", oneLine(verdict.Summary), false)
 		journalDone(opts, feat.Slug, oneLine(verdict.Summary))
 		st.clearFeat(key)
 		sum.Steps++
@@ -258,6 +327,7 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		return iterAdvanced
 	default:
 		// parseVerdict enforces done|continue, so this is defensive only.
+		record("failed", "unknown verdict status: "+verdict.Status, false)
 		hist.add("unknown verdict", verdict.Status)
 		journal(opts, feat.Slug, "failed", "unknown verdict status: "+verdict.Status)
 		logf("  ✗ unknown verdict status %q", verdict.Status)
@@ -271,16 +341,16 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 // a real result. From executeFeat's view a limit is invisible — it never counts as
 // a failure, burns the stall guard, or pollutes the failure log. The iteration is
 // not consumed either, since the caller only advances once this returns.
-func sessionOrWait(opts RunOptions, feat Feat, brief string) (Verdict, error) {
+func sessionOrWait(opts RunOptions, feat Feat, brief string) (SessionOutcome, error) {
 	h := opts.Hooks
 	for {
-		v, err := h.Session(feat, brief, opts.SessionBudget)
+		out, err := h.Session(feat, brief, opts.SessionBudget)
 		var lim *LimitError
 		if errors.As(err, &lim) {
 			waitForLimit(opts, feat, lim)
 			continue
 		}
-		return v, err
+		return out, err
 	}
 }
 
@@ -380,10 +450,24 @@ type runState struct {
 	hists    map[string]*failureHistory // feat → failed attempts
 	handoffs map[string]string          // feat → continue-verdict handoff
 	logs     map[string]string          // feat → workspace-relative failure log
+	// attempts counts every session a feat has consumed this run, whatever it
+	// returned. Unlike the failure history it also counts `continue`s — including
+	// the ones the verdict gate manufactured — because those are exactly the
+	// attempts the bound (R10.4) exists to cap.
+	attempts map[string]int
+	// blocked is the set of feats that exhausted the bound. The sequencer skips
+	// them so the rest of the plan can still run (R10.5).
+	blocked map[string]bool
 }
 
 func newRunState() *runState {
-	return &runState{hists: map[string]*failureHistory{}, handoffs: map[string]string{}, logs: map[string]string{}}
+	return &runState{
+		hists:    map[string]*failureHistory{},
+		handoffs: map[string]string{},
+		logs:     map[string]string{},
+		attempts: map[string]int{},
+		blocked:  map[string]bool{},
+	}
 }
 
 func (s *runState) hist(key string) *failureHistory {
@@ -393,11 +477,33 @@ func (s *runState) hist(key string) *failureHistory {
 	return s.hists[key]
 }
 
+// nextAttempt counts one more session against a feat and returns its number,
+// 1-based.
+func (s *runState) nextAttempt(key string) int {
+	s.attempts[key]++
+	return s.attempts[key]
+}
+
 // clearFeat forgets a feat's trail once it is delivered.
 func (s *runState) clearFeat(key string) {
 	delete(s.hists, key)
 	delete(s.handoffs, key)
 	delete(s.logs, key)
+	delete(s.attempts, key)
+}
+
+// unionSets merges membership sets without mutating either input — the ledger's
+// done set is reused across iterations, so the blocked set must not leak into it.
+func unionSets(sets ...map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range sets {
+		for k, v := range s {
+			if v {
+				out[k] = true
+			}
+		}
+	}
+	return out
 }
 
 // maxContextAttempts bounds how many failed attempts the rolling context replays.
@@ -555,6 +661,9 @@ func fillRunDefaults(opts *RunOptions) {
 	if opts.Stall <= 0 {
 		opts.Stall = 10
 	}
+	if opts.FeatAttempts <= 0 {
+		opts.FeatAttempts = 8
+	}
 	if opts.Out == nil {
 		opts.Out = io.Discard
 	}
@@ -572,8 +681,11 @@ func fillRunDefaults(opts *RunOptions) {
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
-	_, _ = fmt.Fprintf(out, "totals: %d sessions, %d feats delivered, %d failed iterations\n",
-		sum.Sessions, sum.Steps, sum.Failures)
+	_, _ = fmt.Fprintf(out, "totals: %d sessions, %d feats delivered, %d failed iterations, %d gated verdicts\n",
+		sum.Sessions, sum.Steps, sum.Failures, sum.Gated)
+	if len(sum.Blocked) > 0 {
+		_, _ = fmt.Fprintf(out, "blocked: %s\n", strings.Join(sum.Blocked, ", "))
+	}
 	return sum
 }
 

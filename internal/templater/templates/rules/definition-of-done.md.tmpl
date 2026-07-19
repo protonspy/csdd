@@ -3,6 +3,30 @@
 A task or PR is **done** only when every box is checked. "It compiles" and
 "it looks right" are not done. Evidence beats assertion — paste real output.
 
+## The verification tiers
+
+Verification runs at three tiers. Each has a declared command scope and a
+declared claim scope, and **the claim you may make equals the evidence you have**:
+
+| | Tier 1 — inner loop | Tier 2 — task exit | Tier 3 — integration |
+|---|---|---|---|
+| Trigger | each RED→GREEN step | one task finishes | batch merge; feat exit |
+| Tests | the focused test(s) | the full suite, fast mode | the full suite |
+| Lint | — | the touched files | the whole tree |
+| Typecheck | — | — | yes |
+| Build | — | — | yes |
+| Coverage | — | — | feat exit only |
+| Claim it earns | "this behavior works" | "this task is green" | "the feat is green" |
+
+A Tier-2 run entitles you to say *this task is green*. It never entitles you to
+say *the feat is green* — only the Tier-3 gate earns that. Do not run a tier's
+checks more than once for the same claim: re-running the suite to confirm a result
+you already recorded buys nothing and costs minutes.
+
+Cheap checks stay eager. Lint costs ~0, so it runs at Tier 2 rather than waiting
+for integration. Typecheck, build, and coverage are the expensive ones, and they
+move to Tier 3.
+
 ## Per task (one task from tasks.md)
 
 - [ ] The active spec was read; the change stays within its approved boundary.
@@ -12,18 +36,27 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 - [ ] **Under `unit`:** the behavior is covered by a unit test that passes (no RED-first
       evidence required).
 - [ ] **Under `tdd-e2e`:** the end-to-end coverage for the affected golden/error flow runs green.
-- [ ] The relevant suite, lint, and typecheck pass for the touched scope.
-- [ ] Unit tests were run **through the csdd CLI** so the spec carries the evidence (**every flow**):
-      `npx @protonspy/csdd spec test-report <feature> --run --lang <lang>` wrote `specs/<feature>/test-report.json`
-      (tests green, coverage recorded, no open attentions). Missing this evidence is a blocked item.
+- [ ] The **Tier-2 gate** passed: the full suite (fast mode) plus lint on the touched
+      files. Typecheck and build are **not** required at task exit — they belong to Tier 3.
+- [ ] The Tier-2 run was made **through the csdd CLI** so the spec carries the evidence (**every flow**):
+      `npx @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>` wrote `specs/<feature>/test-report.json`
+      (tests green, no open attentions). Missing this evidence is a blocked item.
 - [ ] Scope was respected — no opportunistic refactors or unrelated changes.
 - [ ] `## Implementation Notes` in tasks.md updated with any cross-task learning.
 - [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.
 
+## Per batch (concurrent tasks merged together)
+
+- [ ] The **Tier-3 gate** ran once for the merged result: full suite, lint, typecheck, build.
+- [ ] A red gate produced a fix task naming the failing check, before any further
+      dispatch.
+- [ ] The record says which tasks composed the batch.
+
 ## Per PR (a reviewable slice)
 
 - [ ] Tests cover success, validation, authorization, and external-failure paths for new behavior.
-- [ ] Full verification gate is green: tests, lint, typecheck, build.
+- [ ] The **Tier-3 gate** is green: tests, lint, typecheck, build — run once, at feat exit,
+      with coverage collected.
 - [ ] `code-reviewer` sub-agent ran and reported no open Blockers.
 - [ ] For security-sensitive changes, `security-reviewer` ran and reported no Critical/High.
 - [ ] The PR body carries evidence: spec links, tasks completed, the real verification output, and risks.
@@ -33,7 +66,7 @@ A task or PR is **done** only when every box is checked. "It compiles" and
 
 ```
 ## Verification
-- npx @protonspy/csdd spec test-report <feature> --run --lang <lang>   ✅  (tests + coverage evidence)
+- npx @protonspy/csdd spec test-report <feature> --run --lang <lang>   ✅  (Tier 3: tests + coverage evidence)
 - <lint command>      ✅
 - <typecheck command> ✅
 - <build command>     ✅

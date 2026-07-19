@@ -62,11 +62,11 @@ const CASES: Array<[name: string, params: Record<string, unknown>, expected: str
     { feature: "f", run: true, cmd: "go test ./...", junit: "junit.xml", coverage: "coverage.out", root: "/p" },
     ["spec", "test-report", "f", "--run", "--cmd", "go test ./...", "--junit", "junit.xml", "--coverage", "coverage.out", "--root", "/p"],
   ],
-  ["csdd_spec_diff_report", { feature: "f" }, ["spec", "diff-report", "f"]],
+  // Tier-2 task-exit gate: coverage-free run, attributed to one task.
   [
-    "csdd_spec_diff_report",
-    { feature: "f", base: "main", maxLines: 500, root: "/p" },
-    ["spec", "diff-report", "f", "--base", "main", "--max-lines", "500", "--root", "/p"],
+    "csdd_spec_test_report",
+    { feature: "f", run: true, fast: true, task: "3.2", lang: "python" },
+    ["spec", "test-report", "f", "--run", "--fast", "--task", "3.2", "--lang", "python"],
   ],
 
   // skill

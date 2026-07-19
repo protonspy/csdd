@@ -13,7 +13,8 @@ import (
 
 // missionSteps is the whole-feat contract every brief carries: the session owns
 // the entire spec lifecycle and the implementation, drives its own git, and returns
-// a verdict. There is no runner-side gate — the loop trusts the session — so the
+// a verdict. The runner runs no gates of its own — it checks only the artifacts a
+// `done` verdict implies (R10) — so the
 // checks the runner used to enforce become checks the session runs itself before
 // declaring the feat done (see selfChecks).
 var missionSteps = []string{
@@ -69,7 +70,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("- %s\n", f)
 	}
 	w("\n**Verdict protocol:**\n")
-	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop trusts this and moves to the next feat, so never claim done on hope.\n")
+	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop checks this claim against your artifacts before accepting it (see below), so never claim done on hope.\n")
 	w("- `continue` — honest partial work: you are out of room before the feat is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).\n")
 	w("\n")
 
@@ -164,16 +165,31 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	w("- `csdd graph path <a> <b>` — trace how two artifacts connect.\n")
 	w("Traverse the graph to locate the relevant code; do not grep the whole tree.\n\n")
 
-	// 8. Self-checks — what the runner used to gate on, now the session runs itself.
+	// 8. Self-checks. The loop trusts the session's judgment but verifies its
+	// artifacts (R10), so the brief states both halves: what only the session can
+	// check, and what the gate will check regardless of what the verdict claims.
 	w("## Before you declare `done` — run these checks YOURSELF\n\n")
-	w("The loop does NOT verify your work; it trusts your verdict. So the feat is done\n")
-	w("only when ALL of these pass and every task box in specs/%s/tasks.md is checked:\n\n", feat.Slug)
+	w("Run each of these ONCE, here at feat exit — not after every task:\n\n")
 	w("- `csdd spec validate %s` (the spec is structurally sound: EARS, traceability, tasks)\n", feat.Slug)
 	w("- `csdd graph analyze --strict` (spec↔task↔component traceability holds)\n")
 	for _, g := range planGateCommands(doc) {
 		w("- %s\n", g)
 	}
-	w("\nOnly then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
+	w("\n## What the loop checks before accepting `done`\n\n")
+	w("The loop trusts your JUDGMENT — it never reviews your code or re-runs your\n")
+	w("suites — but it does check your ARTIFACTS. A `done` verdict is accepted only\n")
+	w("when all of these hold on disk:\n\n")
+	w("- every task box in specs/%s/tasks.md is `[x]`\n", feat.Slug)
+	w("- specs/%s/spec.json has all three phases approved and `ready_for_implementation` true\n", feat.Slug)
+	w("- specs/%s/test-report.json is green with no open attentions\n\n", feat.Slug)
+	w("If any of them fails, your `done` becomes a `continue` and comes back to the\n")
+	w("next session with a note naming what was missing. A feat that spends its whole\n")
+	w("attempt budget is stopped and surfaced for a human.\n\n")
+	w("An honest `continue` and a refused `done` cost the same one attempt — but the\n")
+	w("`continue` spends it carrying YOUR handoff, which says what you learned and\n")
+	w("what to try next. A refused `done` spends it to be told what you could have\n")
+	w("checked yourself.\n\n")
+	w("Only then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
 	w("`{\"status\":\"continue\"}` with the handoff in `summary`.\n")
 
 	return b.String(), nil

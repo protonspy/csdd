@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // SpecReportFile is the per-spec metrics artifact written by
@@ -28,6 +29,25 @@ type SpecReport struct {
 	Coverage   *SpecCovSummary `json:"coverage,omitempty"`
 	TestPaths  []string        `json:"testPaths,omitempty"`  // the spec folder this evidence belongs to (deterministic: specs/<feature>/)
 	Attentions []string        `json:"attentions,omitempty"` // key unit-test signals: failures, skips, command failure
+	// Tasks is the per-task evidence, keyed by task ID. A spec's tasks are
+	// implemented by several agents — often concurrently — and one shared file
+	// with a single set of counts cannot say WHICH task produced them: the last
+	// writer simply won. Keying by task preserves every result and gives a red
+	// suite an owner.
+	//
+	// The fields above remain the latest run's rollup, so every existing reader
+	// (the dashboard, the plan runner's verdict gate) keeps working unchanged.
+	Tasks map[string]SpecTaskReport `json:"tasks,omitempty"`
+}
+
+// SpecTaskReport is one task's own recorded run: the same evidence shape as the
+// spec-level rollup, attributed to the task that produced it.
+type SpecTaskReport struct {
+	UpdatedAt  string          `json:"updatedAt"`
+	Command    string          `json:"command,omitempty"`
+	Tests      *SpecTestCounts `json:"tests,omitempty"`
+	Coverage   *SpecCovSummary `json:"coverage,omitempty"`
+	Attentions []string        `json:"attentions,omitempty"`
 }
 
 // SpecTestCounts is the test tally recorded for a spec.
@@ -45,8 +65,16 @@ type SpecCovSummary struct {
 	Lines   int     `json:"lines"`
 }
 
-// loadSpecReport reads specs/<feature>/test-report.json if present, tolerating
+// LoadSpecReport reads specs/<feature>/test-report.json if present, tolerating
 // a missing or malformed file by returning nil.
+//
+// It is exported because the plan runner's verdict gate reads the same artifact
+// to decide whether a `done` verdict stands (R10.1). That check must see exactly
+// what the dashboard sees, so both go through this one reader rather than each
+// re-declaring the schema and drifting apart.
+func LoadSpecReport(specDir string) *SpecReport { return loadSpecReport(specDir) }
+
+// loadSpecReport is the package-internal reader; see LoadSpecReport.
 func loadSpecReport(specDir string) *SpecReport {
 	data, err := os.ReadFile(filepath.Join(specDir, SpecReportFile))
 	if err != nil {
@@ -57,6 +85,104 @@ func loadSpecReport(specDir string) *SpecReport {
 		return nil
 	}
 	return &r
+}
+
+// WriteSpecReport merges rep into specs/<feature>/test-report.json and persists
+// the result.
+//
+// It is a merge rather than a write because several implementers work one spec at
+// once. Rebuilding the file from scratch on every call meant thirteen agents
+// overwrote one artifact thirteen times, and only the last one's evidence
+// survived. When taskID is non-empty the run is filed under that task and every
+// other task's entry is carried forward; the top-level fields always become the
+// latest run's rollup, which is the shape the dashboard and the plan runner's
+// verdict gate already read (R6.3).
+//
+// The read-modify-write runs under a lock file, because two concurrent
+// implementers that both read-then-write would otherwise still lose one result —
+// the exact failure the per-task map exists to prevent.
+func WriteSpecReport(specDir, taskID string, rep SpecReport) error {
+	unlock, err := lockSpecReport(specDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	merged := rep
+	if prev := loadSpecReport(specDir); prev != nil {
+		merged.Tasks = prev.Tasks
+	}
+	if taskID != "" {
+		if merged.Tasks == nil {
+			merged.Tasks = map[string]SpecTaskReport{}
+		}
+		merged.Tasks[taskID] = SpecTaskReport{
+			UpdatedAt:  rep.UpdatedAt,
+			Command:    rep.Command,
+			Tests:      rep.Tests,
+			Coverage:   rep.Coverage,
+			Attentions: rep.Attentions,
+		}
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return err
+	}
+	// Write-and-rename so a reader never observes a half-written report.
+	tmp := filepath.Join(specDir, SpecReportFile+".tmp")
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(specDir, SpecReportFile))
+}
+
+// specReportLockWait bounds how long a writer waits for a peer's lock. A test
+// suite is minutes; a merge is microseconds, so a wait this long means a stale
+// lock, not contention.
+const specReportLockWait = 10 * time.Second
+
+// specReportLockStale is how old a lock must be before a waiter may take it over.
+// It is longer than the wait budget so a writer that is merely slow is never
+// evicted while still working.
+const specReportLockStale = 2 * specReportLockWait
+
+// lockSpecReport takes an exclusive lock on the spec's report file, returning the
+// release function. A lock left behind by a killed process is taken over once it
+// is stale — a crashed agent must never wedge every later run.
+//
+// Takeover is a rename, not a Stat-then-Remove. Removing the lock file directly
+// is unsafe: between observing it as stale and deleting it, its owner may release
+// it and a third writer may create a fresh one, so the delete would evict a lock
+// that was legitimately held and let two writers into the same read-modify-write.
+// Rename is atomic and names the exact file it moves, so of N racers exactly one
+// succeeds and the losers simply retry.
+func lockSpecReport(specDir string) (func(), error) {
+	path := filepath.Join(specDir, SpecReportFile+".lock")
+	deadline := time.Now().Add(specReportLockWait)
+	for {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_ = f.Close()
+			return func() { _ = os.Remove(path) }, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if st, serr := os.Stat(path); serr == nil && time.Since(st.ModTime()) > specReportLockStale {
+			// Claim the stale lock by moving it aside under a name only this
+			// caller knows. If another waiter got there first, the rename fails
+			// on the file it already moved and we fall through to the retry.
+			aside := fmt.Sprintf("%s.stale.%d", path, os.Getpid())
+			if os.Rename(path, aside) == nil {
+				_ = os.Remove(aside)
+			}
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for %s", path)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // ParseJUnit parses a single JUnit XML file into a TestSummary (used by the CLI
@@ -281,9 +407,41 @@ var langTestCommands = map[string]string{
 }
 
 // DefaultTestCommand returns the default `--run` command for a language, and
-// whether one is defined.
+// whether one is defined. These stay coverage-bearing: they are the EVIDENCE
+// default, so no existing invocation changes behavior (R8.3).
 func DefaultTestCommand(lang string) (string, bool) {
 	c, ok := langTestCommands[strings.ToLower(strings.TrimSpace(lang))]
+	return c, ok
+}
+
+// langFastTestCommands is the coverage-free variant of each entry in
+// langTestCommands, for the Tier-2 task-exit gate.
+//
+// Coverage collection roughly triples a suite's wall clock (a measured 25s–1m19
+// becomes 1m39–2m18 on the reference project), and it is only ever READ at feat
+// exit. Paying for it once per task bought nothing; these commands still emit the
+// JUnit report the evidence contract needs, and simply skip the instrumentation.
+var langFastTestCommands = map[string]string{
+	"python":     "pytest --junitxml=junit.xml",
+	"py":         "pytest --junitxml=junit.xml",
+	"typescript": "npx jest --ci --reporters=default --reporters=jest-junit",
+	"ts":         "npx jest --ci --reporters=default --reporters=jest-junit",
+	"javascript": "npx jest --ci --reporters=default --reporters=jest-junit",
+	"js":         "npx jest --ci --reporters=default --reporters=jest-junit",
+	"nodejs":     "npx jest --ci --reporters=default --reporters=jest-junit",
+	"node":       "npx jest --ci --reporters=default --reporters=jest-junit",
+	"java":       "mvn -q test",
+	"go":         "gotestsum --junitfile=junit.xml -- ./...",
+	"golang":     "gotestsum --junitfile=junit.xml -- ./...",
+	"rust":       "cargo nextest run --profile ci",
+	"rs":         "cargo nextest run --profile ci",
+}
+
+// FastTestCommand returns the coverage-free `--run` command for a language, and
+// whether one is defined. It mirrors DefaultTestCommand exactly, so every
+// language that has an evidence command also has a fast one.
+func FastTestCommand(lang string) (string, bool) {
+	c, ok := langFastTestCommands[strings.ToLower(strings.TrimSpace(lang))]
 	return c, ok
 }
 
@@ -330,6 +488,121 @@ func ValidateTestCommandForLang(lang, cmd string) (ok bool, markers []string) {
 		}
 	}
 	return false, markers
+}
+
+// langScopeFlags lists the flags that narrow WHAT a test command runs — it skips
+// tests, selects a subset, or stops early.
+//
+// This exists because the marker check above polices only whether a command
+// invokes the right TOOL, never what it asked that tool to do. A run recorded as
+//
+//	pytest --junitxml=junit.xml --cov --ignore=tests/unit/test_pinned_embedder.py
+//
+// passed validation and wrote a green report with a test file excluded — which is
+// worse evidence than none, because the artifact then asserts green with
+// authority. A report whose command narrowed the suite must say so (design
+// principle 7): the finding is an attention, not a rejection, since legitimate
+// exclusions exist — but they have to be visible.
+var langScopeFlags = map[string][]string{
+	"python": {
+		"--ignore", "--ignore-glob", "--deselect", "-k", "-m",
+		"--last-failed", "--lf", "--failed-first", "--ff",
+		"--maxfail", "-x", "--exitfirst",
+	},
+	"typescript": {
+		"--testPathIgnorePatterns", "--testPathPattern", "--testNamePattern", "-t",
+		"--onlyChanged", "--changedSince", "--findRelatedTests", "--bail",
+	},
+	"java": {
+		"-Dtest", "-Dit.test", "-DfailIfNoTests", "-DskipTests", "-DskipITs",
+		"-pl", "--projects", "--fail-fast",
+	},
+	"go":   {"-run", "-skip", "-short", "-failfast"},
+	"rust": {"--skip", "-E", "--filter-expr", "--partition", "--fail-fast"},
+}
+
+// DetectTestScopeFlags returns the scope-narrowing flags present in cmd, in the
+// order they appear, deduplicated. An empty result means the command runs the
+// whole suite.
+//
+// Matching is token-based, never substring: `-k` must be its own argument, so
+// `--check` and a path containing "-m" cannot masquerade as a selector and raise
+// a false attention on an honest command.
+func DetectTestScopeFlags(lang, cmd string) []string {
+	canon, found := langCanonical[strings.ToLower(strings.TrimSpace(lang))]
+	if !found {
+		return nil
+	}
+	want := map[string]bool{}
+	for _, f := range langScopeFlags[canon] {
+		want[f] = true
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, tok := range commandTokens(cmd) {
+		// A flag may carry its value as `--ignore=path` or `-Dtest=Foo`; compare
+		// the flag half only.
+		name := tok
+		if i := strings.IndexByte(tok, '='); i > 0 {
+			name = tok[:i]
+		}
+		if want[name] && !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// commandTokens splits a shell command into argument tokens, dropping anything
+// after an unquoted `#`.
+//
+// A plain strings.Fields would read a trailing comment as arguments, so
+//
+//	pytest --junitxml=junit.xml  # covers -k cases
+//
+// would record a `-k` attention — and since an attention blocks the definition of
+// done and the verdict gate, a false positive here does not merely add noise: it
+// refuses a `done` on evidence that was honest and complete. Quote tracking keeps
+// a `#` inside an argument (a pytest `-k` expression, a regex) from truncating
+// the command.
+func commandTokens(cmd string) []string {
+	var (
+		out   []string
+		cur   strings.Builder
+		quote rune // 0, '\'' or '"'
+	)
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range cmd {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+		case r == '#' && cur.Len() == 0:
+			// A comment only starts where a token would — `foo#bar` is one word.
+			flush()
+			return out
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
+	return out
 }
 
 // CoverageFormatsForLang resolves a single language to the coverage formats to

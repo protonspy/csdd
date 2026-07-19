@@ -42,12 +42,45 @@ func approvedRunnerWorkspace(t *testing.T) string {
 // fixedNow is a deterministic clock for journal timestamps.
 func fixedNow() time.Time { return time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC) }
 
-// baseHooks returns hooks that always declare `done`, so a fresh plan runs to
-// completion (one session per feat). The runner spawns nothing but the Session
-// hook — there is no gate, csdd, or git seam, because the loop trusts the session.
-func baseHooks() Hooks {
+// deliverSpec writes exactly what a session must leave on disk for the verdict
+// gate to let its `done` stand (R10.1): a spec approved through all three phases
+// and flagged ready, a tasks.md whose every box is `[x]`, and green recorded test
+// evidence with no open attentions.
+func deliverSpec(t *testing.T, root, slug string) {
+	t.Helper()
+	writeSpec(t, root, slug,
+		map[string]bool{"requirements": true, "design": true, "tasks": true}, true,
+		"# Tasks\n\n- [x] 1. Deliver the behavior\n      _Requirements: 1.1_\n")
+	writeFile(t, filepath.Join(root, "specs", slug, "test-report.json"),
+		`{"feature":"`+slug+`","updatedAt":"2026-07-07T00:00:00Z",`+
+			`"command":"go test ./...","tests":{"total":3,"passed":3,"failed":0,"skipped":0}}`)
+}
+
+// deliveringSession is a Session hook that does what a real plan-dev session does
+// before declaring done: it leaves the feat's artifacts on disk, THEN returns the
+// verdict. Sessions that skip that step now have their `done` refused, which is
+// the entire point of the gate — so a test that expects a feat to be delivered
+// has to produce the evidence, exactly as the real loop demands.
+func deliveringSession(t *testing.T, root string) func(Feat, string, float64) (SessionOutcome, error) {
+	return func(f Feat, _ string, _ float64) (SessionOutcome, error) {
+		deliverSpec(t, root, f.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
+	}
+}
+
+// doneOutcome is the bare `done` verdict, with no artifacts written — the shape
+// the gate is designed to refuse.
+func doneOutcome(summary string) SessionOutcome {
+	return SessionOutcome{Verdict: Verdict{Status: VerdictDone, Summary: summary}}
+}
+
+// baseHooks returns hooks whose session delivers each feat properly and declares
+// `done`, so a fresh plan runs to completion (one session per feat). The runner
+// spawns nothing but the Session hook — there is no csdd or git seam, because the
+// loop still owns only the ledger and the verdict gate's three file reads.
+func baseHooks(t *testing.T, root string) Hooks {
 	return Hooks{
-		Session:         func(Feat, string, float64) (Verdict, error) { return Verdict{Status: VerdictDone}, nil },
+		Session:         deliveringSession(t, root),
 		Doctor:          func() SandboxReport { return SandboxReport{OK: true} },
 		Confirm:         func(string) bool { return false },
 		ClaudeAvailable: func() bool { return true },
@@ -93,13 +126,13 @@ func TestParseVerdict(t *testing.T) {
 func TestRunnerPreflight(t *testing.T) {
 	// Unapproved plan.
 	root := setupWorkspace(t, "p", runnerPlan)
-	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), Out: &bytes.Buffer{}}); err == nil {
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(t, root), Out: &bytes.Buffer{}}); err == nil {
 		t.Errorf("expected preflight failure for unapproved plan")
 	}
 
 	// Approved but claude missing.
 	root2 := approvedRunnerWorkspace(t)
-	h := baseHooks()
+	h := baseHooks(t, root2)
 	h.ClaudeAvailable = func() bool { return false }
 	if _, err := Run(RunOptions{Root: root2, Slug: "p", Hooks: h, Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "claude") {
 		t.Errorf("expected claude-missing failure, got %v", err)
@@ -108,12 +141,12 @@ func TestRunnerPreflight(t *testing.T) {
 	// Drift after approval: preflight refuses.
 	root3 := approvedRunnerWorkspace(t)
 	writeFile(t, filepath.Join(Dir(root3, "p"), "plan.md"), runnerPlan+"\n<!-- edit -->\n")
-	if _, err := Run(RunOptions{Root: root3, Slug: "p", Hooks: baseHooks(), Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "drift") {
+	if _, err := Run(RunOptions{Root: root3, Slug: "p", Hooks: baseHooks(t, root3), Out: &bytes.Buffer{}}); err == nil || !strings.Contains(err.Error(), "drift") {
 		t.Errorf("expected drift preflight failure, got %v", err)
 	}
 
 	// Doctor fails and the human declines the alert: the run closes.
-	h2 := baseHooks()
+	h2 := baseHooks(t, root2)
 	h2.Doctor = func() SandboxReport {
 		return SandboxReport{OK: false, Checks: []SandboxCheck{{Name: "firewall_active", OK: false, Detail: "control reachable"}}}
 	}
@@ -128,7 +161,7 @@ func TestRunnerPreflight(t *testing.T) {
 
 	// Doctor fails but the human accepts: the run proceeds bypass-mode.
 	var out bytes.Buffer
-	h3 := baseHooks()
+	h3 := baseHooks(t, root2)
 	h3.Doctor = func() SandboxReport { return SandboxReport{OK: false} }
 	h3.Confirm = func(string) bool { return true }
 	if _, err := Run(RunOptions{Root: root2, Slug: "p", Hooks: h3, MaxIterations: 1, Out: &out}); err != nil {
@@ -139,7 +172,7 @@ func TestRunnerPreflight(t *testing.T) {
 	}
 
 	// Doctor fails with --yes: no prompt at all, the run proceeds.
-	h4 := baseHooks()
+	h4 := baseHooks(t, root2)
 	h4.Doctor = func() SandboxReport { return SandboxReport{OK: false} }
 	h4.Confirm = func(string) bool { t.Error("Confirm must not be called when AssumeYes is set"); return false }
 	if _, err := Run(RunOptions{Root: root2, Slug: "p", AssumeYes: true, Hooks: h4, MaxIterations: 1, Out: &bytes.Buffer{}}); err != nil {
@@ -151,7 +184,7 @@ func TestRunnerPreflight(t *testing.T) {
 // the plan to completion, one session per feat, recording each in the ledger.
 func TestRunnerCompletesAllFeats(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(), MaxIterations: 10, Out: &bytes.Buffer{}})
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: baseHooks(t, root), MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,17 +212,18 @@ func TestRunnerContinueHandsOff(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	var briefs []string
 	calls := 0
-	h := baseHooks()
-	h.Session = func(feat Feat, brief string, _ float64) (Verdict, error) {
+	h := baseHooks(t, root)
+	h.Session = func(feat Feat, brief string, _ float64) (SessionOutcome, error) {
 		briefs = append(briefs, brief)
 		calls++
 		if calls == 1 {
 			if feat.Slug != "a" {
 				t.Errorf("first session should be feat a, got %s", feat.Slug)
 			}
-			return Verdict{Status: VerdictContinue, Summary: "parser is in; the CLI wiring remains"}, nil
+			return SessionOutcome{Verdict: Verdict{Status: VerdictContinue, Summary: "parser is in; the CLI wiring remains"}}, nil
 		}
-		return Verdict{Status: VerdictDone}, nil
+		deliverSpec(t, root, feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -215,9 +249,9 @@ func TestRunnerContinueHandsOff(t *testing.T) {
 // stall guard, and the failure trail lands on disk for the next run.
 func TestRunnerSessionErrorStalls(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	h := baseHooks()
-	h.Session = func(Feat, string, float64) (Verdict, error) {
-		return Verdict{}, errString("boom: compiler exploded")
+	h := baseHooks(t, root)
+	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+		return SessionOutcome{}, errString("boom: compiler exploded")
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 20, Stall: 3, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -245,9 +279,9 @@ func TestRunnerSessionErrorStalls(t *testing.T) {
 // ends at the iteration cap — the wallet guard, not the stall guard.
 func TestRunnerContinueRunsToCap(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	h := baseHooks()
-	h.Session = func(Feat, string, float64) (Verdict, error) {
-		return Verdict{Status: VerdictContinue, Summary: "still going"}, nil
+	h := baseHooks(t, root)
+	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+		return SessionOutcome{Verdict: Verdict{Status: VerdictContinue, Summary: "still going"}}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, Stall: 2, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -271,10 +305,11 @@ func TestRunnerLedgerResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var worked []string
-	h := baseHooks()
-	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+	h := baseHooks(t, root)
+	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
 		worked = append(worked, feat.Slug)
-		return Verdict{Status: VerdictDone}, nil
+		deliverSpec(t, root, feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -299,10 +334,11 @@ func TestRunnerReconcilesDiskDelivered(t *testing.T) {
 	writeSpec(t, root, "a", allApproved, true, "- [x] 1. done\n")
 
 	var worked []string
-	h := baseHooks()
-	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+	h := baseHooks(t, root)
+	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
 		worked = append(worked, feat.Slug)
-		return Verdict{Status: VerdictDone}, nil
+		deliverSpec(t, root, feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}})
 	if err != nil {
@@ -325,9 +361,10 @@ func TestRunnerReconcilesDiskDelivered(t *testing.T) {
 
 func TestRunnerJournalFormat(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
-	h := baseHooks()
-	h.Session = func(Feat, string, float64) (Verdict, error) {
-		return Verdict{Status: VerdictDone, Summary: "shipped the thing"}, nil
+	h := baseHooks(t, root)
+	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+		deliverSpec(t, root, feat.Slug)
+		return doneOutcome("shipped the thing"), nil
 	}
 	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Out: &bytes.Buffer{}}); err != nil {
 		t.Fatal(err)
@@ -392,15 +429,16 @@ func TestRunnerLimitSleepsAndResumes(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	var slept []time.Duration
 	calls := 0
-	h := baseHooks()
+	h := baseHooks(t, root)
 	h.Sleep = func(d time.Duration) { slept = append(slept, d) }
-	h.Session = func(feat Feat, _ string, _ float64) (Verdict, error) {
+	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
 		calls++
 		// Feat a hits the limit twice, then delivers; feat b delivers directly.
 		if feat.Slug == "a" && calls <= 2 {
-			return Verdict{}, &LimitError{Raw: "hit your session limit", Hour: 22, Minute: 10, known: true}
+			return SessionOutcome{}, &LimitError{Raw: "hit your session limit", Hour: 22, Minute: 10, known: true}
 		}
-		return Verdict{Status: VerdictDone}, nil
+		deliverSpec(t, root, feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}
 	var out bytes.Buffer
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 5, Stall: 2, Out: &out})

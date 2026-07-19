@@ -110,7 +110,10 @@ Between phases, report:
 
 - [ ] `design.md` and `tasks.md` are generated, filled, validated, and approved.
 - [ ] `dev-readiness-check` returned PASS before implementation began.
-- [ ] Every task went through `tdd-cycle` with a green suite and clean review.
-- [ ] Unit tests were recorded via `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>`; `specs/<feature>/test-report.json` shows tests green and coverage captured.
+- [ ] Every task went through `tdd-cycle` and passed its Tier-2 exit gate (one
+      full-suite run in fast mode + lint on the touched files) with a clean review.
+- [ ] Each task's Tier-2 run was recorded via `npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`; `specs/<feature>/test-report.json` shows tests green with no open attentions.
+- [ ] The Tier-3 gate ran once at the end — full suite with coverage, lint,
+      typecheck, build — recorded via `npx -y @protonspy/csdd spec test-report <feature> --run --lang <lang>`.
 - [ ] `sprint-status.yaml` reflects reality; a `dev-retrospective` closes the epic.
 - [ ] The pre-push test gate passes and the PR carries a real verification block.

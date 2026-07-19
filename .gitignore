@@ -60,3 +60,7 @@ internal/web/dist/*
 /.csdd/state.json
 /.csdd/cache/
 /.csdd/bot.json
+# The plan runner's per-run state: ledger, failure logs, and the session-cost
+# records. Per-run and machine-local — `csdd plan run` regenerates it. The code
+# already documents this dir as transient and gitignored; this makes that true.
+/.csdd/plan/

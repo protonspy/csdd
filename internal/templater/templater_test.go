@@ -316,7 +316,9 @@ func TestTddCycleMarksTaskDone(t *testing.T) {
 	for _, anchor := range []string{
 		"RED — write the failing test",
 		"GREEN — minimal implementation",
-		"Record the spec evidence",
+		// The evidence step is now the single Tier-2 task-exit gate; it used to be
+		// "Record the spec evidence", one of two full-suite runs per task.
+		"Tier 2 — the task-exit gate",
 	} {
 		if !strings.Contains(body, anchor) {
 			t.Errorf("tdd-cycle lost existing step %q", anchor)

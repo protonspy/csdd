@@ -152,8 +152,7 @@ matches the context).
 | `csdd_spec_approve` | `feature`, `phase`, `force?`, `root?` | Approve a phase. `phase` ∈ `requirements · design · tasks`. Validates first; `force` approves despite issues/missing prior approvals. |
 | `csdd_spec_validate` | `feature`, `root?` | Validate EARS phrasing, traceability, task annotations, parallel safety. Exit 2 on issues. |
 | `csdd_spec_delete` | `feature`, `force?`, `root?` | Delete `specs/<feature>/` recursively (`force` required). |
-| `csdd_spec_test_report` | `feature`, `run?`, `cmd?`, `lang?`, `path?`, `junit?`, `coverage?`, `root?` | Record per-spec unit-test evidence into `test-report.json`. With `run` it executes the tests (per-language default or `cmd`) and parses JUnit + coverage; `lang`/`path` auto-discover reports; a failing run exits non-zero and gates the task. |
-| `csdd_spec_diff_report` | `feature`, `base?`, `maxLines?`, `root?` | Record an auditable file diff (merge-base of the base ref → working tree) into `diff-report.json` for the dashboard's Changes view. `base` overrides auto-detection; `maxLines` caps recorded lines/file. Read-only; requires git. |
+| `csdd_spec_test_report` | `feature`, `run?`, `fast?`, `cmd?`, `task?`, `lang?`, `path?`, `junit?`, `coverage?`, `root?` | Record per-spec unit-test evidence into `test-report.json`. With `run` it executes the tests (per-language default or `cmd`) and parses JUnit + coverage; `fast` selects the coverage-free command for the Tier-2 task-exit gate; `task` files the result under one task ID so concurrent implementers preserve each other's evidence; `lang`/`path` auto-discover reports; a failing run exits non-zero and gates the task. |
 
 > **Phase gates (enforced, not advisory):** `design` needs `requirements`
 > approved; `tasks` needs `design` approved. Generating out of order fails with

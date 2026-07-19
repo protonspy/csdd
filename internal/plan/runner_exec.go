@@ -39,7 +39,7 @@ func installRealHooks(h *Hooks, runModel, runEffort string, sess sessionEnv) {
 		h.Confirm = stdinConfirm
 	}
 	if h.Session == nil {
-		h.Session = func(feat Feat, brief string, budgetUSD float64) (Verdict, error) {
+		h.Session = func(feat Feat, brief string, budgetUSD float64) (SessionOutcome, error) {
 			return execClaudeSession(feat, brief, budgetUSD, runModel, runEffort, sess)
 		}
 	}
@@ -121,7 +121,7 @@ func sessionArgs(brief string, budgetUSD float64, model, effort string) []string
 // silently, and that is the failure this addresses. The watchdog kills a session
 // only when it has produced neither output nor CPU for the idle budget, so long
 // honest work is never cut short — see watchdog.go.
-func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (Verdict, error) {
+func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
 	cmd := exec.Command("claude", sessionArgs(brief, budgetUSD, model, effort)...)
 
 	stream := newSessionStream(sess.now)
@@ -138,22 +138,36 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort st
 	}.run()
 	close(stop)
 
+	// The `result` event carries both the verdict and what the session cost, so
+	// read the metrics ONCE here and attach them to every return path below. A
+	// session that failed still spent time and money, and R9.2 wants that attempt
+	// recorded — losing the cost of the runs that went wrong would bias every
+	// comparison toward the runs that went right.
+	src, haveResult := stream.verdictSource()
+	out := SessionOutcome{}
+	if haveResult {
+		out.Metrics = parseSessionMetrics([]byte(src))
+	}
+
 	// An account-limit stop is not a work failure: surface it as a typed error so
 	// the runner sleeps until the window reopens and retries, rather than counting
 	// it against the stall guard. The notice can land on either stream, so scan
 	// both regardless of the exit code.
 	if lim, ok := detectLimit(stdout + "\n" + stderr); ok {
-		return Verdict{}, lim
+		return out, lim
 	}
 	if err != nil {
-		return Verdict{}, fmt.Errorf("claude session failed: %v: %s", err, strings.TrimSpace(stderr))
+		return out, fmt.Errorf("claude session failed: %v: %s", err, strings.TrimSpace(stderr))
 	}
 	// The verdict rides in the final `result` event; fall back to the whole stream
 	// so a stream that ended unusually still gets parseVerdict's last-ditch scan.
-	if src, ok := stream.verdictSource(); ok {
-		return parseVerdict([]byte(src))
+	raw := stdout
+	if haveResult {
+		raw = src
 	}
-	return parseVerdict([]byte(stdout))
+	v, err := parseVerdict([]byte(raw))
+	out.Verdict = v
+	return out, err
 }
 
 // LimitError signals the claude session stopped because the Claude account hit

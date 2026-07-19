@@ -76,14 +76,18 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 	mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [ ] 1. Implement upload\n")
 
 	// 4. Run the plan with a stub runner (no real claude/git): the session authors
-	//    the change, checks its task box, and declares done. The loop trusts the
-	//    verdict, records the feat in the ledger, and advances. The runner never
-	//    touches git — commit/branch/PR are the session's dev-cycle.
+	//    the change, checks its task box, RECORDS ITS TEST EVIDENCE, and declares
+	//    done. The loop trusts the verdict's judgment but verifies those artifacts
+	//    before accepting it, then records the feat in the ledger and advances. The
+	//    runner never touches git — commit/branch/PR are the session's dev-cycle.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
-		Session: func(plan.Feat, string, float64) (plan.Verdict, error) {
+		Session: func(plan.Feat, string, float64) (plan.SessionOutcome, error) {
 			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
-			return plan.Verdict{Status: plan.VerdictDone}, nil
+			mustWrite(t, filepath.Join(specDir, "test-report.json"),
+				`{"feature":"upload","updatedAt":"2026-07-07T00:00:00Z","command":"go test ./...",`+
+					`"tests":{"total":2,"passed":2,"failed":0,"skipped":0}}`)
+			return plan.SessionOutcome{Verdict: plan.Verdict{Status: plan.VerdictDone}}, nil
 		},
 		Doctor:          func() plan.SandboxReport { return plan.SandboxReport{OK: true} },
 		ClaudeAvailable: func() bool { return true },

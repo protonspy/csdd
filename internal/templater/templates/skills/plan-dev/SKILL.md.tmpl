@@ -11,8 +11,19 @@ Fully deliver **one** feat of an approved csdd plan in a single autonomous
 `plan run` session: drive its spec through `requirements → design → tasks`
 (you author and decide), delegate each task to the `implementer` sub-agent
 (test-first), own the git dev-cycle and the PR, then return the verdict schema.
-The loop **trusts your verdict** — it never re-checks your work — so `done` means
-the whole feat is really delivered, not hoped.
+
+The loop trusts your **judgment** — it never reviews your code or re-runs your
+suites — but it does check your **artifacts**. A `done` verdict passes through a
+mechanical gate first: every task box `[x]` in `specs/<feat>/tasks.md`, all three
+phases approved with `ready_for_implementation` true, and
+`specs/<feat>/test-report.json` green with no open attentions. If any of those is
+missing, your `done` is converted to `continue` and handed back with a note naming
+what failed. So `done` means the whole feat is really delivered, not hoped — and
+claiming it early costs you an attempt rather than shipping a broken feat.
+
+A feat that burns its attempt budget (default 8 sessions) is stopped and surfaced
+for a human. Returning an honest `continue` is always cheaper than a `done` the
+gate refuses.
 
 ## Your authority — non-negotiable (this overrides CLAUDE.md's human gate)
 
@@ -76,19 +87,46 @@ so **delegate it** — do not hand-write task code inline.
 - Branch before the first task: `git switch -c feat/<feat>` (kebab-case).
 - For **each** leaf task, spawn the **`implementer`** sub-agent (Agent/Task tool),
   one task per sub-agent. It runs the `tdd-cycle` (RED → GREEN → REFACTOR) and the
-  `verify-change` gate on its own fast model, records evidence
-  (`csdd spec test-report <feat> --run --lang <lang>`,
-  `csdd spec diff-report <feat>`), checks **only** that task's box `[x]` in
-  `specs/<feat>/tasks.md`, and reports back — staying inside the approved design
-  boundary.
-- **Parallelize across boundaries:** dispatch `(P)` tasks in *different*
-  `_Boundary:_` groups concurrently (spawn each implementer with worktree
-  isolation); honor every `_Depends:_` and keep same-boundary tasks sequential.
+  Tier-2 task-exit gate on its own fast model, records evidence
+  (`csdd spec test-report <feat> --run --fast --lang <lang>`), and reports back —
+  staying inside the approved design boundary.
+- **Take each task's result from the implementer's return message.** Do not re-run
+  its suite, and do not read `specs/<feat>/test-report.json` to decide whether an
+  individual task passed — one shared file cannot tell you which of several
+  concurrent implementers wrote it. The sub-agent's report IS the evidence for the
+  sub-agent's task; re-verifying it costs minutes and proves nothing.
+- If an implementer returns **without a reported result**, treat that task as
+  unverified and **re-dispatch it**. Do not verify it inline.
+- **You own the checkboxes.** With concurrent implementers, `tasks.md` has exactly
+  one writer: you. After a batch merges green, check the boxes for the tasks that
+  reported green. Tell each implementer you own them so it does not edit the file.
+- **Pack batches by dependency depth, not by phase heading.** Dispatch concurrently
+  every task whose `_Depends:_` set is already satisfied and whose `_Boundary:_` is
+  not held by a running implementer — regardless of which `### Phase` heading it
+  sits under. Phase headings are an authoring device; the dependency graph is the
+  truth. Where they disagree, honor the graph. (Give each concurrent implementer
+  worktree isolation.)
 - **Review each slice** with the read-only `code-reviewer` sub-agent (add
   `security-reviewer` when auth / secrets / input handling is touched); resolve
-  blockers before the next task.
+  blockers before the next batch.
 - If the `implementer` sub-agent is not installed in this workspace, fall back to
   running the `tdd-cycle` skill yourself, one task at a time.
+
+### 5a) Tier 3 — the batch integration gate
+When a batch of concurrent implementers completes, run the integration gate **once**
+for the merged result, before dispatching the next batch:
+1. the full suite
+2. lint (whole tree)
+3. typecheck / static analysis
+4. build
+
+Each implementer verified its own task at Tier 2; this gate is the first thing that
+can see them *combined*, which is the only failure Tier 2 structurally cannot catch.
+- **If it fails:** dispatch a fix task naming the failing check, and resolve it
+  **before** the next batch. A red gate discovered three batches later has no
+  attribution left.
+- Record which tasks composed the batch (in `## Implementation Notes`), so a red
+  gate points at a known set of changes.
 
 ### 6) Own the git dev-cycle
 - Commit each clean slice via `/csdd-commit` (the pre-push gate runs on push).
@@ -99,12 +137,21 @@ so **delegate it** — do not hand-write task code inline.
   `docs/stack.md` **Decided** row, plus a `docs/adr` record when the *why* needs
   more than a line. Prefer the option that deviates least from the decided stack.
 
-### 8) Self-checks BEFORE you declare done
-Run these yourself — the loop will not:
+### 8) Feat-exit self-check BEFORE you declare done
+Run these **once**, here — not after every task:
 - `csdd spec validate <feat>` (EARS, traceability, tasks all sound).
 - `csdd graph analyze --strict` (spec ↔ task ↔ component traceability holds).
-- Every **Quality Gate** command from the plan (listed in your brief).
+- Every **Quality Gate** command from the plan (listed in your brief) — exactly
+  once per feat, at this point. They are Tier-3 checks; running them after each
+  implementation step re-pays their cost for every task and catches nothing extra.
+- The Tier-3 gate with **coverage** collected, recorded through
+  `csdd spec test-report <feat> --run --lang <lang>` (no `--fast` here — coverage
+  belongs to feat exit).
 - Every task box in `specs/<feat>/tasks.md` is `[x]`.
+
+These are the same artifacts the loop's verdict gate reads. If one of them fails
+here, the gate will refuse your `done` anyway — fixing it now is strictly cheaper
+than spending an attempt to be told.
 
 ## Handling a blocked gate
 
@@ -121,7 +168,8 @@ Run these yourself — the loop will not:
 
 Return exactly one, as the JSON schema the runner gave you:
 - `{"status":"done"}` — the WHOLE feat is delivered and every self-check in step
-  8 passes. Never claim done on hope.
+  8 passes. Never claim done on hope: the loop verifies the artifacts behind this
+  claim, and a refused `done` costs you one of the feat's attempts.
 - `{"status":"continue","summary":"<handoff>"}` — honest partial work; the same
   feat comes back next session with your handoff.
 
@@ -135,15 +183,20 @@ Return exactly one, as the JSON schema the runner gave you:
 - Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
 - Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
   `continue` summary instead, and keep working what you can.
-- `done` is a promise the loop cannot verify. If a self-check fails and you can't
-  fix it this session, return `continue`, not `done`.
+- `done` is a promise the loop DOES verify — mechanically, against tasks.md,
+  spec.json, and test-report.json. If a self-check fails and you can't fix it this
+  session, return `continue`, not `done`: an honest handoff keeps the feat moving,
+  a refused `done` just burns an attempt to tell you what you already knew.
+- Do not re-verify what a sub-agent already verified. Its report is the evidence
+  for its task; your gates run once, at batch merge and at feat exit.
 
 ## Verification Before Reporting
 
-- Run: `csdd spec validate <feat>`, `csdd graph analyze --strict`, and every plan
-  Quality Gate command.
+- Run (once, at feat exit): `csdd spec validate <feat>`, `csdd graph analyze --strict`,
+  and every plan Quality Gate command.
 - Check: all three phases approved, `ready_for_implementation` true, every task
-  box `[x]`, and the PR opened.
+  box `[x]`, `specs/<feat>/test-report.json` green with no open attentions, and the
+  PR opened.
 - If any fails and you cannot resolve it now: return `continue` with a handoff —
   do **not** return `done`.
 
@@ -152,8 +205,10 @@ Return exactly one, as the JSON schema the runner gave you:
       self-approved (`csdd spec approve … --phase …`).
 - [ ] Every leaf task delivered by an `implementer` sub-agent (test-first via
       `tdd-cycle`) — or by a fallback `tdd-cycle` pass — and its box `[x]`.
+- [ ] Every batch passed the Tier-3 integration gate before the next was dispatched.
 - [ ] `csdd spec validate <feat>` and `csdd graph analyze --strict` pass.
-- [ ] Every plan Quality Gate command passes.
+- [ ] Every plan Quality Gate command passes — run once, at feat exit.
+- [ ] `specs/<feat>/test-report.json` is green with no open attentions.
 - [ ] Any new technology / hard-to-reverse decision recorded (stack row / ADR).
 - [ ] Branch, commits via `/csdd-commit`, and the PR are done.
 - [ ] Verdict returned: `done` only if all the above hold, else `continue` with a

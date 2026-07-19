@@ -109,7 +109,7 @@ export const specTools: ToolDef[] = [
     name: "csdd_spec_test_report",
     title: "Spec test report",
     description:
-      "Record per-spec unit-test evidence into specs/<feature>/test-report.json (surfaced by the dashboard). With run=true it executes the tests (the per-language default command, or cmd) and parses the JUnit + coverage reports they produce into the JSON contract; lang/path auto-discover reports (python|typescript|java|go|rust); or pass an explicit junit and/or coverage file. The run exits non-zero when tests fail, so it gates the task.",
+      "Record per-spec unit-test evidence into specs/<feature>/test-report.json (surfaced by the dashboard). With run=true it executes the tests (the per-language default command, or cmd) and parses the JUnit + coverage reports they produce into the JSON contract; lang/path auto-discover reports (python|typescript|java|go|rust); or pass an explicit junit and/or coverage file. The run exits non-zero when tests fail, so it gates the task. Use fast=true for the Tier-2 task-exit gate (coverage-free, ~3x quicker) and omit it for the Tier-3 feat-exit run, where coverage is collected. Pass task to file the result under one task ID so concurrent implementers preserve each other's evidence.",
     inputSchema: {
       feature,
       run: z
@@ -119,7 +119,15 @@ export const specTools: ToolDef[] = [
       cmd: z
         .string()
         .optional()
-        .describe("Test command to execute with run=true (overrides the per-language default; validated against the language's tooling)."),
+        .describe("Test command to execute with run=true (overrides the per-language default; validated against the language's tooling AND against test-exclusion/selection flags, which are recorded as an attention)."),
+      fast: z
+        .boolean()
+        .optional()
+        .describe("With run=true and no cmd, use the language's coverage-free command (the Tier-2 task-exit gate). Omit for the Tier-3 feat-exit run, which collects coverage."),
+      task: z
+        .string()
+        .optional()
+        .describe("Task ID this run is evidence for. Files the result under that task and preserves every other task's result."),
       lang: z
         .enum(["python", "typescript", "java", "go", "rust"])
         .optional()
@@ -140,38 +148,13 @@ export const specTools: ToolDef[] = [
       "test-report",
       p.feature,
       ...bool("--run", p.run),
+      ...bool("--fast", p.fast),
       ...flag("--cmd", p.cmd),
+      ...flag("--task", p.task),
       ...flag("--lang", p.lang),
       ...flag("--path", p.path),
       ...flag("--junit", p.junit),
       ...flag("--coverage", p.coverage),
-      ...rootArg(p),
-    ],
-  },
-  {
-    name: "csdd_spec_diff_report",
-    title: "Spec diff report",
-    description:
-      "Record a structured, auditable file diff for a spec into specs/<feature>/diff-report.json (surfaced by the dashboard's Changes view). It diffs the merge-base of HEAD and the base ref → the current working tree (committed-on-branch + uncommitted changes, plus untracked files), so it tracks development as it happens. base overrides the auto-detected ref (origin/main, main, origin/master, master); maxLines caps recorded lines per file (default 2000, 0 = unlimited). Requires a git repository; read-only (never touches the index or working tree).",
-    inputSchema: {
-      feature,
-      base: z
-        .string()
-        .optional()
-        .describe("Base ref to diff against (default: auto-detect origin/main, main, origin/master, master)."),
-      maxLines: z
-        .number()
-        .int()
-        .optional()
-        .describe("Per-file recorded-line cap (default 2000; 0 = unlimited)."),
-      root: rootField,
-    },
-    toArgs: (p) => [
-      "spec",
-      "diff-report",
-      p.feature,
-      ...flag("--base", p.base),
-      ...flag("--max-lines", p.maxLines),
       ...rootArg(p),
     ],
   },

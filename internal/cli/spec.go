@@ -156,8 +156,6 @@ func runSpec(args []string, templates embed.FS) int {
 		return specValidate(rest)
 	case "test-report":
 		return specTestReport(rest)
-	case "diff-report":
-		return specDiffReport(rest)
 	case "delete":
 		return specDelete(rest)
 	default:
@@ -842,8 +840,8 @@ func specDelete(args []string) int {
 // parses a JUnit/lcov/Cobertura report when given, or takes explicit counts.
 func specTestReport(args []string) int {
 	fs := flag.NewFlagSet("spec test-report", flag.ContinueOnError)
-	var root, junit, coverage, command, lang, path, cmd string
-	var run bool
+	var root, junit, coverage, command, lang, path, cmd, task string
+	var run, fast bool
 	var total, passed, failed, skipped, covered, lines int
 	var pct float64
 	addRoot(fs, &root)
@@ -854,6 +852,8 @@ func specTestReport(args []string) int {
 	fs.StringVar(&path, "path", "", "Directory to run in / auto-discover JUnit+coverage reports under (e.g. tests/). Defaults to the workspace root.")
 	fs.BoolVar(&run, "run", false, "Execute the tests (per-language default, or --cmd) before parsing the reports they produce.")
 	fs.StringVar(&cmd, "cmd", "", "Test command to execute with --run (overrides the per-language default).")
+	fs.BoolVar(&fast, "fast", false, "With --run and no --cmd, use the language's coverage-free command (the Tier-2 task-exit gate). Coverage belongs to the Tier-3 feat-exit run, so omit --fast there.")
+	fs.StringVar(&task, "task", "", "Task ID this run is evidence for. Files the result under that task and preserves every other task's result, so concurrent implementers don't overwrite each other.")
 	fs.IntVar(&total, "total", -1, "Explicit test total (when no --junit).")
 	fs.IntVar(&passed, "passed", -1, "Explicit tests passed.")
 	fs.IntVar(&failed, "failed", -1, "Explicit tests failed.")
@@ -866,7 +866,7 @@ func specTestReport(args []string) int {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " spec test-report FEATURE [--run [--cmd \"...\"]] [--lang LANG] [--path DIR] [--junit FILE] [--coverage FILE]")
+		render.Err("usage: " + prog() + " spec test-report FEATURE [--run [--fast] [--cmd \"...\"]] [--task ID] [--lang LANG] [--path DIR] [--junit FILE] [--coverage FILE]")
 		return 1
 	}
 	feature := positionals[0]
@@ -933,18 +933,39 @@ func specTestReport(args []string) int {
 		if run {
 			toRun := cmd
 			if toRun == "" {
-				dc, ok := session.DefaultTestCommand(lang)
+				// --fast picks the coverage-free variant (Tier 2). Without it the
+				// coverage-bearing command stays the evidence default, so no
+				// existing invocation changes behavior (R8.2, R8.3).
+				pick := session.DefaultTestCommand
+				if fast {
+					pick = session.FastTestCommand
+				}
+				dc, ok := pick(lang)
 				if !ok {
 					render.Err("with --run, pass --cmd \"...\" or a --lang that has a default (python|typescript|java|go|rust)")
 					return 1
 				}
 				toRun = dc
-			} else if ok, markers := session.ValidateTestCommandForLang(lang, cmd); !ok {
-				// The override doesn't look like this language's test tooling —
-				// flag it (and record it) but don't block a deliberate custom run.
-				msg := fmt.Sprintf("--cmd does not look like a %s test command (expected one of: %s)", lang, strings.Join(markers, ", "))
-				render.Warn(msg)
-				rep.Attentions = append(rep.Attentions, msg)
+			} else {
+				if ok, markers := session.ValidateTestCommandForLang(lang, cmd); !ok {
+					// The override doesn't look like this language's test tooling —
+					// flag it (and record it) but don't block a deliberate custom run.
+					msg := fmt.Sprintf("--cmd does not look like a %s test command (expected one of: %s)", lang, strings.Join(markers, ", "))
+					render.Warn(msg)
+					rep.Attentions = append(rep.Attentions, msg)
+				}
+				// The marker check above proves only that the right TOOL ran, never
+				// what it was asked to run. A command that skips or selects tests
+				// still produces a report that asserts green — with authority it has
+				// not earned — so name the narrowing flags on the artifact itself
+				// (R11.1). An attention, not a rejection: legitimate exclusions
+				// exist, but they must be visible.
+				if flags := session.DetectTestScopeFlags(lang, cmd); len(flags) > 0 {
+					msg := fmt.Sprintf("--cmd narrows the test run (%s): this evidence does not cover the whole suite",
+						strings.Join(flags, ", "))
+					render.Warn(msg)
+					rep.Attentions = append(rep.Attentions, msg)
+				}
 			}
 			rep.Command = toRun
 			render.Info("running tests: " + toRun + "  (in " + workspace.Relative(r, dir) + ")")
@@ -1004,16 +1025,13 @@ func specTestReport(args []string) int {
 	}
 	rep.TestPaths = []string{specRel}
 
-	b, err := json.MarshalIndent(rep, "", "  ")
-	if err != nil {
+	// Merge rather than overwrite: several implementers work one spec at once, and
+	// a wholesale rebuild means only the last one's evidence survives (R6.1, R6.2).
+	if err := session.WriteSpecReport(sdir, task, rep); err != nil {
 		render.Err(err.Error())
 		return 1
 	}
 	target := filepath.Join(sdir, session.SpecReportFile)
-	if err := os.WriteFile(target, append(b, '\n'), 0o644); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
 	render.OK("wrote " + workspace.Relative(r, target))
 	if rep.Tests != nil {
 		render.Info(fmt.Sprintf("tests: %d passed · %d failed · %d skipped (of %d)", rep.Tests.Passed, rep.Tests.Failed, rep.Tests.Skipped, rep.Tests.Total))

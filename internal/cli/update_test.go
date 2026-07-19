@@ -147,12 +147,16 @@ func TestUpdatePreservesManagedAgentModelEffort(t *testing.T) {
 func TestUpdatePreservesManagedSkillModelEffort(t *testing.T) {
 	dir := freshWorkspace(t)
 	skill := filepath.Join(dir, ".claude", "skills", "verify-change", "SKILL.md")
-	withOverrides := strings.Replace(
-		readFile(t, skill),
-		"description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.\n---",
-		"description: Use before claiming a task is complete, a fix works, or tests pass — and before opening a PR. Turns assertions into evidence from the project's own checks.\nmodel: sonnet\neffort: high\n---",
-		1,
-	)
+	// Insert the overrides after the frontmatter's name line rather than after a
+	// quoted description: pinning the shipped prose here made an ordinary template
+	// edit fail this test with a message about lost overrides, which is not what
+	// broke.
+	body := readFile(t, skill)
+	const anchor = "name: verify-change\n"
+	if !strings.Contains(body, anchor) {
+		t.Fatalf("verify-change frontmatter no longer starts with %q:\n%s", anchor, body)
+	}
+	withOverrides := strings.Replace(body, anchor, anchor+"model: sonnet\neffort: high\n", 1)
 	if err := os.WriteFile(skill, []byte(withOverrides), 0o644); err != nil {
 		t.Fatal(err)
 	}
