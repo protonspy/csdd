@@ -85,9 +85,18 @@ var claudeFlags = struct {
 // (no I/O) so the flag wiring is unit-testable without spawning a subprocess. An
 // empty model or effort omits its flag, letting the session inherit the ambient
 // default; a non-positive budget omits --max-budget-usd (the account's own limits).
-func sessionArgs(brief string, budgetUSD float64, model, effort string) []string {
+//
+// The brief is NOT an argument here — it is fed to the child on stdin (see
+// execClaudeSession). `claude -p` with no positional reads the whole prompt from
+// stdin, which is what lets a large feat's brief through: on Windows the entire
+// command line is capped at 32,767 chars (CreateProcess), so a >32k brief passed
+// as `-p <brief>` makes the spawn fail outright and the session never opens. stdin
+// has no such bound, so the brief can be any size.
+func sessionArgs(budgetUSD float64, model, effort string) []string {
 	args := []string{
-		claudeFlags.print, brief,
+		// -p with no positional: the prompt arrives on stdin (--input-format text,
+		// the default), keeping the brief out of the length-bounded command line.
+		claudeFlags.print,
 		// stream-json (not json) so the session reports as it works: each NDJSON
 		// event is both a liveness tick for the watchdog and the material for the
 		// runner's heartbeat. The verdict still arrives in the final `result` event,
@@ -122,7 +131,13 @@ func sessionArgs(brief string, budgetUSD float64, model, effort string) []string
 // only when it has produced neither output nor CPU for the idle budget, so long
 // honest work is never cut short — see watchdog.go.
 func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
-	cmd := exec.Command("claude", sessionArgs(brief, budgetUSD, model, effort)...)
+	cmd := exec.Command("claude", sessionArgs(budgetUSD, model, effort)...)
+	// The brief rides in on stdin, not argv: a large feat's brief exceeds Windows'
+	// 32,767-char command-line limit, and passing it as `-p <brief>` made the spawn
+	// itself fail (CreateProcess) so the session never opened. `claude -p` reads the
+	// prompt from stdin; strings.Reader hits EOF once the child has drained it, which
+	// signals end-of-prompt. supervised.run() owns stdout/stderr but leaves stdin to us.
+	cmd.Stdin = strings.NewReader(brief)
 
 	stream := newSessionStream(sess.now)
 	stop := make(chan struct{})
