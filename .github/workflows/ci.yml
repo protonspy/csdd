@@ -32,11 +32,13 @@ jobs:
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # Build/test with a current, patched toolchain even though go.mod keeps
-          # its language directive at 1.22 for install-compatibility. Do NOT switch
-          # this to go-version-file: go.mod. Pinned to .12 for the GO-2026-5856
-          # crypto/tls fix — the float '1.25' still resolves to .11 on hosted
-          # runners (manifest lag); float back once runners catch up.
+          # Build/test with a current, patched toolchain. The go.mod directive is
+          # 1.25 (raised from 1.22 when x/text v0.39.0 — the GO-2026-5970 fix —
+          # pulled its minimum up); install-compat with older toolchains now rides
+          # on GOTOOLCHAIN=auto, which fetches 1.25 on demand. Keep this pin AHEAD
+          # of the directive and do NOT switch to go-version-file: go.mod. Pinned to
+          # .12 for the GO-2026-5856 crypto/tls fix — the float '1.25' still resolves
+          # to .11 on hosted runners (manifest lag); float back once runners catch up.
           go-version: '1.25.12'
           cache: true
 

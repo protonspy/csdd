@@ -94,7 +94,7 @@ func TestCompactDuration(t *testing.T) {
 // The session must ask for the streaming envelope; falling back to the buffered
 // one would silently restore the unbounded, output-less wait this replaced.
 func TestSessionArgsRequestStreamingEnvelope(t *testing.T) {
-	args := strings.Join(sessionArgs("brief", 0, "", ""), " ")
+	args := strings.Join(sessionArgs(0, "", ""), " ")
 	for _, want := range []string{"--output-format stream-json", "--verbose", "--json-schema"} {
 		if !strings.Contains(args, want) {
 			t.Errorf("session args missing %q: %s", want, args)
