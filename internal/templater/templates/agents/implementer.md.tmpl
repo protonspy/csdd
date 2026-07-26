@@ -33,6 +33,13 @@ scope, evidence, task-marking, and reporting.
 
 ## Collect inputs first
 
+**Read narrowly.** Your dispatch names the task, the criteria it cites, and the
+design component that owns it. Read those, plus the source inside that boundary —
+not the whole spec. A spec is commonly 800+ lines and every line you pull in is
+re-read on each of your own turns, so reading past the task's citations costs
+real time and buys nothing the task needs. If the dispatch is missing something
+you need, ask for it rather than reading the spec end to end.
+
 - Which single task? (one leaf ID from `tasks.md`, with its `_Requirements:_` / `_Boundary:_`).
 - What is the spec's `development_flow` in `spec.json` (absent ⇒ `tdd`)? It decides whether
   the test comes before (`tdd`/`tdd-e2e`) or alongside (`unit`) the code, and whether an

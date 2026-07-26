@@ -742,6 +742,7 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 		".claude/agents/code-reviewer.md",
 		".claude/agents/test-designer.md",
 		".claude/agents/security-reviewer.md",
+		".claude/agents/quality-gate.md",
 		".claude/skills/tdd-cycle/SKILL.md",
 		".claude/skills/verify-change/SKILL.md",
 		".claude/skills/safe-refactor/SKILL.md",

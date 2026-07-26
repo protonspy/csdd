@@ -92,6 +92,14 @@ so **delegate it** — do not hand-write task code inline.
   fast model, records evidence
   (`csdd spec test-report <feat> --run --fast --lang <lang>`), and reports back —
   staying inside the approved design boundary.
+- **Hand it the task, not the spec.** The dispatch carries the task's text with its
+  `_Requirements:_` / `_Boundary:_` / `_Depends:_`, the acceptance criteria those
+  IDs name, and the `### <Component>` section of `design.md` that owns the
+  boundary — plus the spec's `development_flow`. You already read the spec to
+  author it; making each of ~7 implementers re-read all 800+ lines pays for it
+  again per sub-agent, and every line lands in a context that is re-read on each
+  of that agent's turns. Cite the paths so it can widen deliberately if the task
+  turns out to need more.
 - **Take each task's result from the implementer's return message.** Do not re-run
   its suite, and do not read `specs/<feat>/test-report.json` to decide whether an
   individual task passed — one shared file cannot tell you which of several
@@ -141,16 +149,32 @@ can see them *combined*, which is the only failure Tier 2 structurally cannot ca
   more than a line. Prefer the option that deviates least from the decided stack.
 
 ### 8) Feat-exit self-check BEFORE you declare done
-Run these **once**, here — not after every task:
+Run these **once**, here — not after every task.
+
+**Delegate the gate; do not run it inline.** Spawn the **`quality-gate`**
+sub-agent and, in the same dispatch, the `code-reviewer` (plus
+`security-reviewer` when auth / secrets / input handling was touched). They run
+concurrently on purpose: the reviewers are limited by their model, the gate by
+CPU, so overlapping them costs nothing and saves the slower of the two.
+
+`quality-gate` runs every plan **Quality Gate** command — exactly **once per feat**,
+here, never after each implementation step; they are Tier-3 checks, and re-paying
+their cost per task catches nothing extra — plus the Tier-3
+`csdd spec test-report <feat> --run --lang <lang>` (coverage on, no `--fast`), and
+returns a PASS/FAIL table with the real failing output. Running it inline instead
+lands hundreds of lines of suite, lint and typecheck output in **your** context —
+which you then re-read on every remaining turn of the feat. That is the cost the
+sub-agent exists to avoid; reading exit codes does not need your model.
+
+Dispatch it only after the last implementer has finished:
+`specs/<feat>/test-report.json` has one writer at a time.
+
+You still check yourself, because these read state rather than produce output:
 - `csdd spec validate <feat>` (EARS, traceability, tasks all sound).
 - `csdd graph analyze --strict` (spec ↔ task ↔ component traceability holds).
-- Every **Quality Gate** command from the plan (listed in your brief) — exactly
-  once per feat, at this point. They are Tier-3 checks; running them after each
-  implementation step re-pays their cost for every task and catches nothing extra.
-- The Tier-3 gate with **coverage** collected, recorded through
-  `csdd spec test-report <feat> --run --lang <lang>` (no `--fast` here — coverage
-  belongs to feat exit).
 - Every task box in `specs/<feat>/tasks.md` is `[x]`.
+- The `quality-gate` verdict is PASS, and `specs/<feat>/test-report.json` is green
+  with no open attentions.
 
 These are the same artifacts the loop's verdict gate reads. If one of them fails
 here, the gate will refuse your `done` anyway — fixing it now is strictly cheaper
