@@ -35,6 +35,10 @@ Duplicated text is drift waiting to happen and a Maintain finding.
 Three workflows. Deterministic structure comes from the CLI; judgment is yours.
 
 1. **Ingest** (a source landed in `docs/raw/`):
+   - **If what landed is a source checkout** (a repository directory, or an
+     archive of one) rather than a document, stop: a repo is read, not ingested.
+     Run the **codewiki** skill (`/csdd-codewiki`) to compile it into
+     `docs/raw/<owner>-<repo>.md` first, then Ingest *that*.
    - Read the raw file. Do **not** modify it.
    - Write or extend pages under `docs/wiki/pages/` capturing its knowledge, with
      `sources:` pointing back at the raw file (this creates the `derived_from`
