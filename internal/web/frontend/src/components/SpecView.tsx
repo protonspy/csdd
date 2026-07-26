@@ -130,7 +130,10 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
       </div>
 
       {detail.report ? (
-        <MetricsCard report={detail.report} red={detail.tasks.red} green={detail.tasks.green} />
+        <>
+          <MetricsCard report={detail.report} red={detail.tasks.red} green={detail.tasks.green} />
+          <TaskEvidenceCard report={detail.report} />
+        </>
       ) : (
         <MetricsHint feature={detail.feature} />
       )}
@@ -238,6 +241,94 @@ function MetricsCard({ report, red, green }: { report: SpecReport; red: number; 
         </div>
       )}
       <div className="muted small">updated {report.updatedAt}</div>
+    </div>
+  )
+}
+
+/**
+ * compareTaskIds orders dotted task IDs the way a reader expects: 2 before 10,
+ * and 1.2 before 1.10. Sorting them as strings gets both backwards, which makes
+ * the table read as if tasks landed out of order.
+ */
+function compareTaskIds(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? -1) - (pb[i] ?? -1)
+    if (d !== 0) return d
+  }
+  return 0
+}
+
+/**
+ * TaskEvidenceCard shows what each task's own recorded run said.
+ *
+ * The rollup above it is the latest run and cannot name an owner: when several
+ * implementers work a spec at once, the last writer wins and a red result loses
+ * the task that produced it. This is the view of `SpecReport.tasks`, which the
+ * CLI fills via `csdd spec test-report <feature> --run --task <id>`.
+ */
+function TaskEvidenceCard({ report }: { report: SpecReport }) {
+  const entries = Object.entries(report.tasks ?? {}).sort(([a], [b]) => compareTaskIds(a, b))
+  if (entries.length === 0) return null
+  return (
+    <div className="card">
+      <div className="card-title">
+        Evidence by task
+        <span className="muted small">· {entries.length} recorded</span>
+      </div>
+      <div className="task-ev">
+        {entries.map(([id, t]) => {
+          const c = t.tests
+          const failed = (c?.failed ?? 0) > 0
+          const open = t.attentions ?? []
+          return (
+            <div key={id} className="task-ev-row">
+              <code className="task-ev-id">{id}</code>
+              <span className="task-ev-tests">
+                {c ? (
+                  <>
+                    <b className={failed ? 'tdd red' : 'tdd green'}>
+                      {c.passed}/{c.total}
+                    </b>
+                    {c.skipped > 0 && <span className="muted small"> · {c.skipped} skipped</span>}
+                  </>
+                ) : (
+                  <span className="muted small">no counts</span>
+                )}
+              </span>
+              <span className="task-ev-cov">
+                {t.coverage ? (
+                  <span style={{ color: covColor(t.coverage.pct) }}>{t.coverage.pct.toFixed(1)}%</span>
+                ) : (
+                  <span className="muted small">—</span>
+                )}
+              </span>
+              <span className="task-ev-status">
+                {failed ? (
+                  <span className="badge warn">{c?.failed} failed</span>
+                ) : open.length > 0 ? (
+                  <span className="badge warn">
+                    {open.length} attention{open.length > 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span className="badge ready">green</span>
+                )}
+              </span>
+              <span className="muted small task-ev-when">{t.updatedAt}</span>
+              {open.length > 0 && (
+                <ul className="attentions task-ev-att">
+                  {open.map((a, i) => (
+                    <li key={i} className="attention">
+                      {a}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

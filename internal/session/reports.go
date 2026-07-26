@@ -557,6 +557,98 @@ func DetectTestScopeFlags(lang, cmd string) []string {
 	return out
 }
 
+// testFileExts are the source extensions a positional selector carries when it
+// names one test file rather than a directory.
+var testFileExts = []string{".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".java", ".kt", ".rs"}
+
+// DetectTestScopePaths returns the positional path selectors in cmd — the bare
+// arguments that hand the runner a file or directory to execute instead of the
+// whole suite.
+//
+// DetectTestScopeFlags polices flags, and every selector it knows is written as
+// one. A path is not. `pytest tests/unit` and
+// `pytest tests/integration/test_checkout_routes.py` narrow a run exactly as hard
+// as `-k`, carry no flag at all, and therefore passed the check and wrote a green
+// report asserting the whole suite — the failure R11 exists to prevent, through
+// the one door it did not cover. Three such commands are recorded in the
+// reference corpus.
+//
+// Scanning starts after the tool marker, so the invocation itself
+// (`./node_modules/.bin/vitest`, `.venv/bin/python -m pytest`) is never read as a
+// selector. A token counts only when it looks like a path: it holds a separator
+// or ends in a test-source extension. That shape test is what keeps a flag value
+// riding in its own token (`-p no:cacheprovider`, `-o addopts=”`) from reading as
+// a selector, without this function needing the arity of every flag in five
+// ecosystems.
+func DetectTestScopePaths(lang, cmd string) []string {
+	canon, found := langCanonical[strings.ToLower(strings.TrimSpace(lang))]
+	if !found {
+		return nil
+	}
+	markers := langTestMarkers[canon]
+	if len(markers) == 0 {
+		return nil
+	}
+	// The earliest marker wins: a chained command (`coverage run -m pytest …`)
+	// should be scanned from its first tool, not its last, so nothing between
+	// them escapes.
+	lower := strings.ToLower(cmd)
+	end := -1
+	for _, m := range markers {
+		if i := strings.Index(lower, m); i >= 0 {
+			if e := i + len(m); end < 0 || e < end {
+				end = e
+			}
+		}
+	}
+	if end < 0 {
+		return nil // not this language's tooling — ValidateTestCommandForLang says so
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, tok := range commandTokens(cmd[end:]) {
+		if strings.HasPrefix(tok, "-") || !looksLikeTestPath(tok) || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		out = append(out, tok)
+	}
+	return out
+}
+
+// looksLikeTestPath reports whether tok names a file or directory rather than a
+// subcommand (`run`, `test`) or a flag's value.
+//
+// The whole-suite spellings are excluded on purpose: Go's `./...` is every
+// package in the module and a bare `.` is the current tree, so neither narrows
+// anything. A narrower ellipsis like `./internal/...` still counts, because it
+// does.
+func looksLikeTestPath(tok string) bool {
+	switch tok {
+	case "", ".", "...", "./...", "./":
+		return false
+	}
+	if strings.ContainsAny(tok, `/\`) {
+		return true
+	}
+	lower := strings.ToLower(tok)
+	for _, ext := range testFileExts {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// DetectTestScopeSelectors returns everything in cmd that narrows what the runner
+// executes — the flags first, then the positional paths. An empty result means
+// the command ran the whole suite, which is the only claim a feat-level report is
+// entitled to make.
+func DetectTestScopeSelectors(lang, cmd string) []string {
+	sel := DetectTestScopeFlags(lang, cmd)
+	return append(sel, DetectTestScopePaths(lang, cmd)...)
+}
+
 // commandTokens splits a shell command into argument tokens, dropping anything
 // after an unquoted `#`.
 //

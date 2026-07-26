@@ -6,7 +6,12 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "strict": true,
-    "noEmit": true
+    // A composite project may not disable emit (TS6310), and this one is
+    // referenced by tsconfig.json — so `npm run typecheck` failed on the config
+    // before it ever looked at the source. Emit is pointed at a scratch dir
+    // under the already-ignored node_modules instead of being switched off.
+    "noEmit": false,
+    "outDir": "./node_modules/.tmp/tsconfig.node"
   },
   "include": ["vite.config.ts"]
 }

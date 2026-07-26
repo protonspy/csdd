@@ -401,3 +401,107 @@ func TestWriteSpecReportUnderRealConcurrency(t *testing.T) {
 		t.Fatalf("expected %d task results to survive, got %d", n, len(got.Tasks))
 	}
 }
+
+// TestDetectTestScopePathsAgainstTheRealCorpus is calibrated, not invented: every
+// command below was read out of the `command` fields of a 28-spec workspace's
+// test-report.json files.
+//
+// The whole risk of this check is a false positive. An attention blocks the
+// definition of done AND the plan runner's verdict gate, so flagging an honest
+// full-suite command does not add noise — it refuses a correct `done`. Hence the
+// silent set is the larger half of this test.
+func TestDetectTestScopePathsAgainstTheRealCorpus(t *testing.T) {
+	wholeSuite := []struct{ lang, cmd string }{
+		{"python", "uv run pytest"},
+		{"python", "uv run pytest --junitxml=junit.xml"},
+		{"python", "uv run pytest --junitxml=junit.xml --cov --cov-report=xml"},
+		{"python", "uv run pytest --junitxml=junit.xml --cov=src --cov-report=xml"},
+		{"python", "uv run pytest --junitxml=junit.xml --cov=src --cov-report=xml -o addopts=''"},
+		{"python", "uv run pytest --junitxml=junit.xml -p no:cacheprovider --no-cov"},
+		{"python", "uv run pytest --junitxml=junit.xml -p no:randomly"},
+		{"python", "uv run pytest -q --no-cov --junitxml=junit-task9.xml"},
+		{"python", "pytest --junitxml=junit.xml"},
+		{"python", ".venv/bin/python -m pytest --junitxml=junit.xml --cov --cov-report=xml"},
+		{"python", "coverage run -m pytest --junitxml=junit.xml"},
+		{"typescript", "npx vitest run --reporter=default --reporter=junit --outputFile=junit.xml"},
+		{"typescript", "./node_modules/.bin/vitest run --reporter=default --reporter=junit --outputFile=junit.xml"},
+		{"typescript", "npm test -- --run"},
+		{"go", "go test ./..."},
+		{"go", "gotestsum -- ./..."},
+		{"rust", "cargo test"},
+		{"java", "mvn test"},
+		// Prose recorded in the command field by a Tier-3 rollup. It names tools
+		// and directories in passing and must not read as a selector.
+		{"python", "backend: uv run pytest | frontend: npx vitest run | mcp: uv run pytest"},
+		{"python", "uv run pytest (backend Tier-3, coverage) + vitest run (frontend, filed under task 13)"},
+	}
+	for _, tc := range wholeSuite {
+		if got := DetectTestScopePaths(tc.lang, tc.cmd); len(got) > 0 {
+			t.Errorf("false positive on a whole-suite command\n  cmd: %s\n  flagged: %v", tc.cmd, got)
+		}
+	}
+
+	narrowed := []struct {
+		lang, cmd string
+		want      []string
+	}{
+		{"python", "uv run pytest tests/unit --junitxml=junit.xml", []string{"tests/unit"}},
+		{
+			"python",
+			"uv run pytest tests/integration/test_checkout_routes.py -q --junitxml=junit.xml --cov=src --cov-report=xml",
+			[]string{"tests/integration/test_checkout_routes.py"},
+		},
+		{
+			"python",
+			"uv run pytest tests/integration/test_operating_wallet_service.py tests/integration/test_billing_engine.py --junitxml=junit.xml -q",
+			[]string{"tests/integration/test_operating_wallet_service.py", "tests/integration/test_billing_engine.py"},
+		},
+		{"typescript", "npx vitest run src/components/TaskBoard.test.tsx", []string{"src/components/TaskBoard.test.tsx"}},
+		{"go", "go test ./internal/cli/...", []string{"./internal/cli/..."}},
+		{"python", "pytest test_one.py", []string{"test_one.py"}},
+	}
+	for _, tc := range narrowed {
+		got := DetectTestScopePaths(tc.lang, tc.cmd)
+		if len(got) != len(tc.want) {
+			t.Errorf("cmd %q: got %v, want %v", tc.cmd, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("cmd %q: got %v, want %v", tc.cmd, got, tc.want)
+				break
+			}
+		}
+	}
+}
+
+// TestDetectTestScopeSelectorsCombinesBothKinds proves the caller sees one list:
+// a command may narrow by flag and by path at once, and the artifact should name
+// everything that shrank the run.
+func TestDetectTestScopeSelectorsCombinesBothKinds(t *testing.T) {
+	got := DetectTestScopeSelectors("python", "uv run pytest tests/unit -k login --junitxml=junit.xml")
+	want := map[string]bool{"-k": false, "tests/unit": false}
+	for _, g := range got {
+		if _, ok := want[g]; !ok {
+			t.Errorf("unexpected selector %q in %v", g, got)
+			continue
+		}
+		want[g] = true
+	}
+	for k, seen := range want {
+		if !seen {
+			t.Errorf("selector %q missing from %v", k, got)
+		}
+	}
+}
+
+// TestDetectTestScopePathsUnknownLanguage keeps the check silent where it has no
+// marker to anchor on, rather than guessing at another ecosystem's grammar.
+func TestDetectTestScopePathsUnknownLanguage(t *testing.T) {
+	if got := DetectTestScopePaths("cobol", "run tests/unit"); got != nil {
+		t.Errorf("unknown language should yield no selectors, got %v", got)
+	}
+	if got := DetectTestScopePaths("python", "make check"); got != nil {
+		t.Errorf("a command with no python tooling marker should yield no selectors, got %v", got)
+	}
+}
