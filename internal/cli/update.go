@@ -236,6 +236,8 @@ const (
 	kindAdded                      // missing on disk, written fresh
 	kindUpdated                    // pristine but outdated, refreshed in place
 	kindConflict                   // user-edited; new version installed, old kept as .old
+	kindRemoved                    // no longer shipped and never edited, deleted
+	kindOrphaned                   // no longer shipped but edited, left in place
 )
 
 type fileChange struct {
@@ -353,6 +355,12 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 		res.changes = append(res.changes, ch)
 	}
 
+	pruned, err := pruneRetired(opts, base, files)
+	if err != nil {
+		return res, err
+	}
+	res.changes = append(res.changes, pruned...)
+
 	if !opts.dryRun {
 		skipped := map[string]bool{}
 		for _, c := range res.changes {
@@ -365,6 +373,109 @@ func updateWorkspace(opts updateOptions, templates embed.FS, now time.Time) (upd
 		}
 	}
 	return res, nil
+}
+
+// pruneRetired removes the artifacts the manifest records but this csdd version
+// no longer ships.
+//
+// Without it `update` only ever added. Retiring a skill or an agent upstream left
+// every existing workspace carrying it forever: the file stayed on disk, the
+// model kept seeing it in the skills listing, and nothing ever said it was gone.
+// The manifest already stopped listing them — recordManifest rebuilds from the
+// current shipped set — so the entry vanished while the file it described did
+// not, which is the one state that makes the record useless.
+//
+// The policy mirrors the update policy exactly, read in the other direction:
+//
+//   - pristine (disk still matches the recorded baseline) → delete it. csdd wrote
+//     it, csdd owns it, nobody changed it.
+//   - edited → keep it and say so. The user made it theirs; deleting their work
+//     because upstream lost interest is not an upgrade.
+//   - already gone → nothing to do.
+//
+// --dry-run reports the plan without touching anything.
+func pruneRetired(opts updateOptions, base *manifest.Manifest, files []managedFile) ([]fileChange, error) {
+	shipped := make(map[string]bool, len(files))
+	for _, f := range files {
+		shipped[f.Rel] = true
+	}
+	retired := make([]string, 0, len(base.Files))
+	for rel := range base.Files {
+		if !shipped[rel] {
+			retired = append(retired, rel)
+		}
+	}
+	sort.Strings(retired) // deterministic output; map order is not
+
+	var out []fileChange
+	for _, rel := range retired {
+		abs := filepath.Join(opts.root, filepath.FromSlash(rel))
+		diskBytes, rerr := os.ReadFile(abs)
+		if os.IsNotExist(rerr) {
+			continue // the manifest outlived the file; recordManifest drops the entry
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+		if !retiredIsPristine(string(diskBytes), base.Files[rel]) {
+			out = append(out, fileChange{rel: rel, kind: kindOrphaned})
+			continue
+		}
+		if !opts.dryRun {
+			if err := os.Remove(abs); err != nil {
+				return nil, err
+			}
+			pruneEmptyParents(opts.root, abs)
+		}
+		out = append(out, fileChange{rel: rel, kind: kindRemoved})
+	}
+	return out, nil
+}
+
+// retiredIsPristine reports whether on-disk content still matches the baseline
+// the manifest recorded for a retired artifact.
+//
+// Both the raw hash and the execution-override-stripped hash are accepted,
+// because the baseline was written with whichever form that artifact's kind used
+// — and the kind is exactly what a retired artifact no longer tells us, since it
+// is gone from the shipped set. Stripping is a no-op on content without those
+// frontmatter keys, so trying it costs nothing and never widens what counts as
+// pristine beyond "equal to what csdd wrote, give or take the local model/effort
+// overrides csdd itself sanctions".
+func retiredIsPristine(content, baseline string) bool {
+	if baseline == "" {
+		return false // no baseline to compare against: treat as the user's
+	}
+	if manifest.Hash(content) == baseline {
+		return true
+	}
+	return manifest.Hash(stripFrontmatterFields(content, managedExecutionOverrideKeys)) == baseline
+}
+
+// pruneEmptyParents removes directories left empty by a deletion, up to (but
+// never including) the workspace root. A retired skill is a whole directory —
+// deleting its SKILL.md and leaving the folder behind still shows the skill to
+// anyone listing the tree.
+func pruneEmptyParents(root, abs string) {
+	dir := filepath.Dir(abs)
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return
+	}
+	for {
+		d, err := filepath.Abs(dir)
+		if err != nil || d == rootAbs || !strings.HasPrefix(d, rootAbs+string(filepath.Separator)) {
+			return
+		}
+		entries, err := os.ReadDir(d)
+		if err != nil || len(entries) > 0 {
+			return
+		}
+		if os.Remove(d) != nil {
+			return
+		}
+		dir = filepath.Dir(d)
+	}
 }
 
 // managedBaselineHash returns the hash used for manifest and pristine checks.
@@ -500,7 +611,7 @@ func nextOldPath(abs string) string {
 }
 
 func (r updateResult) report(dryRun bool) {
-	var added, updated, current, conflicts, skipped int
+	var added, updated, current, conflicts, skipped, removed, orphaned int
 	for _, c := range r.changes {
 		switch c.kind {
 		case kindAdded:
@@ -509,6 +620,10 @@ func (r updateResult) report(dryRun bool) {
 			updated++
 		case kindCurrent:
 			current++
+		case kindRemoved:
+			removed++
+		case kindOrphaned:
+			orphaned++
 		case kindConflict:
 			if c.skipped {
 				skipped++
@@ -528,6 +643,10 @@ func (r updateResult) report(dryRun bool) {
 			render.Info("+ add      " + c.rel)
 		case kindUpdated:
 			render.Info("~ update   " + c.rel)
+		case kindRemoved:
+			render.Info("- remove   " + c.rel + "  (no longer shipped)")
+		case kindOrphaned:
+			render.Info("? orphan   " + c.rel + "  (no longer shipped, but you edited it — kept)")
 		case kindConflict:
 			switch {
 			case c.skipped:
@@ -544,11 +663,19 @@ func (r updateResult) report(dryRun bool) {
 	if dryRun {
 		verb = "Dry run"
 	}
-	render.OK(fmt.Sprintf("%s: %d added, %d updated, %d unchanged, %d conflict(s), %d skipped.", verb, added, updated, current, conflicts, skipped))
+	summary := fmt.Sprintf("%s: %d added, %d updated, %d unchanged, %d conflict(s), %d skipped.", verb, added, updated, current, conflicts, skipped)
+	// Retirements are appended rather than folded into the counts above, so a run
+	// that removes nothing reads exactly as it always did.
+	if removed > 0 || orphaned > 0 {
+		summary += fmt.Sprintf(" %d removed, %d orphaned.", removed, orphaned)
+	}
+	render.OK(summary)
 
 	switch {
 	case dryRun:
 		render.Info("No files were written. Re-run without --dry-run to apply.")
+	case orphaned > 0:
+		render.Info("Orphaned files are no longer shipped by csdd but you had edited them — they are yours now; delete them if you no longer want them.")
 	case conflicts > 0:
 		render.Info("Review the .old backups, fold in anything you customized, then delete them (`" + prog() + " clean`).")
 	case skipped > 0:
