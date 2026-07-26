@@ -72,6 +72,27 @@ func techKey(name string) string {
 	return NormalizeID(name)
 }
 
+// externalBlockWords are the sub-heading spellings that open an
+// external-technology block inside `## Decided`.
+//
+// A closed, documented set rather than a free-form marker: a heading the parser
+// did not recognize would silently leave the rows linted, which is the very
+// failure the block exists to end. The shipped template writes
+// "### External services".
+var externalBlockWords = []string{"external", "service", "infrastructure", "managed", "hosted"}
+
+// isExternalBlockHeading reports whether a `###` heading inside Decided opens the
+// block of technologies no dependency manifest declares.
+func isExternalBlockHeading(title string) bool {
+	t := strings.ToLower(strings.TrimSpace(title))
+	for _, w := range externalBlockWords {
+		if strings.Contains(t, w) {
+			return true
+		}
+	}
+	return false
+}
+
 // stackContract parses the Decided table of docs/stack.md into tech nodes. The
 // Rules and Open-questions sections are prose and are not parsed.
 func stackContract(src Source) []Fragment {
@@ -79,11 +100,25 @@ func stackContract(src Source) []Fragment {
 	var frag Fragment
 	inDecided := false
 	headerSeen := false
+	external := false
 	for i, raw := range lines {
 		trimmed := strings.TrimSpace(rtrim(raw))
 		if strings.HasPrefix(trimmed, "## ") {
 			title := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(trimmed, "## ")))
 			inDecided = strings.HasPrefix(title, "decided")
+			headerSeen = false
+			external = false
+			continue
+		}
+		// A sub-heading inside Decided opens a block, and one kind of block is
+		// declared: the technologies no dependency manifest will ever list —
+		// managed services, infrastructure, hosted APIs, models. They are real
+		// decisions and belong in the contract, but the phantom lint compares the
+		// contract against manifests, so without a way to say so they are reported
+		// forever as "in the contract but no usage was detected". The author's only
+		// remedies were deleting a true decision or switching the gate off.
+		if inDecided && strings.HasPrefix(trimmed, "### ") {
+			external = isExternalBlockHeading(strings.TrimPrefix(trimmed, "### "))
 			headerSeen = false
 			continue
 		}
@@ -106,6 +141,9 @@ func stackContract(src Source) []Fragment {
 			continue
 		}
 		attrs := map[string]any{"status": "decided", "from_contract": true}
+		if external {
+			attrs["external"] = true
+		}
 		if cells[0] != "" {
 			attrs["domain"] = cells[0]
 		}
@@ -143,8 +181,14 @@ func stackManifest(src Source) []Fragment {
 		deps, eco = parseRequirementsTxt(src.Content), "python"
 	}
 	manifestID := codeRefID(src.Path)
+	// Labelled by full path, not basename. A markdown citation of the same file
+	// emits a code_ref node with the same ID and the full path as its label, and
+	// detectCollisions treats one ID carrying two labels as two artifacts — so a
+	// basename here reported "pyproject.toml | backend/pyproject.toml" as a
+	// collision and dropped one of them. The full path is also the more useful
+	// label: three manifests in this corpus share the basename.
 	frag := Fragment{Nodes: []Node{{
-		ID: manifestID, Label: path.Base(src.Path), FileType: TypeCodeRef,
+		ID: manifestID, Label: src.Path, FileType: TypeCodeRef,
 		SourceFile: src.Path, SourceLocation: "L1",
 		Attrs: map[string]any{"kind": "manifest", "ecosystem": eco},
 	}}}
@@ -256,8 +300,43 @@ func parsePackageJSON(content []byte) []string {
 	return out
 }
 
-var rePyDepArrayItem = regexp.MustCompile(`["']([A-Za-z0-9._\-]+)\s*(?:[=<>~!].*)?["']`)
+// rePyDepArrayItem matches one requirement inside a PEP 621 dependencies array.
+// The optional bracket group is the PEP 508 extras spelling
+// ("celery[librabbitmq,gevent]>=5.6.1"), which the pattern used to reject
+// outright. The version tail is bounded by [^"'] rather than .* so a line
+// carrying two requirements cannot be swallowed as one greedy match.
+var rePyDepArrayItem = regexp.MustCompile(`["']([A-Za-z0-9._\-]+)(?:\[[^\]]*\])?\s*(?:[=<>~!;][^"']*)?["']`)
 var rePyPoetryDep = regexp.MustCompile(`^([A-Za-z0-9._\-]+)\s*=`)
+
+// reTomlArrayKey matches `name = [` — a table key whose value is an array. Used
+// inside [dependency-groups] and [project.optional-dependencies], where the key
+// is a group name rather than the literal word "dependencies".
+var reTomlArrayKey = regexp.MustCompile(`^[A-Za-z0-9._\-]+\s*=\s*\[`)
+
+// stripQuotedSpans blanks out single- and double-quoted spans, leaving the
+// line's structural punctuation in place. It exists so bracket matching can ask
+// "is this delimiter part of the TOML, or part of a string?" without a TOML
+// parser.
+func stripQuotedSpans(line string) string {
+	var b strings.Builder
+	quote := byte(0)
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+			b.WriteByte(' ')
+		case c == '"' || c == '\'':
+			quote = c
+			b.WriteByte(' ')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
 
 // parsePyproject does a pragmatic scan: PEP 621 `dependencies = [ "a", "b>=1" ]`
 // arrays and `[tool.poetry.dependencies]` tables. Full TOML parsing is avoided to
@@ -267,21 +346,43 @@ func parsePyproject(content []byte) []string {
 	lines := normLines(content)
 	inArray := false
 	inPoetry := false
+	inKeyedArrays := false
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if strings.HasPrefix(line, "[") {
 			inPoetry = strings.HasPrefix(line, "[tool.poetry.dependencies]")
+			// PEP 735 dependency groups and PEP 621 extras are both tables whose
+			// every key is an array of requirements, so the group's NAME opens the
+			// array rather than the word "dependencies". uv writes dev tooling
+			// there by default, and not reading it left real declared packages
+			// invisible — their contract rows then reported as phantom.
+			inKeyedArrays = strings.HasPrefix(line, "[dependency-groups]") ||
+				strings.HasPrefix(line, "[project.optional-dependencies]")
 			inArray = false
 			continue
 		}
 		if strings.HasPrefix(line, "dependencies") && strings.Contains(line, "[") {
 			inArray = true
 		}
+		if inKeyedArrays && reTomlArrayKey.MatchString(line) {
+			inArray = true
+		}
 		if inArray {
-			for _, m := range rePyDepArrayItem.FindAllStringSubmatch(line, -1) {
-				out = append(out, m[1])
+			// A group may pull in another group by reference
+			// ({include-group = "test"}); that names a group, not a package.
+			if !strings.Contains(line, "include-group") {
+				for _, m := range rePyDepArrayItem.FindAllStringSubmatch(line, -1) {
+					out = append(out, m[1])
+				}
 			}
-			if strings.Contains(line, "]") {
+			// The array closes on a `]` that stands outside any quoted
+			// requirement. A PEP 508 extra puts one INSIDE the string —
+			// "celery[librabbitmq,gevent]>=5.6.1" — and taking that as the end
+			// silently dropped every dependency declared after it. In a real
+			// backend manifest that was 50-odd libraries, each of which then had
+			// its contract row reported as phantom tech: the lint accused the
+			// project of listing things it does not use, for things it uses.
+			if strings.Contains(stripQuotedSpans(line), "]") {
 				inArray = false
 			}
 			continue

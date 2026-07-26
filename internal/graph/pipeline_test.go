@@ -369,3 +369,47 @@ func splitLines(s string) []string {
 	}
 	return out
 }
+
+// TestOrphanTaskOnlyFlagsLeaves pins the rule the analyzer used to contradict.
+//
+// Only leaf tasks carry `_Requirements:_` — the spec validator reports exactly
+// "leaf task N missing _Requirements:_" and says nothing about parents. Holding
+// parents to the leaf rule made every correctly-written spec in a 28-spec
+// workspace report 7–13 findings, which is what got `--strict` demoted to
+// advisory there. A gate nobody can leave armed is not a gate.
+func TestOrphanTaskOnlyFlagsLeaves(t *testing.T) {
+	task := func(id, number string) Node {
+		return Node{
+			ID: id, Label: "task " + number, FileType: TypeTask,
+			SourceFile: "specs/photos/tasks.md",
+			Attrs:      map[string]any{"number": number},
+		}
+	}
+	g := &Graph{Nodes: []Node{
+		task("t1", "1"), // parent of 1.1 / 1.2 — carries no annotation by design
+		task("t1.1", "1.1"),
+		task("t1.2", "1.2"),
+		task("t2", "2"), // a genuine leaf with nothing realized
+		// A same-numbered task in ANOTHER spec must not confer parenthood.
+		{
+			ID: "other-1", Label: "task 1", FileType: TypeTask,
+			SourceFile: "specs/albums/tasks.md",
+			Attrs:      map[string]any{"number": "1.9"},
+		},
+	}}
+
+	flagged := map[string]bool{}
+	for _, f := range specFindings(g) {
+		if f.Kind == kindOrphanTask {
+			flagged[f.NodeID] = true
+		}
+	}
+	if flagged["t1"] {
+		t.Error("parent task 1 was flagged as an orphan; parents carry no _Requirements:_ by design")
+	}
+	for _, id := range []string{"t1.1", "t1.2", "t2", "other-1"} {
+		if !flagged[id] {
+			t.Errorf("leaf task %s realizes no criterion and should be flagged", id)
+		}
+	}
+}

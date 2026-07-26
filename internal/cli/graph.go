@@ -311,7 +311,7 @@ func graphAnalyze(args []string) int {
 		if code := emitJSON(report); code != 0 {
 			return code
 		}
-		if strict && len(report.Findings) > 0 {
+		if strict && len(graph.Blocking(report.Findings)) > 0 {
 			return 2
 		}
 		return 0
@@ -324,8 +324,16 @@ func graphAnalyze(args []string) int {
 	if len(report.GodNodes) > 0 {
 		render.Info(fmt.Sprintf("Hubs: %s", godNodeSummary(report.GodNodes)))
 	}
-	render.Warn(fmt.Sprintf("%d finding(s).", len(report.Findings)))
-	if strict {
+	// Informational findings are reported but never gate: a lint that describes the
+	// corpus instead of faulting it must not be the reason CI goes red, or the only
+	// way to keep CI green is to stop running the gate.
+	blocking := graph.Blocking(report.Findings)
+	if n := len(report.Findings) - len(blocking); n > 0 {
+		render.Warn(fmt.Sprintf("%d finding(s) — %d blocking, %d informational.", len(report.Findings), len(blocking), n))
+	} else {
+		render.Warn(fmt.Sprintf("%d finding(s).", len(report.Findings)))
+	}
+	if strict && len(blocking) > 0 {
 		return 2
 	}
 	return 0
