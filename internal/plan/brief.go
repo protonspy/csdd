@@ -16,10 +16,12 @@ import (
 // a verdict. The runner runs no gates of its own — it checks only the artifacts a
 // `done` verdict implies (R10) — so the
 // checks the runner used to enforce become checks the session runs itself before
-// declaring the feat done (see selfChecks).
+// declaring the feat done — see the "Before you declare `done`" block the brief
+// writes, which splits them into the state checks the session reads itself and
+// the command gate it delegates to the `quality-gate` sub-agent.
 var missionSteps = []string{
 	"Author the spec if it does not exist yet: `csdd spec init <feat> [--flow unit|tdd|tdd-e2e]`, then generate, validate, and approve each phase — `csdd spec generate <feat> --artifact requirements|design|tasks`, `csdd spec validate <feat>`, `csdd spec approve <feat> --phase requirements|design|tasks`. This authoring is YOUR job — the decisions run on your (orchestrator) model. CHOOSE THE FLOW DELIBERATELY: `tdd` (the default) for money, auth, tenancy, and anything irreversible; `unit` for surfaces whose behaviors are render/CRUD states, which halves the verification round-trips per behavior. The flow you pick decides the shape of tasks.md, and `csdd spec validate` enforces that shape.",
-	"Implement the tasks by DELEGATING each one to the `implementer` sub-agent (Agent/Task tool) — one leaf task per sub-agent. You orchestrate and decide; the implementer executes the already-made decision on its own (fast) model under the spec's `development_flow`, so do NOT hand-write task code inline. Dispatch `(P)` tasks in DIFFERENT `_Boundary:_` groups concurrently (worktree isolation); honor every `_Depends:_` and keep same-boundary tasks sequential. Check each task's box `[x]` in specs/<feat>/tasks.md as its implementer lands it green. (If the `implementer` sub-agent is not installed in this workspace, fall back to running the cycle skill that matches the flow yourself — `tdd-cycle` under tdd/tdd-e2e, `unit-cycle` under unit — one task at a time.)",
+	"Implement the tasks by DELEGATING each one to the `implementer` sub-agent (Agent/Task tool) — one leaf task per sub-agent. You orchestrate and decide; the implementer executes the already-made decision on its own (fast) model under the spec's `development_flow`, so do NOT hand-write task code inline. HAND IT THE TASK, NOT THE SPEC: the dispatch carries the task text with its `_Requirements:_`/`_Boundary:_`/`_Depends:_`, the acceptance criteria those IDs name, and the `### <Component>` section of design.md that owns the boundary — you already read the spec to author it, and making every implementer re-read all of it pays that cost again per sub-agent. Dispatch `(P)` tasks in DIFFERENT `_Boundary:_` groups concurrently (worktree isolation); honor every `_Depends:_` and keep same-boundary tasks sequential. Check each task's box `[x]` in specs/<feat>/tasks.md as its implementer lands it green. (If the `implementer` sub-agent is not installed in this workspace, fall back to running the cycle skill that matches the flow yourself — `tdd-cycle` under tdd/tdd-e2e, `unit-cycle` under unit — one task at a time.)",
 	"You own git and the csdd dev-cycle: branch, commit via /csdd-commit (the pre-push gate runs there), and open the PR.",
 	"Record any technology or hard-to-reverse trade-off the contract does not already cover — a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line. Prefer the option that deviates least from the decided stack.",
 }
@@ -172,6 +174,15 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	w("Run each of these ONCE, here at feat exit — not after every task:\n\n")
 	w("- `csdd spec validate %s` (the spec is structurally sound: EARS, traceability, tasks)\n", feat.Slug)
 	w("- `csdd graph analyze --strict` (spec↔task↔component traceability holds)\n")
+	w("- every task box in specs/%s/tasks.md is `[x]`\n\n", feat.Slug)
+	w("DELEGATE the command gate to the `quality-gate` sub-agent, dispatched together\n")
+	w("with `code-reviewer` (and `security-reviewer` when auth/secrets/input were\n")
+	w("touched) once the last implementer has finished. It runs the commands below\n")
+	w("plus the Tier-3 `csdd spec test-report %s --run --lang <lang>` (coverage on,\n", feat.Slug)
+	w("no --fast) and returns PASS/FAIL with the real failing output. Running them\n")
+	w("inline instead lands the whole suite, lint and typecheck output in YOUR\n")
+	w("context, which you then re-read on every remaining turn. The reviewers are\n")
+	w("limited by their model and the gate by CPU, so they overlap for free.\n\n")
 	for _, g := range planGateCommands(doc) {
 		w("- %s\n", g)
 	}

@@ -171,3 +171,44 @@ func TestBriefIsFlowAware(t *testing.T) {
 		t.Errorf("brief hardcodes 'test-first', which overrides a spec declaring development_flow 'unit'")
 	}
 }
+
+// TestBriefDelegatesTheCommandGate guards the split the feat-exit block encodes:
+// the session reads state itself, and delegates the command gate.
+//
+// Running the plan's Quality Gates inline lands the whole suite, lint and
+// typecheck output in the orchestrator's context — which is then re-read on every
+// remaining turn of the feat. That is 58% of a measured session's wall clock
+// spent in API calls, and reading exit codes does not need the orchestrator's
+// model.
+func TestBriefDelegatesTheCommandGate(t *testing.T) {
+	root := setupWorkspace(t, "p", briefPlan)
+	out := briefFor(t, root, "p", "upload")
+	for _, want := range []string{
+		"quality-gate",  // the sub-agent that owns the command gate
+		"code-reviewer", // dispatched with it, so the two overlap
+		"--run --lang",  // and it records the Tier-3 evidence through csdd
+		"csdd spec validate",
+		"graph analyze --strict",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("feat-exit block should mention %q:\n%s", want, out)
+		}
+	}
+	// The evidence artifact is what the verdict gate reads; a delegated gate that
+	// only reports in prose leaves it stale and the `done` is refused.
+	if !strings.Contains(out, "test-report") {
+		t.Error("the delegated gate must still record test-report.json through csdd")
+	}
+}
+
+// TestBriefDispatchesTheTaskNotTheSpec keeps the implementer dispatch narrow.
+// Seven implementers each re-reading an 800-line spec pays the authoring cost
+// once per sub-agent, in contexts that re-read it on every one of their turns.
+func TestBriefDispatchesTheTaskNotTheSpec(t *testing.T) {
+	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
+	for _, want := range []string{"_Boundary:", "acceptance criteria", "design.md"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the implementer dispatch should name %q as what to hand over:\n%s", want, out)
+		}
+	}
+}
