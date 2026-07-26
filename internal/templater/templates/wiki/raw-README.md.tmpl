@@ -15,3 +15,28 @@ nothing you drop is silently forgotten.
 The graph indexes each file here as an opaque `raw_source` node (path only; the
 content is never parsed). Its purpose in the graph is provenance (`derived_from`
 targets) and the unprocessed-source lint.
+
+## Dropping a repository
+
+Source code is a different kind of drop: a repository is not something to ingest
+page by page, it is something to **read**. Put the checkout here as a directory
+(or a `.zip`/`.tar.gz` you unpack beside itself) and run **`/csdd-codewiki`**. It
+compiles the whole repo into one cited wiki document —
+`docs/raw/<owner>-<repo>.md` — where every claim cites a real file and line
+range, verified by `csdd codewiki lint`. *That* document is the source you then
+ingest with `/csdd-wiki-ingest`.
+
+```
+docs/raw/
+├── widget/            ← the checkout: material, never indexed, never edited
+├── widget.zip         ← the archive it came from: material once unpacked
+└── acme-widget.md     ← the codewiki document: the source that gets ingested
+```
+
+A directory carrying a `.git/` or a dependency manifest (`go.mod`,
+`package.json`, `pyproject.toml`, `Cargo.toml`, …) is recognized as a checkout
+and left out of the graph entirely. Otherwise a 200-file repository would become
+200 `raw_source` nodes and 200 unprocessed-source findings, and the lint that is
+supposed to tell you "you dropped something and forgot it" would be permanently
+red. The obligation is not lost — it moves to the one document derived from the
+checkout. An archive nobody unpacked stays flagged, exactly as it should.

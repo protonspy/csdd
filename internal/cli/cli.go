@@ -70,6 +70,8 @@ func Run(args []string, templates embed.FS) int {
 		return runGraph(rest)
 	case "wiki":
 		return runWiki(rest, templates)
+	case "codewiki":
+		return runCodewiki(rest)
 	case "export":
 		return runExport(rest)
 	case "web", "--web":
@@ -153,6 +155,7 @@ RESOURCES
   mcp      {add,install,presets,list,show,remove,enable,disable,validate}
   graph    {build,query,path,explain,analyze,export}   The knowledge-base index (a structured brain over the workspace).
   wiki     {init,lint}                 The LLM-authored knowledge base under docs/ (scaffold + health lint).
+  codewiki {lint}                      The repo-derived wiki document under docs/raw/ (citation + structure lint).
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
   web                         Launch a read-only web dashboard (live spec progress + file viewer).
   telegram {init,run}         Relay plan-run progress + spec-status changes to a Telegram chat (read-only, outbound-only).
@@ -189,6 +192,8 @@ EXAMPLES
         --command npx --arg -y --arg '@modelcontextprotocol/server-filesystem' --arg .   # .mcp.json
   %[1]s mcp add linear --url https://mcp.linear.app/mcp --type http
   %[1]s mcp validate
+  %[1]s codewiki lint                                        # lint every repo-derived doc in docs/raw/
+  %[1]s codewiki lint docs/raw/acme-widget.md --repo docs/raw/widget   # citations resolve against the checkout
   %[1]s export kiro                                          # .kiro/steering + .kiro/specs
   %[1]s export codex --out ./build                           # AGENTS.md + .codex/config.toml
   %[1]s web                                                  # serve the live dashboard; prints the local URL

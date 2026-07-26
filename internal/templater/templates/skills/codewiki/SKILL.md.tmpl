@@ -1,0 +1,149 @@
+---
+name: codewiki
+description: Use to read a source-code checkout dropped under docs/raw/ and compile it into one cited wiki document — architecture, design, and jargon, every claim citing a real file and line range. Run it when the user drops a repo (not an article) into docs/raw/. The result is a raw source the `wiki` skill then ingests.
+---
+
+# Codewiki — reading a repository into one document
+
+## Goal
+
+Turn a **source checkout** under `docs/raw/<dir>/` into a single, self-contained
+markdown document at `docs/raw/<owner>-<repo>.md` that explains how that system
+is built — its architecture, its layers, its state machines, its jargon — so a
+later session can answer questions about it **without re-reading the code**.
+
+The format is a published interchange shape, not a private one: a document you
+compile here and one exported by an external repo-wiki generator are the same
+artifact, linted by the same `csdd codewiki lint` and ingested by the same
+**wiki** skill.
+
+**Boundary (do not cross):** you produce a **raw source**, not wiki pages. Turning
+it into `docs/wiki/pages/` is the **wiki** skill's Ingest workflow
+(`/csdd-wiki-ingest`) — a separate step, run after this one. And `docs/raw/` is a
+dropzone: **add exactly one new `.md`**, never modify the checkout, never rewrite
+an existing raw file.
+
+## The format contract
+
+`csdd codewiki lint` enforces all of this mechanically. Write to it deliberately,
+not by imitation.
+
+- **Provenance header**, line 1, exactly:
+  `<!-- csdd-codewiki v1 | <owner>/<repo> | src: docs/raw/<dir> | <RFC3339 UTC> | N sections -->`
+  `src:` is what lets the lint resolve your citations without a flag. `N` counts
+  **every** section, subsections included.
+- **`## Structure`** — the tree of numbered titles, before any body. It is what a
+  reader navigates by before paying for a single section.
+- **Sections** delimited by `<<< SECTION: N.M Title [slug] >>>`, in tree order.
+  The slug is the heading lowercased with every non-alphanumeric run collapsed to
+  `-`: `3.1 CLI Layer` → `3-1-cli-layer`. Grep `^<<< SECTION:` lists the document.
+- **Citations** are markdown links with an **empty target**: `[path/file.go:12-40]()`.
+  The empty parens are load-bearing — they are what distinguishes a citation from
+  a mermaid label. Paths are relative to the checkout root. Write this one form:
+  the lint also accepts the dialects external generators emit (`[`path:1-9`]()`,
+  `[[path:1-9]]()`, `[path:34, 505]()`, and a rangeless `[path]()`), but a
+  document you author should be uniform.
+- **`<details><summary>Relevant source files</summary>`** at the top of each major
+  section, listing the files that section was written from as `- [path](path)`.
+- **Every section cites at least one source.** Prose with no citation is an
+  unfalsifiable claim about code, and the lint fails it.
+
+## Execution Workflow
+
+### 1. Survey — buy ground truth cheaply
+
+Before writing anything, establish what the system *is*:
+
+- The **dependency manifest** first (`go.mod`, `package.json`, `pyproject.toml`,
+  `Cargo.toml`). It names the frameworks, and the frameworks tell you what every
+  idiom in the tree means: a TUI framework says the UI is a model-update loop, a
+  CLI framework says `main` is a command tree, an ORM says the schema lives in
+  the models. Read the manifest and half the file layout explains itself.
+- The **entry points**: `main.*`, `cmd/`, `index.*`, `bin/`, the `scripts` block.
+- A **directory census** — which directories hold the domain, and how big each is.
+- The **README** for intent, and the **CI config** for how it is really built.
+
+Do **not** run `csdd graph` here: the graph indexes *this workspace*, not a
+vendored checkout.
+
+### 2. Outline — the Structure tree before any prose
+
+Draft the full tree first and keep it stable; retrofitting sections is how trees
+and bodies drift. A spine that generalizes across codebases:
+
+1. **Overview** — what it is, the problem it solves, the core concepts.
+2. **Installation and Setup** — how it is obtained and run.
+3. **Architecture Overview** — the layers, with one subsection per layer.
+4.–N. **One section per real subsystem** — the domain, not the directory listing.
+   Subsections only where a subsystem has genuine internal structure.
+N+1. **Configuration**, then **Development** (build · release · contributing).
+N+2. **Glossary** — the codebase's own jargon, each term with a code pointer.
+
+Six to twelve top-level sections. Fewer means you flattened something real; more
+means you turned a file listing into a table of contents.
+
+### 3. Author — read, then write, one section at a time
+
+For each section: **read the files it covers in this session**, then write it.
+Never the reverse.
+
+- Open with a paragraph stating what the section covers, and cross-reference
+  siblings by number ("for the daemon, see page 7.2").
+- A **mermaid diagram** for anything with more than two moving parts — call flow,
+  state machine, ownership. Node labels carry **real identifiers** — the type,
+  method, or file path as it is spelled in the tree — never prose restatements.
+- A **table** for every enum, state set, config key, flag, and keybinding. This is
+  the format's highest-value density: it is what makes the document answer
+  questions instead of describing them.
+- **Cite, don't paste.** More than ~15 lines of quoted code means you should have
+  cited a range instead.
+- Close each subsection with `Sources: [path:a-b](), [path:c-d]()`.
+
+For a large repo, delegate one section per sub-agent — but give each one the
+outline and the citation rules, and lint the assembled document as a whole.
+
+### 4. Verify
+
+`csdd codewiki lint docs/raw/<owner>-<repo>.md` — clean, or every remaining
+finding explicitly acknowledged to the human.
+
+### 5. Hand off
+
+Say the document is ready for `/csdd-wiki-ingest`. Do **not** ingest it yourself
+in the same breath — Ingest is a judgment step the human may want to scope.
+
+## Gotchas
+
+- **Copy file paths, never retype them.** This is the single most common defect in
+  generated code wikis, and it is always a plausible-looking near-miss: a
+  camelCase filename cited in snake_case, a name shortened to the thing it
+  "should" be called, a directory gaining or losing a leading dot. Every one of
+  those is a citation to a file that does not exist.
+- **Cite the span you actually read.** `1-200` for a file you sampled is a
+  fabricated range even when the file is long enough to hide it.
+- **Never invent a path to complete a pattern.** If a layer seems to be missing a
+  file, the finding is "the code does not appear to do this" — not a plausible
+  filename.
+- **The checkout is immutable.** No formatting, no `go mod tidy`, no fixes. If it
+  has a `.git/`, leave it.
+- **The header's `N sections` must match reality.** Update it last, after the
+  document is final.
+- **Don't restate the README.** Overview explains what the README cannot: how the
+  parts fit. Link to the README and move on.
+
+## Verification Before Reporting
+
+- `csdd codewiki lint <file>` ran this session and reports **no findings**.
+- Every section carries at least one citation, and every citation names a file and
+  a line range **you opened in this session**.
+- The `## Structure` tree and the `<<< SECTION:` delimiters agree exactly.
+- Nothing under the checkout changed: `git status` on `docs/raw/` shows one new
+  `.md` and nothing else.
+
+## Completion Criteria
+
+- `docs/raw/<owner>-<repo>.md` exists, lints clean, and covers architecture,
+  every major subsystem, configuration, development, and a glossary.
+- The document stands alone: a reader who never opens the checkout can explain how
+  the system is built, and knows exactly where to look to verify any claim.
+- The human has been told it is ready to ingest with `/csdd-wiki-ingest`.

@@ -62,6 +62,7 @@ csdd spec generate my-feature --artifact requirements   # → validate → appro
 | `csdd sandbox init · doctor` | scaffold a default-deny-egress devcontainer and prove its isolation |
 | `csdd graph build · query · path · explain · analyze · export` | the knowledge-base **brain** — a structured index over the whole workspace |
 | `csdd wiki init · lint` | the LLM-authored knowledge base under `docs/` |
+| `csdd codewiki lint` | the repo-derived document under `docs/raw/` — structure, slugs, and every citation resolved against the checkout |
 | `csdd steering · skill · agent · mcp …` | author the governed resources (`create · list · show · delete`, plus `validate`) |
 | `csdd web` | read-only live dashboard — spec progress, task board, file viewer |
 | `/csdd-commit` | Conventional-Commit the reviewed slice, written from the diff + active spec |
@@ -350,6 +351,21 @@ csdd graph export             # a self-contained docs/graph/graph.html visualiza
 
 `csdd wiki init` scaffolds `docs/raw/` (a dropzone the CLI never edits) and `docs/wiki/` (index, log, pages). When a source lands in `docs/raw/`, the **`wiki`** skill's *Ingest* workflow reads it and writes cross-linked pages under `docs/wiki/pages/` with `sources:` provenance. `csdd wiki lint` reports broken wikilinks, orphan pages, index/log desync, and unprocessed sources.
 
+### 🧭 Codewiki — a repository read into one cited document
+
+Source code is a different kind of drop: a repository is not something to ingest page by page, it is something to **read**. Drop the checkout into `docs/raw/<dir>/` (or a `.zip` unpacked beside itself) and run **`/csdd-codewiki`** — the **`codewiki`** skill compiles it into a single cited document, `docs/raw/<owner>-<repo>.md`: a `Structure` tree, `<<< SECTION: >>>`-delimited pages, mermaid for the moving parts, tables for every enum and flag, and a glossary. *That* document is the source you then ingest with `/csdd-wiki-ingest`.
+
+The format is an interchange shape, not a private one — a document you compile locally and one produced by an external repo-wiki generator are the same artifact, linted by the same gate:
+
+```bash
+csdd codewiki lint                       # every repo-derived doc in docs/raw/
+csdd codewiki lint <file> --repo <dir>   # resolve citations against a checkout
+```
+
+`csdd codewiki lint` is the deterministic half of the deal — the LLM writes the prose, the CLI proves the citations. It holds the `Structure` tree and the section delimiters to each other, checks slugs are unique and derived from their headings, fails a section that cites nothing, and resolves **every** `[path:start-end]()` against the checkout: a path that is not in the tree, a range past the end of the file, a citation climbing out of the repo with `..`. Run against externally generated documents it finds exactly that class of defect: a camelCase filename cited in snake_case, a name shortened to what it "should" be called, a 43-line manifest cited through line 60.
+
+A checkout (a directory carrying `.git/` or a dependency manifest) and an archive unpacked beside itself are **material**, not sources: the graph skips them, so a 200-file repo does not become 200 `raw_source` nodes and 200 unprocessed-source findings. The obligation moves to the one document derived from it — an archive nobody unpacked stays flagged.
+
 ### 🧾 Decision records · 📖 glossary · 🧱 tech contract
 
 | Artifact | Location | The rule |
@@ -358,7 +374,7 @@ csdd graph export             # a self-contained docs/graph/graph.html visualiza
 | **Glossary** | `docs/glossary.md` | Each domain concept has one **canonical term** + an `_Avoid_` list of banned synonyms. Slugs and page names are minted from canonical terms; using an avoided term as a whole token is a lint. Renaming a term appends the old name to the successor's `_Avoid_` (a tombstone). |
 | **Tech contract** | `docs/stack.md` | Any technology **not** listed is an **open decision** — propose options and ask the human, never adopt a dependency silently. The **`stack`** skill refines each library against current docs before first use. |
 
-> Skills own the authoring: **`graph`**, **`wiki`**, **`glossary`**, **`stack`** (plus slash commands like `/csdd-graph-query`, `/csdd-wiki-ingest`, `/csdd-stack-refine`). The CLI is the only author of `docs/graph/` and `.csdd/`, and nothing ever edits `docs/raw/`.
+> Skills own the authoring: **`graph`**, **`wiki`**, **`codewiki`**, **`glossary`**, **`stack`** (plus slash commands like `/csdd-graph-query`, `/csdd-wiki-ingest`, `/csdd-codewiki`, `/csdd-stack-refine`). The CLI is the only author of `docs/graph/` and `.csdd/`; nothing ever edits what is already under `docs/raw/` — `codewiki` only ever adds one new document.
 
 ---
 
@@ -392,7 +408,7 @@ csdd is the only sanctioned author of these artifacts, so their structure stays 
 | 🔌 **mcp** | Model Context Protocol servers the agent can connect to. stdio or remote, never both. | `.mcp.json` |
 | 📚 **knowledge base** | Graph, wiki, decision records, glossary, tech contract. | `docs/` |
 
-**Verbs per resource.** Common base: `create/init · list · show · delete`. `spec` adds `generate · approve · validate · status · test-report`; `plan` adds `validate · approve · status · next · brief · generate · run`; `mcp` uses `add · install · presets · remove · enable · disable · validate`; `skill` adds `add-reference/script/asset · validate`; `graph` and `wiki` are CLI-only builders/linters.
+**Verbs per resource.** Common base: `create/init · list · show · delete`. `spec` adds `generate · approve · validate · status · test-report`; `plan` adds `validate · approve · status · next · brief · generate · run`; `mcp` uses `add · install · presets · remove · enable · disable · validate`; `skill` adds `add-reference/script/asset · validate`; `graph`, `wiki`, and `codewiki` are CLI-only builders/linters.
 
 ---
 
@@ -430,6 +446,7 @@ So nothing is silently overwritten: any file you customized is preserved as a nu
 | **plan** | Feats table well-formed · `Depends` resolve with no cycles · every `Refs` token (`[[wiki]]` · `stack:` · `adr:`) resolves · ≥1 quality gate · no avoided glossary terms |
 | **graph · analyze** | Traceability gaps + tech lints (`undeclared`/`phantom`/`unrefined`) + wiki lints · `--strict` exits non-zero |
 | **wiki · lint** | Broken wikilinks · orphan pages · index/log desync · unprocessed `docs/raw/` sources |
+| **codewiki · lint** | Provenance header · `Structure` ↔ sections in sync · unique, heading-derived slugs · every section cites something · every `[path:start-end]()` resolves in the checkout |
 | **skill · mcp · steering** | `SKILL.md` ≤ 500 lines / ~5k tokens, refs cited · mcp: exactly 1 transport (stdio **or** url) · steering: valid `inclusion`, fileMatch has a pattern |
 
 **Exit codes:** `0` ok · `1` usage error · `2` validation failure. Scriptable in CI.

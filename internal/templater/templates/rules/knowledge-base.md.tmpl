@@ -11,15 +11,18 @@ re-derive what it already holds.
   relationships, not from re-reading files.
 - **The wiki** (`docs/wiki/`, authored via the `wiki` skill from immutable sources
   in `docs/raw/`) is the prose knowledge base. **Read `docs/wiki/index.md`** before
-  searching the docs.
+  searching the docs. A *source checkout* dropped in `docs/raw/` is read by the
+  `codewiki` skill into one cited document first — a repository is not ingested
+  page by page.
 
 Discipline:
 
 - **Rebuild after you change** specs, tasks, `.claude/`, `docs/`, or `.go` files:
   `csdd graph build` (byte-stable; commit the regenerated `graph.json.gz` with the
   change).
-- **Gate before review/commit**: `csdd graph analyze --strict` (SDD + tech lints)
-  and `csdd wiki lint` (wiki health) must be clean.
+- **Gate before review/commit**: `csdd graph analyze --strict` (SDD + tech lints),
+  `csdd wiki lint` (wiki health), and — when `docs/raw/` holds repo-derived
+  documents — `csdd codewiki lint` (citations resolve) must be clean.
 - **The CLI is the only author of `docs/graph/` and `.csdd/`.** Never hand-edit
   them; never modify `docs/raw/`.
 - A new dependency or technology is an **open decision** — use the `stack` skill:

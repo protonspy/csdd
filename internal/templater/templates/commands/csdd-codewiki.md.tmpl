@@ -1,0 +1,29 @@
+---
+description: Read a source checkout under docs/raw/ and compile it into one cited wiki document — architecture, subsystems, and glossary, every claim citing a real file and line range.
+argument-hint: [docs/raw/<checkout>/ — the repo to read]
+allowed-tools: Read, Write, Glob, Grep, Bash(csdd codewiki lint:*), Bash(git -C:*)
+---
+
+## Task
+
+Use the **codewiki** skill on the checkout at `$ARGUMENTS` (or the most recent
+repository the user dropped into `docs/raw/`):
+
+1. **Survey** it — dependency manifest, entry points, directory census, README, CI
+   — before writing a word. Do not run `csdd graph`; it indexes this workspace,
+   not the checkout.
+2. **Outline** the full `## Structure` tree first: 6–12 top-level sections
+   (Overview · Setup · Architecture + layers · one per subsystem · Configuration ·
+   Development · Glossary), then keep it stable.
+3. **Author** `docs/raw/<owner>-<repo>.md` section by section, reading the files
+   each section covers **before** writing it. Every section carries a
+   `<details>` source list, at least one `[path:start-end]()` citation, mermaid
+   for anything with more than two moving parts, and tables for enums, states,
+   config keys, and flags.
+4. **Verify**: `csdd codewiki lint docs/raw/<owner>-<repo>.md` must be clean.
+5. **Hand off** — report that it is ready for `/csdd-wiki-ingest`; do not ingest it.
+
+Never modify the checkout, and never rewrite an existing file under `docs/raw/` —
+this command adds exactly one new document. Copy file paths from the tree rather
+than retyping them: a citation to a file that does not exist is the defect this
+format exists to prevent.

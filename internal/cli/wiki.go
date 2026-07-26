@@ -117,9 +117,15 @@ func scaffoldWiki(root string, force bool, templates embed.FS) (int, error) {
 	return created, nil
 }
 
-// wikiSchemaFiles returns the wiki skill (.claude/skills/wiki/*) and the
-// knowledge-base steering rule (.claude/rules/knowledge-base.md), keyed by
+// wikiSchemaFiles returns the wiki skills (.claude/skills/{wiki,codewiki}/*) and
+// the knowledge-base steering rule (.claude/rules/knowledge-base.md), keyed by
 // workspace-relative destination — the "schema doc" R9.2 installs.
+//
+// codewiki ships beside wiki because it is the dropzone's other half: wiki
+// ingests what you drop, codewiki is how a *source checkout* — a whole
+// repository, not an article — becomes something droppable in the first place.
+// Scaffolding one without the other leaves the docs/raw/ README describing a
+// workflow the workspace cannot run.
 func wikiSchemaFiles(templates embed.FS) (map[string]string, error) {
 	out := map[string]string{}
 	skills, err := templater.SkillFiles(templates)
@@ -127,7 +133,7 @@ func wikiSchemaFiles(templates embed.FS) (map[string]string, error) {
 		return nil, err
 	}
 	for rel, content := range skills {
-		if strings.HasPrefix(rel, "wiki/") {
+		if strings.HasPrefix(rel, "wiki/") || strings.HasPrefix(rel, "codewiki/") {
 			out[".claude/skills/"+rel] = content
 		}
 	}

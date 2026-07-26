@@ -91,6 +91,59 @@ var walkSkipDirs = map[string]bool{
 	"htmlcov":       true,
 }
 
+// checkoutMarkers are the top-level files that identify a directory as a source
+// checkout rather than a set of dropped notes: a VCS directory, or the manifest
+// that names the project's dependencies.
+var checkoutMarkers = []string{
+	".git", "go.mod", "package.json", "pyproject.toml", "setup.py",
+	"Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts",
+	"Gemfile", "composer.json", "mix.exs", "Package.swift",
+}
+
+// archiveExts are the source-archive extensions a checkout arrives in.
+var archiveExts = []string{".zip", ".tar.gz", ".tgz", ".tar", ".tar.bz2", ".tar.xz"}
+
+// isSourceCheckout reports whether dir is a source checkout dropped under
+// docs/raw/ — the whole repository the `codewiki` skill reads.
+//
+// A checkout is *material*, not a source to ingest, and the distinction is what
+// keeps the dropzone's central promise workable. Every file under docs/raw/
+// otherwise becomes its own raw_source node that `csdd wiki lint` flags until
+// some wiki page derives from it; a 200-file repository therefore turns a gate
+// that is supposed to say "you dropped something and forgot it" into 200 lines
+// of noise, permanently red. What *is* ingestible is the codewiki document
+// compiled from the checkout — one raw source, one provenance edge, one finding
+// until it is processed. So the repository itself is skipped, and nothing is
+// silently lost: the document derived from it carries the whole obligation.
+func isSourceCheckout(rel, abs string) bool {
+	if !isRawSourcePath(rel) {
+		return false
+	}
+	for _, marker := range checkoutMarkers {
+		if _, err := os.Stat(filepath.Join(abs, marker)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isExtractedArchive reports whether a file under docs/raw/ is a source archive
+// that has already been unpacked beside it (widget.zip next to widget/). Only
+// then is it material: an archive nobody extracted is still an unprocessed
+// source, and staying flagged is exactly what should happen to it.
+func isExtractedArchive(abs string) bool {
+	lower := strings.ToLower(filepath.Base(abs))
+	for _, ext := range archiveExts {
+		if !strings.HasSuffix(lower, ext) {
+			continue
+		}
+		base := filepath.Base(abs)[:len(lower)-len(ext)]
+		info, err := os.Stat(filepath.Join(filepath.Dir(abs), base))
+		return err == nil && info.IsDir()
+	}
+	return false
+}
+
 // collectSources walks the workspace once and returns every file some extractor
 // claims, read and root-relative, in deterministic (lexical) order. Files under
 // docs/raw/ are returned with empty Content — they are indexed opaquely, so
@@ -254,6 +307,9 @@ func collectSources(root string, extractors []Extractor) ([]Source, []string, er
 			if p != root && ignores.skips(rel) {
 				return filepath.SkipDir
 			}
+			if isSourceCheckout(rel, p) {
+				return filepath.SkipDir
+			}
 			// WalkDir hands a directory to us before its children, so loading the
 			// rules here guarantees they are in place for everything below.
 			ignores.load(root, rel)
@@ -264,6 +320,9 @@ func collectSources(root string, extractors []Extractor) ([]Source, []string, er
 			return nil
 		}
 		if isRawSourcePath(rel) {
+			if isExtractedArchive(p) {
+				return nil // material the checkout beside it was unpacked from
+			}
 			// Opaque: path only, content never parsed.
 			out = append(out, Source{Path: rel})
 			return nil
