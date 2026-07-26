@@ -417,3 +417,114 @@ func TestInitWritesManifest(t *testing.T) {
 		}
 	}
 }
+
+// retireInManifest records rel in the workspace manifest under the given baseline
+// hash, simulating an artifact this csdd version used to ship and no longer does.
+func retireInManifest(t *testing.T, root, rel, baseline string) {
+	t.Helper()
+	m, _, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Files[rel] = baseline
+	if err := saveWorkspaceManifest(root, m, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUpdatePrunesRetiredArtifacts covers the half of `update` that did not exist:
+// it only ever added. Retiring a skill or agent upstream left every existing
+// workspace carrying it forever — the file on disk, the model still seeing it in
+// the skills listing, and the manifest quietly dropping the entry that described
+// it, which is the one state that makes the record useless.
+func TestUpdatePrunesRetiredArtifacts(t *testing.T) {
+	dir := freshWorkspace(t)
+
+	// Pristine: csdd wrote it, csdd owns it, nobody touched it.
+	pristine := filepath.Join(dir, ".claude", "skills", "gone-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(pristine), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const pristineBody = "shipped body\n"
+	if err := os.WriteFile(pristine, []byte(pristineBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	retireInManifest(t, dir, ".claude/skills/gone-skill/SKILL.md", manifest.Hash(pristineBody))
+
+	// Edited: the user made it theirs. The recorded baseline is what csdd wrote,
+	// which is NOT what is on disk.
+	edited := filepath.Join(dir, ".claude", "agents", "gone-agent.md")
+	if err := os.WriteFile(edited, []byte("my own version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	retireInManifest(t, dir, ".claude/agents/gone-agent.md", manifest.Hash("what csdd shipped\n"))
+
+	if code, out, errOut := run(t, "update", "--root", dir); code != 0 {
+		t.Fatalf("update failed (code=%d): %s%s", code, out, errOut)
+	}
+
+	if _, err := os.Stat(pristine); !os.IsNotExist(err) {
+		t.Error("a retired artifact the user never edited should be removed")
+	}
+	// The skill's directory goes too: deleting SKILL.md and leaving the folder
+	// still shows the skill to anyone listing the tree.
+	if _, err := os.Stat(filepath.Dir(pristine)); !os.IsNotExist(err) {
+		t.Error("the emptied skill directory should be removed with its file")
+	}
+	if _, err := os.Stat(edited); err != nil {
+		t.Error("a retired artifact the user edited is theirs now and must be kept")
+	}
+
+	m, _, err := loadWorkspaceManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{".claude/skills/gone-skill/SKILL.md", ".claude/agents/gone-agent.md"} {
+		if _, ok := m.Files[rel]; ok {
+			t.Errorf("manifest should no longer record the retired %s", rel)
+		}
+	}
+}
+
+// TestUpdateDryRunDoesNotPrune keeps --dry-run honest. A preview that deletes is
+// worse than no preview: the user runs it precisely to decide whether to proceed.
+func TestUpdateDryRunDoesNotPrune(t *testing.T) {
+	dir := freshWorkspace(t)
+	gone := filepath.Join(dir, ".claude", "commands", "gone-command.md")
+	const body = "shipped body\n"
+	if err := os.WriteFile(gone, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	retireInManifest(t, dir, ".claude/commands/gone-command.md", manifest.Hash(body))
+
+	code, out, _ := run(t, "update", "--root", dir, "--dry-run")
+	if code != 0 {
+		t.Fatalf("dry-run failed: %d", code)
+	}
+	if !strings.Contains(out, "gone-command.md") {
+		t.Errorf("dry-run should report the pending removal:\n%s", out)
+	}
+	if _, err := os.Stat(gone); err != nil {
+		t.Error("--dry-run must not delete anything")
+	}
+}
+
+// TestUpdateLeavesUnmanagedFilesAlone is the blast-radius guard. Pruning reads the
+// manifest, so a file csdd never wrote — a custom skill, a hand-made agent — is
+// invisible to it and must stay that way.
+func TestUpdateLeavesUnmanagedFilesAlone(t *testing.T) {
+	dir := freshWorkspace(t)
+	custom := filepath.Join(dir, ".claude", "skills", "my-own", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(custom), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(custom, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := run(t, "update", "--root", dir); code != 0 {
+		t.Fatalf("update failed: %s", errOut)
+	}
+	if _, err := os.Stat(custom); err != nil {
+		t.Error("a skill csdd never shipped is not csdd's to remove")
+	}
+}
