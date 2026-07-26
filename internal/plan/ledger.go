@@ -116,6 +116,11 @@ const (
 	// itself failed. It is recorded so the row is not mistaken for a crash, and
 	// deliberately does NOT count as an attempt at the feat (R1.2).
 	SessionInfra = "infra"
+	// SessionBlocked settles a `started` row whose session ran but found itself
+	// waiting on another feat. Like SessionInfra it does not count as an attempt:
+	// the feat was never allowed to try, so charging it would spend a budget it
+	// never used (R6.3).
+	SessionBlocked = "blocked"
 )
 
 // SessionRecord is one session attempt: what it was working, how it ended, and

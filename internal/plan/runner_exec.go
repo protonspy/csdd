@@ -63,9 +63,13 @@ type sessionEnv struct {
 }
 
 // verdictSchema is the JSON schema the session must satisfy — the runner's contract
-// with the model (§5.6). The loop understands exactly two intents: done|continue.
+// with the model (§5.6). The loop understands three intents: done|continue|blocked.
+// `blocked_on` is only meaningful alongside "blocked", and the schema does not try
+// to express that conditional — the runner validates it against the plan, which is
+// the only place the answer actually lives.
 const verdictSchema = `{"type":"object","required":["status"],` +
-	`"properties":{"status":{"enum":["done","continue"]},"summary":{"type":"string"}}}`
+	`"properties":{"status":{"enum":["done","continue","blocked"]},"summary":{"type":"string"},` +
+	`"blocked_on":{"type":"array","items":{"type":"string"}}}}`
 
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
@@ -370,8 +374,17 @@ func normalizeVerdict(v Verdict) (Verdict, error) {
 	switch v.Status {
 	case VerdictDone, VerdictContinue:
 		return v, nil
+	case VerdictBlocked:
+		out := v.BlockedOn[:0:0]
+		for _, dep := range v.BlockedOn {
+			if dep = strings.TrimSpace(dep); dep != "" {
+				out = append(out, dep)
+			}
+		}
+		v.BlockedOn = out
+		return v, nil
 	}
-	return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|continue)", v.Status)
+	return Verdict{}, fmt.Errorf("invalid verdict status %q (want done|continue|blocked)", v.Status)
 }
 
 // stdinConfirm prompts on stderr and reads one line from stdin; only an explicit

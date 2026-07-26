@@ -85,6 +85,15 @@ func restoreRunState(root, slug string, featAttempts int, ledger *Ledger) *runSt
 			delete(open, k)
 			st.undoAttempt(r.Feat)
 			continue
+		case SessionBlocked:
+			// The session ran but was waiting on a peer, which costs no attempt
+			// either. Parked-ness itself is NOT restored here: it falls out of the
+			// discovered-deps sidecar, since a feat whose dependency is still
+			// undelivered simply never becomes ready.
+			delete(open, k)
+			st.undoAttempt(r.Feat)
+			st.handoffs[r.Feat] = r.Detail
+			continue
 		}
 
 		delete(open, k)

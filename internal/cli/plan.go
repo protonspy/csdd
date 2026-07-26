@@ -57,7 +57,7 @@ func planRun(args []string) int {
 	var root, model, effort string
 	var autonomous, assumeYes, noTelegram bool
 	var sessionBudget float64
-	var maxIterations, stall, featAttempts, maxRetries, maxRepairs int
+	var maxIterations, stall, featAttempts, maxRetries, maxRepairs, squadLimit int
 	var sessionIdle time.Duration
 	addRoot(fs, &root)
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
@@ -70,6 +70,7 @@ func planRun(args []string) int {
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
 	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
 	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 8). Bounds a feat whose `done` the verdict gate keeps refusing.")
+	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once, each on its own feat (1..6, default 1). Feats only run together when the plan's Depends graph allows it AND both are marked (P). Concurrency is not implemented yet: any value currently behaves as 1.")
 	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
 	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
 	positionals, err := parseFlags(fs, args)
@@ -83,6 +84,17 @@ func planRun(args []string) int {
 	if err := validateEffort(effort); err != nil {
 		render.Err(err.Error())
 		return 1
+	}
+	// 0 means "unset" so the runner's default applies; anything else must land in
+	// 1..6. The ceiling is the widest topological wave a real plan admitted — past
+	// it a plan cannot use the concurrency, and the shared Claude account limit is
+	// consumed that much faster for nothing.
+	if squadLimit < 0 || squadLimit > planSquadLimitMax {
+		render.Err(fmt.Sprintf("--squad-limit must be between 1 and %d (got %d)", planSquadLimitMax, squadLimit))
+		return 1
+	}
+	if squadLimit > 1 {
+		render.Warn(fmt.Sprintf("--squad-limit %d accepted, but concurrency is not implemented yet — this run executes one session at a time", squadLimit))
 	}
 	if autonomous {
 		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
@@ -119,6 +131,7 @@ func planRun(args []string) int {
 		Stall:         stall,
 		FeatAttempts:  featAttempts,
 		SessionIdle:   sessionIdle,
+		SquadLimit:    squadLimit,
 		Out:           os.Stdout,
 	})
 	if err != nil {
@@ -129,6 +142,13 @@ func planRun(args []string) int {
 	// already printed by the runner.
 	return sum.Outcome
 }
+
+// planSquadLimitMax is the hard ceiling on --squad-limit. It is not arbitrary: the
+// widest topological wave the evidence plan (`agency-telegram-platform`, 31 feats)
+// admits is 6, so beyond it a plan's own Depends graph cannot supply the
+// parallelism, and the only effect of a larger number would be to burn the shared
+// Claude account limit faster.
+const planSquadLimitMax = 6
 
 // startPlanTelegram auto-starts the read-only Telegram notifier for the duration
 // of a plan run when a bot is configured (.csdd/bot.json). The notifier polls the

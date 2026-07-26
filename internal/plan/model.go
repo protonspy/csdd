@@ -139,10 +139,24 @@ type PlanJSON struct {
 type Verdict struct {
 	Status  string `json:"status"`
 	Summary string `json:"summary"`
+	// BlockedOn names the feats this one turned out to need, and is meaningful only
+	// with status "blocked". It is validated against the plan before it is believed
+	// (see gateBlocked) — a slug that is unknown or already delivered cannot block
+	// anything, so the verdict is refused and demoted to `continue`.
+	BlockedOn []string `json:"blocked_on,omitempty"`
 }
 
-// Verdict status values — the only two the loop understands.
+// Verdict status values — the three the loop understands.
 const (
 	VerdictDone     = "done"
 	VerdictContinue = "continue"
+	// VerdictBlocked says the feat cannot proceed until another feat is delivered.
+	//
+	// It exists because `continue` is the wrong answer to that situation and was the
+	// only one available: `continue` means "hand me back and I will keep going", so
+	// it resets the stall guard AND spends one of the feat's bounded attempts on
+	// work that cannot possibly progress. A feat waiting on a peer would burn its
+	// whole budget and be surfaced as unable to converge, which is the same false
+	// diagnosis the spawn-failure fix removed from the other end.
+	VerdictBlocked = "blocked"
 )
