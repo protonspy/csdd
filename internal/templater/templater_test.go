@@ -143,38 +143,42 @@ func TestWorkflowTemplateFiles(t *testing.T) {
 	}
 }
 
-// TestShippedWorkflowArtifactsPresent guards the two BMAD-style workflows that
-// `csdd init` scaffolds: the upstream wf:product/discovery and downstream
-// wf:development pair. Both are shipped as plain (static) skill/agent trees, so
-// a missing file here means `csdd init` would silently stop shipping a phase.
-func TestShippedWorkflowArtifactsPresent(t *testing.T) {
+// TestShippedArtifactsPresent guards the artifact set `csdd init` scaffolds. A
+// name missing here means init silently stopped shipping it.
+//
+// The BMAD-style wf:product/discovery and wf:development trees this test used to
+// cover were retired: they were a second methodology running beside csdd's own
+// requirements -> design -> tasks, producing artifacts (architecture.md,
+// sprint-status.yaml, retrospective.md) that nothing downstream read.
+func TestShippedArtifactsPresent(t *testing.T) {
 	skills, err := SkillFiles(FS)
 	if err != nil {
 		t.Fatal(err)
 	}
 	requiredSkills := []string{
-		// upstream — wf:product/discovery
-		"discovery-product-brief/SKILL.md",
-		"discovery-research/SKILL.md",
-		"discovery-prfaq/SKILL.md",
-		"discovery-prd/SKILL.md",
-		"discovery-prd/assets/prd-template.md",
-		"discovery-ux-spec/SKILL.md",
-		"discovery-handoff/SKILL.md",
-		// downstream — wf:development
-		"dev-architecture/SKILL.md",
-		"dev-architecture/assets/adr-template.md",
-		"dev-epics-stories/SKILL.md",
-		"dev-readiness-check/SKILL.md",
-		"dev-sprint/SKILL.md",
-		"dev-sprint/assets/sprint-status-template.yaml",
-		"dev-retrospective/SKILL.md",
-		// frontend QA — Playwright e2e (shipped baseline)
+		// the per-task discipline, one skill per development_flow
+		"tdd-cycle/SKILL.md",
+		"unit-cycle/SKILL.md",
+		"verify-change/SKILL.md",
+		"safe-refactor/SKILL.md",
+		"pr-review/SKILL.md",
+		// the autonomous loop and its on-ramps
+		"plan-dev/SKILL.md",
+		"prd/SKILL.md",
+		"quick-prd/SKILL.md",
+		"quick-prd/assets/prd-template.md",
+		"spec-brainstorm/SKILL.md",
+		// the knowledge base
+		"graph/SKILL.md",
+		"wiki/SKILL.md",
+		"glossary/SKILL.md",
+		"stack/SKILL.md",
+		// frontend QA — Playwright e2e (the e2e arm of the tdd-e2e flow)
 		"frontend-e2e-qa/SKILL.md",
 	}
 	for _, name := range requiredSkills {
 		if _, ok := skills[name]; !ok {
-			t.Errorf("shipped workflow skills missing %q", name)
+			t.Errorf("shipped skills missing %q", name)
 		}
 	}
 
@@ -182,9 +186,23 @@ func TestShippedWorkflowArtifactsPresent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"wf-product-discovery.md", "wf-development.md"} {
+	for _, name := range []string{
+		"implementer.md", "code-reviewer.md", "security-reviewer.md", "quality-gate.md",
+	} {
 		if _, ok := agents[name]; !ok {
-			t.Errorf("shipped workflow agents missing %q", name)
+			t.Errorf("shipped agents missing %q", name)
+		}
+	}
+	// The retired cluster must stay retired: shipping one again without its
+	// references is how a half-removed methodology comes back.
+	for _, gone := range []string{"dev-architecture/SKILL.md", "discovery-prd/SKILL.md"} {
+		if _, ok := skills[gone]; ok {
+			t.Errorf("retired skill %q is shipping again", gone)
+		}
+	}
+	for _, gone := range []string{"wf-development.md", "wf-product-discovery.md", "test-designer.md"} {
+		if _, ok := agents[gone]; ok {
+			t.Errorf("retired agent %q is shipping again", gone)
 		}
 	}
 }
@@ -254,12 +272,9 @@ func TestImplementerAgentShipped(t *testing.T) {
 	if !ok {
 		t.Fatal("AgentFiles is missing implementer.md")
 	}
-	for _, prior := range []string{
-		"code-reviewer.md", "security-reviewer.md", "test-designer.md",
-		"wf-development.md", "wf-product-discovery.md",
-	} {
-		if _, ok := agents[prior]; !ok {
-			t.Errorf("adding implementer dropped prior agent %q", prior)
+	for _, sibling := range []string{"code-reviewer.md", "security-reviewer.md", "quality-gate.md"} {
+		if _, ok := agents[sibling]; !ok {
+			t.Errorf("implementer ships without its sibling agent %q", sibling)
 		}
 	}
 	for _, want := range []string{"name: implementer", "tools: Read, Grep, Glob, Edit, Write, Bash"} {

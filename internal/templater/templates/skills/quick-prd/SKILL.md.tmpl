@@ -1,6 +1,6 @@
 ---
 name: quick-prd
-description: Turn a rough feature idea into a lightweight, decision-ready PRD in one pass — batched multiple-choice clarifying questions, then a single docs/product/prd-<feature>.md with user stories and testable, EARS-shaped functional requirements. A fast on-ramp for one feature; use discovery-* for full product discovery, or spec-brainstorm to jump straight to a spec.
+description: Turn a rough feature idea into a lightweight, decision-ready PRD in one pass — batched multiple-choice clarifying questions, then a single docs/product/prd-<feature>.md with user stories and testable, EARS-shaped functional requirements. A fast on-ramp for one feature; use the `prd` skill for a whole initiative, or spec-brainstorm to jump straight to a spec.
 ---
 
 # Quick PRD
@@ -10,9 +10,9 @@ description: Turn a rough feature idea into a lightweight, decision-ready PRD in
 Turn a one-line feature idea into a short, decision-ready PRD — problem, user
 stories with verifiable acceptance criteria, numbered functional requirements,
 and explicit non-goals — written from **recorded answers**, not guesses. This is
-the fast, single-feature on-ramp: lighter than the full `discovery-*` workflow,
+the fast, single-feature on-ramp: lighter than the `prd` skill's whole-initiative pass,
 and it stops at a readable PRD (`docs/product/prd-<feature>.md`) that
-`spec-brainstorm` or `discovery-handoff` then turns into a gated csdd spec.
+`spec-brainstorm` then turns it into a gated csdd spec.
 
 ## The Iron Law
 
@@ -36,9 +36,8 @@ answers — not a PRD handed over cold.
 
 - **Use** for a single feature you can roughly describe, when you want a crisp PRD
   artifact (stories, non-goals, metrics) before speccing.
-- **Not** for product-level discovery (vision, market, PRFAQ, UX) — that is the
-  `discovery-*` skills feeding `discovery-handoff`, whose PRD is the canonical
-  `docs/product/prd.md`.
+- **Not** for initiative-level product work (vision, several features, a plan) —
+  that is the `prd` skill, whose output is a `docs/plans/<slug>/` plan.
 - **Not** when you want to skip the PRD and go straight to an EARS
   `requirements.md` — use `spec-brainstorm`.
 
@@ -102,9 +101,9 @@ clobber the canonical `docs/product/prd.md`.
 
 ### 5) Self-check, then hand off
 Walk the **Completion Criteria** checklist. Then point the user to the next step:
-`spec-brainstorm` (idea → EARS requirements for this feature) or
-`discovery-handoff` (land it into steering + a spec). Do not generate the spec,
-approve anything, or write code.
+`spec-brainstorm` (idea → EARS requirements for this feature), which turns it
+into a gated csdd spec. Do not generate the spec, approve anything, or write
+code.
 
 ## PRD Structure
 
@@ -118,7 +117,7 @@ implementing agent.
   story for one focused work session. For UI-only stories, add a "verify in the
   running app (see the `verify` / `frontend-e2e-qa` skill)" criterion.
 - **Functional Requirements** — numbered `FR-N: WHEN <trigger> the system SHALL
-  <observable behavior>` (EARS-shaped, so `discovery-handoff` can translate them
+  <observable behavior>` (EARS-shaped, so the spec's requirements.md can take them
   1:1). Explicit and unambiguous.
 - **Non-Goals** — what this feature explicitly will not do. Mandatory and non-empty.
 - **Design Considerations** *(optional)* — UI/UX notes, component reuse, mockup links.
@@ -135,8 +134,8 @@ before deleting" is acceptable; "works correctly" is not.
 
 - This skill stops at the PRD. `requirements.md`, design, and tasks are separate
   human gates — do not pull them forward.
-- It is feature-level. If the user is still deciding *what the product is*, route
-  to `discovery-*` instead.
+- It is feature-level. If the user is still deciding *what the initiative is*,
+  route to the `prd` skill instead.
 - Keep FRs behavioral and EARS-shaped ("WHEN X the system SHALL Y") — "be fast" is
   a success metric, not an FR.
 - Write to `docs/product/prd-<feature>.md`, not `docs/product/prd.md` — the latter
@@ -160,7 +159,7 @@ before deleting" is acceptable; "works correctly" is not.
 - [ ] Every functional requirement is numbered and EARS-shaped; every user story has verifiable acceptance criteria.
 - [ ] Non-Goals, Success Metrics, and Open Questions (with every `[ASSUMPTION]`) are present.
 - [ ] Every gate-positive decision (triple gate) was recorded as `docs/adr/NNNN-<slug>.md` and cited from the PRD, so `/prd` inherits it as a recorded decision.
-- [ ] The user is pointed to `spec-brainstorm` or `discovery-handoff` as next — no spec/design/tasks/code started here.
+- [ ] The user is pointed to `spec-brainstorm` as next — no spec/design/tasks/code started here.
 
 ## References
 

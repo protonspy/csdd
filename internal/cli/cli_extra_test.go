@@ -740,7 +740,6 @@ func TestInitScaffoldsClaudeCodeArtifacts(t *testing.T) {
 	dir := freshWorkspace(t)
 	for _, f := range []string{
 		".claude/agents/code-reviewer.md",
-		".claude/agents/test-designer.md",
 		".claude/agents/security-reviewer.md",
 		".claude/agents/quality-gate.md",
 		".claude/skills/tdd-cycle/SKILL.md",
