@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/protonspy/csdd/internal/paths"
 )
@@ -102,7 +104,14 @@ func restoreRunState(root, slug string, featAttempts int, ledger *Ledger) *runSt
 
 	// A still-open attempt is a crash. It counts — a feat that reliably kills its
 	// host must still exhaust its bound, or the loop retries it forever.
-	st.crashed = len(open)
+	seen := map[string]bool{}
+	for k := range open {
+		if !seen[k.feat] {
+			seen[k.feat] = true
+			st.crashed = append(st.crashed, k.feat)
+		}
+	}
+	sort.Strings(st.crashed) // map iteration is random; the journal must not be
 
 	for feat := range st.attempts {
 		if rel := failureLogRel(slug, feat); fileExists(filepath.Join(root, rel)) {
@@ -133,8 +142,8 @@ func (s *runState) resumeSummary() string {
 	if len(s.blocked) > 0 {
 		msg += fmt.Sprintf(", %d already blocked", len(s.blocked))
 	}
-	if s.crashed > 0 {
-		msg += fmt.Sprintf(", %d attempt(s) died mid-session and still count", s.crashed)
+	if len(s.crashed) > 0 {
+		msg += fmt.Sprintf("; died mid-session and still counting: %s", strings.Join(s.crashed, ", "))
 	}
 	return msg
 }

@@ -191,8 +191,8 @@ func TestRestoreRunStateRebuildsAttemptsAndHandoff(t *testing.T) {
 	if _, ok := st.attempts["b"]; ok {
 		t.Errorf("a delivered feat should be cleared, got attempts=%d", st.attempts["b"])
 	}
-	if st.crashed != 0 {
-		t.Errorf("every attempt settled, so nothing crashed, got %d", st.crashed)
+	if len(st.crashed) != 0 {
+		t.Errorf("every attempt settled, so nothing crashed, got %v", st.crashed)
 	}
 }
 
@@ -212,8 +212,8 @@ func TestRestoreRunStateCountsCrashedAttempt(t *testing.T) {
 	if st.attempts["a"] != 2 {
 		t.Errorf("the crashed attempt still counts, want 2 got %d", st.attempts["a"])
 	}
-	if st.crashed != 1 {
-		t.Errorf("want 1 crashed attempt, got %d", st.crashed)
+	if len(st.crashed) != 1 || st.crashed[0] != "a" {
+		t.Errorf("the crash should be attributed to feat a, got %v", st.crashed)
 	}
 	if s := st.resumeSummary(); !strings.Contains(s, "died mid-session") {
 		t.Errorf("the resume summary should surface the crash: %q", s)
@@ -233,8 +233,8 @@ func TestRestoreRunStateInfraRowGivesTheAttemptBack(t *testing.T) {
 	if st.attempts["a"] != 0 {
 		t.Errorf("a spawn failure is not an attempt, got %d", st.attempts["a"])
 	}
-	if st.crashed != 0 {
-		t.Errorf("an infra row settles its started row, got crashed=%d", st.crashed)
+	if len(st.crashed) != 0 {
+		t.Errorf("an infra row settles its started row, got crashed=%v", st.crashed)
 	}
 }
 
@@ -341,6 +341,12 @@ func TestRunResumesAfterInterruption(t *testing.T) {
 	if !strings.Contains(out.String(), "resumed:") {
 		t.Errorf("a resumed run should say so: %s", out.String())
 	}
+	// And durably, not only on a terminal nobody was watching: the journal is the
+	// half of the record that survives the run.
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	if !strings.Contains(string(logData), "| resumed") {
+		t.Errorf("the resume should be journaled: %s", logData)
+	}
 	if len(briefs) == 0 {
 		t.Fatal("the resumed run spawned no session")
 	}
@@ -372,6 +378,32 @@ func TestRunResumeCarriesAttemptBudget(t *testing.T) {
 	sum := spend(2)
 	if len(sum.Blocked) == 0 {
 		t.Errorf("the attempt budget must survive the interruption: 2+2 attempts against a bound of 4 is blocked, got %+v", sum)
+	}
+}
+
+// TestRunJournalsCrashedAttemptByName covers R2.2's durable half. A crashed
+// attempt is counted whether or not anyone is watching stdout, so the feat it
+// belongs to has to reach log.md — "something crashed" is not actionable, and a
+// budget partly spent with no recorded reason is exactly the confusion the journal
+// exists to prevent.
+func TestRunJournalsCrashedAttemptByName(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	// An attempt that opened and never settled: the host died mid-session.
+	writeRecords(t, root, "p", rec("a", 1, 1, SessionStarted, ""))
+
+	h := baseHooks(t, root)
+	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+		deliverSpec(t, root, feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
+	}
+	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
+	got := string(logData)
+	if !strings.Contains(got, "died mid-session and still counting: a") {
+		t.Errorf("the crashed feat should be named in the journal: %s", got)
 	}
 }
 
