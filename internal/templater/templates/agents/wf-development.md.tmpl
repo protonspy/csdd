@@ -29,7 +29,9 @@ with no gate stops — exactly what this workflow forbids.
 This workflow stands on what csdd already ships:
 
 - **Spec gates:** `npx -y @protonspy/csdd spec generate|validate|approve` for design and tasks.
-- **Implementation:** the `tdd-cycle` skill — one red→green→refactor per task.
+- **Implementation:** the cycle skill the spec's `development_flow` declares —
+  `tdd-cycle` (red→green→refactor) under `tdd`/`tdd-e2e`, `unit-cycle`
+  (implement→cover→gate) under `unit` — one task at a time.
 - **Verification:** the `verify-change` skill for the evidence block.
 - **Review:** the `test-designer` sub-agent for test-gap analysis, the
   `code-reviewer` and `security-reviewer` sub-agents, and the `pr-review` skill.
@@ -45,7 +47,7 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 | 2. Epics & stories | `dev-epics-stories` | `specs/<f>/epics.md` + stories → csdd `tasks.md` | `npx -y @protonspy/csdd spec approve --phase tasks` |
 | 3. Readiness | `dev-readiness-check` | readiness verdict PASS/CONCERNS/FAIL | must be PASS to start |
 | 4. Sprint | `dev-sprint` | `specs/<f>/sprint-status.yaml` | — |
-| 5. Build | `tdd-cycle` (existing) | code + tests, one task at a time | green suite per task |
+| 5. Build | `tdd-cycle` / `unit-cycle` (existing, by flow) | code + tests, one task at a time | green suite per task |
 | 6. Review | `code-reviewer` / `pr-review` (existing) | review verdict | no open blockers |
 | 7. Retrospective | `dev-retrospective` | `specs/<f>/retrospective.md` | end of epic |
 
@@ -57,11 +59,11 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
    `wf:product/discovery` → `discovery-handoff`.
 2. **Run phases in order, gating each.** Architecture must be approved before
    stories; stories before readiness; readiness must be PASS before the first
-   `tdd-cycle`. State the gate result before advancing.
-3. **Branch, then drive implementation through `tdd-cycle`.** Before the first
+   build task. State the gate result before advancing.
+3. **Branch, then drive implementation through the flow's cycle skill.** Before the first
    task, create the feature's branch — `git switch -c <type>/<feature>` in
    kebab-case (`feat/` feature, `fix/` bugfix, `chore/` small adjustment; also
-   `refactor/` `docs/` `test/` `perf/`). Then run `tdd-cycle` one task at a time,
+   `refactor/` `docs/` `test/` `perf/`). Then run that cycle one task at a time,
    updating `sprint-status.yaml` as tasks move. Never batch tasks "to save time".
    **Parallelize across boundaries.** Tasks marked `(P)` in *different*
    `_Boundary:_` groups have no ordering between them: dispatch one `implementer`
@@ -89,7 +91,7 @@ The `dev-*` skills below fill only the gaps BMAD covers that csdd did not.
 - Never `--force` a gate. A failing `npx -y @protonspy/csdd spec validate` means fix the artifact.
 - Architecture and stories feed csdd's `design.md`/`tasks.md` — they do not
   replace them. The `npx -y @protonspy/csdd spec` artifacts remain canonical and validated.
-- One task per `tdd-cycle`. Keep `sprint-status.yaml` honest — a task is done
+- One task per cycle pass. Keep `sprint-status.yaml` honest — a task is done
   only when its tests are green and review has no open blockers.
 - Commits and PRs carry **no AI or assistant attribution** — no `Co-authored-by:`
   for the assistant, no `Claude-Session` / `claude.ai/code` link, no "🤖 Generated
@@ -110,7 +112,7 @@ Between phases, report:
 
 - [ ] `design.md` and `tasks.md` are generated, filled, validated, and approved.
 - [ ] `dev-readiness-check` returned PASS before implementation began.
-- [ ] Every task went through `tdd-cycle` and passed its Tier-2 exit gate (one
+- [ ] Every task went through its flow's cycle skill and passed the Tier-2 exit gate (one
       full-suite run in fast mode + lint on the touched files) with a clean review.
 - [ ] Each task's Tier-2 run was recorded via `npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`; `specs/<feature>/test-report.json` shows tests green with no open attentions.
 - [ ] The Tier-3 gate ran once at the end — full suite with coverage, lint,

@@ -6,6 +6,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,6 +43,14 @@ var (
 	BoundaryAnnotRe = regexp.MustCompile(`_Boundary:\s*([A-Za-z0-9_\-]+)_`)
 	DependsAnnotRe  = regexp.MustCompile(`_Depends:\s*([\d,\.\s]+)_`)
 	ParallelRe      = regexp.MustCompile(`\(P\)`)
+
+	// Development-flow task shape. tasks-generation names the pair explicitly
+	// ("2.1 RED — …", "2.2 GREEN — …"), so the shape is readable from the title
+	// alone. A single sub-task may carry both halves ("4.3 RED→GREEN — …"): it
+	// opens the pair and closes it in one step, so it counts as each.
+	taskRedRe      = regexp.MustCompile(`(?i)^RED\b`)
+	taskGreenRe    = regexp.MustCompile(`(?i)^GREEN\b`)
+	taskRedGreenRe = regexp.MustCompile(`(?i)^RED\b.*\bGREEN\b`)
 )
 
 // MaskCodeFences is the exported entry point to fence masking, shared with
@@ -102,6 +111,7 @@ const (
 
 type taskRecord struct {
 	id           string
+	title        string
 	lineNo       int
 	parallel     bool
 	boundary     string
@@ -313,6 +323,7 @@ func ValidateSpec(specDir string, phase Phase) []Issue {
 					seen[t.boundary] = t.id
 				}
 			}
+			issues = append(issues, checkDevelopmentFlow(specDevelopmentFlow(specDir), tasks)...)
 		} else if phase == PhaseTasks {
 			issues = append(issues, Issue{File: "tasks.md", Msg: "missing"})
 		}
@@ -475,7 +486,7 @@ func parseTasks(text string) []taskRecord {
 		if m := TaskLineRe.FindStringSubmatch(line); m != nil {
 			flush()
 			block = []string{line}
-			cur = &taskRecord{id: m[3], lineNo: i + 1}
+			cur = &taskRecord{id: m[3], title: strings.TrimSpace(m[4]), lineNo: i + 1}
 			if ParallelRe.MatchString(line) {
 				cur.parallel = true
 			}
@@ -516,6 +527,124 @@ func validDevelopmentFlow(f string) bool {
 		return true
 	}
 	return false
+}
+
+// specDevelopmentFlow reads development_flow out of specDir/spec.json.
+//
+// A missing spec.json yields "" and every flow check stays silent: without the
+// file there is no declared flow to hold the tasks to, and inventing one would
+// manufacture findings on a correctly-shaped file. A spec.json that exists but
+// omits the field resolves to "tdd", which is the default the whole toolchain
+// already assumes (tasks-generation: "absent ⇒ tdd", cli.effectiveFlow).
+func specDevelopmentFlow(specDir string) string {
+	data, err := os.ReadFile(filepath.Join(specDir, "spec.json"))
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		DevelopmentFlow string `json:"development_flow"`
+	}
+	if err := json.Unmarshal(data, &s); err != nil {
+		return ""
+	}
+	f := strings.TrimSpace(s.DevelopmentFlow)
+	if f == "" {
+		return "tdd"
+	}
+	if !validDevelopmentFlow(f) {
+		return "" // already reported where the flow is written; don't double-report here
+	}
+	return f
+}
+
+// parentTaskID returns the ID of the task one level up ("2.3" -> "2"), or "" for
+// a top-level task. Sub-task ordering is only meaningful among siblings, so every
+// flow check groups by this.
+func parentTaskID(id string) string {
+	if i := strings.LastIndex(id, "."); i >= 0 {
+		return id[:i]
+	}
+	return ""
+}
+
+func isRedTask(title string) bool { return taskRedRe.MatchString(title) }
+
+func isGreenTask(title string) bool {
+	return taskGreenRe.MatchString(title) || taskRedGreenRe.MatchString(title)
+}
+
+// checkDevelopmentFlow holds tasks.md to the shape the spec's development_flow
+// declares. Until now that contract lived only as prose in
+// .claude/rules/tasks-generation.md — guidance the model reads, with no exit code
+// behind it — so a spec could declare `unit` and be handed RED/GREEN tasks anyway
+// (or declare `tdd` and get an implementation step with no test in front of it)
+// and nothing would say so.
+//
+// These are deliberately the weakest rules that are still mechanical. Whether a
+// task carries behavior or is pure scaffolding is a judgment call, and
+// tasks-generation exempts scaffolding from needing a test at all — so a check
+// that guessed at it would fire on correct files, and a gate that cries wolf is a
+// gate someone turns off. Naming, by contrast, is something you can see: the
+// rules mandate the explicit "RED —"/"GREEN —" pair, so these checks read only
+// that.
+//
+// Calibrated against a 28-spec corpus: silent on all of it, including a task
+// whose single RED is followed by four separate GREEN steps and one combined
+// "RED→GREEN" sub-task. Hence "some earlier RED among the siblings" rather than
+// "the immediately preceding sibling".
+func checkDevelopmentFlow(flow string, tasks []taskRecord) []Issue {
+	var issues []Issue
+	switch flow {
+	case "unit":
+		for _, t := range tasks {
+			if !isRedTask(t.title) && !isGreenTask(t.title) {
+				continue
+			}
+			issues = append(issues, Issue{
+				File: "tasks.md",
+				Line: t.lineNo,
+				Msg: fmt.Sprintf("task %s is shaped as a RED/GREEN pair but spec.json declares development_flow 'unit'"+
+					" — under 'unit' the implementation comes first and the test covers it in the same task;"+
+					" regenerate tasks for this flow, or set the flow to 'tdd'", t.id),
+			})
+		}
+	case "tdd", "tdd-e2e":
+		// One pass in document order: a GREEN is answered by any RED already seen
+		// among its siblings, and a RED stays pending until a GREEN closes it.
+		seenRed := map[string]bool{}
+		pendingRed := map[string]string{}
+		for _, t := range tasks {
+			parent := parentTaskID(t.id)
+			if isRedTask(t.title) {
+				seenRed[parent] = true
+				pendingRed[parent] = t.id
+			}
+			if isGreenTask(t.title) {
+				if !seenRed[parent] {
+					issues = append(issues, Issue{
+						File: "tasks.md",
+						Line: t.lineNo,
+						Msg: fmt.Sprintf("task %s is a GREEN step with no preceding RED sub-task"+
+							" — under development_flow '%s' an implementation step must follow a test that failed first", t.id, flow),
+					})
+				}
+				delete(pendingRed, parent)
+			}
+		}
+		// Re-walk in document order so the leftovers report deterministically.
+		for _, t := range tasks {
+			if pendingRed[parentTaskID(t.id)] != t.id {
+				continue
+			}
+			issues = append(issues, Issue{
+				File: "tasks.md",
+				Line: t.lineNo,
+				Msg: fmt.Sprintf("task %s is a RED step with no GREEN sub-task after it"+
+					" — under development_flow '%s' a failing test must be answered by the implementation that passes it", t.id, flow),
+			})
+		}
+	}
+	return issues
 }
 
 // ValidateSteering inspects every (or one) steering file's frontmatter and

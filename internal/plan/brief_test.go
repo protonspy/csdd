@@ -146,3 +146,28 @@ func TestBriefUnknownFeat(t *testing.T) {
 		t.Errorf("FeatBrief should error for a feat not in the plan")
 	}
 }
+
+// TestBriefIsFlowAware guards the brief against re-hardcoding one development flow.
+// It used to say the implementer works "test-first" and to name `tdd-cycle` as the
+// only fallback, which silently overrode a spec that declared `unit`: the flow field
+// existed, the validator now enforces the task shape it implies, and the brief told
+// the session to ignore both.
+func TestBriefIsFlowAware(t *testing.T) {
+	root := setupWorkspace(t, "p", briefPlan)
+	out := briefFor(t, root, "p", "upload")
+	for _, want := range []string{
+		"development_flow", // the brief points at the spec's declared flow
+		"tdd-cycle",        // …and names the cycle skill for each side of it
+		"unit-cycle",
+		"--flow", // authoring picks the flow deliberately
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("brief should mention %q so the session honours the spec's flow:\n%s", want, out)
+		}
+	}
+	// The old wording made test-first unconditional. Any reintroduction of a bare
+	// "test-first" instruction re-breaks the unit flow.
+	if strings.Contains(out, "test-first") {
+		t.Errorf("brief hardcodes 'test-first', which overrides a spec declaring development_flow 'unit'")
+	}
+}

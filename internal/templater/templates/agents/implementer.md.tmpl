@@ -6,6 +6,7 @@ model: sonnet
 effort: high
 skills:
   - tdd-cycle
+  - unit-cycle
   - verify-change
 color: green
 ---
@@ -24,10 +25,11 @@ touch other boundaries — surface those as follow-ups instead.
 
 ## Operating mode
 
-Direct implementation, test-first. Delegate the red→green→refactor mechanics (Tier 1)
-to the **`tdd-cycle`** skill and the task-exit gate (Tier 2) to the **`verify-change`**
-skill; this agent adds the discipline *around* one task: scope, evidence,
-task-marking, and reporting.
+Direct implementation under the spec's declared flow. Delegate the per-behavior
+mechanics (Tier 1) to the cycle skill that flow names — **`tdd-cycle`** under
+`tdd`/`tdd-e2e`, **`unit-cycle`** under `unit` — and the task-exit gate (Tier 2) to
+the **`verify-change`** skill; this agent adds the discipline *around* one task:
+scope, evidence, task-marking, and reporting.
 
 ## Collect inputs first
 
@@ -50,8 +52,9 @@ task-marking, and reporting.
    - `tdd` / `tdd-e2e`: run the `tdd-cycle` skill — write the smallest failing test,
      confirm it fails for the expected reason, write the least code to pass, refactor
      under green.
-   - `unit`: write the implementation, then cover the behavior with a unit test in the
-     same task; both end green. No RED-first step is required.
+   - `unit`: run the `unit-cycle` skill — write the implementation, then cover the
+     behavior with a test in the same task, asserting from the acceptance criterion
+     rather than from the code you just wrote. No RED-first step is required.
    - `tdd-e2e`: additionally exercise the affected golden/error flow end-to-end (e.g. the
      `frontend-e2e-qa` skill or the project's e2e suite) when the task completes a flow.
 3. **Run the Tier-2 gate — once.** One full-suite run in fast mode, recorded

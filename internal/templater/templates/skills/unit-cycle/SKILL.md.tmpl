@@ -1,0 +1,166 @@
+---
+name: unit-cycle
+description: Use for a single behavior task under the tests-after flow (development_flow unit), when driving one task from specs/*/tasks.md to done. Not for tdd/tdd-e2e — those require a test that failed first, which is the tdd-cycle skill.
+---
+
+# Unit Cycle
+
+## Goal
+
+Use this skill for **exactly one task at a time**, driving it through
+implement → cover → gate.
+
+## The Law
+
+> **Under `unit`, a behavior task is not `[x]` until a test in the *same task* covers
+> that behavior and the Tier-2 gate (`npx -y @protonspy/csdd spec test-report`) has
+> recorded it green.**
+
+`unit` drops the RED-first ritual, **not the test**. What it buys is one fewer
+process invocation and one fewer round-trip per behavior; what it costs is the proof
+that the test could ever fail. The rest of this skill is about paying that cost
+honestly instead of pretending it isn't there.
+
+No exceptions:
+- Don't ship the implementation and leave the test for "the next task".
+- Don't mark the task done now and record the evidence later.
+- One task per cycle — don't batch.
+
+## When this applies
+
+This is the **tests-after** cycle for specs whose `development_flow` is `unit`. Under
+`tdd`/`tdd-e2e` the first artifact must be a failing test — use `tdd-cycle` for those
+and skip this skill. In every flow, write **one test per observable behavior, not one
+per code branch** — keep the test count proportional to behavior.
+
+### When to stop and escalate to `tdd`
+
+`unit` is the cheaper gear, not the universal one. Stop and say the flow is wrong
+when the task touches:
+
+- **money, balances, or billing** — a wrong number is expensive and often silent;
+- **authentication, authorization, or tenant scoping** — a wrong boundary leaks data;
+- **anything irreversible** — a migration that drops, a webhook that fires, a payout;
+- **a behavior you cannot state in one sentence** — if you can't name what to observe,
+  a test written after the code will just mirror the code.
+
+Report that the task needs `tdd` rather than downgrading the coverage silently.
+
+## Default Operation Mode
+
+Direct implementation, tests alongside. The task is not finished when the code
+works — it is finished when a test says so and the gate recorded it.
+
+## Collect Inputs First
+
+- Which task? (a single leaf task ID from `specs/<feature>/tasks.md`)
+- What is the expected, observable behavior? **State it in one sentence before
+  editing** — that sentence becomes the test's assertion.
+- Which acceptance criteria does the task cite in `_Requirements:_`? Read them; they
+  are the contract the test must express.
+- Where do existing tests for this area live, and what is the test command?
+- If the behavior calls a library/framework API, confirm that API against its
+  **current** docs with the Context7 MCP tools (if connected) before writing either
+  half.
+
+## Execution Workflow
+
+### 1) Implement the behavior
+- Stay inside the task's `_Boundary:_`. No opportunistic refactors, no unrelated
+  changes, no extra abstraction.
+- Write the least code that delivers the stated behavior.
+
+### 2) Cover it with tests — from the criterion, not from the code
+This is the step that decides whether `unit` is honest. A test written after the
+implementation drifts toward describing what the code *does*; you need one that
+describes what the requirement *promised*.
+
+- Write the assertion from the acceptance criterion's own words (the `_Requirements:_`
+  IDs the task cites), not by reading back the function you just wrote.
+- Assert on **observable behavior** — the returned value, the persisted row, the
+  rendered state, the emitted error — never on internal call order or private shape.
+- Cover the error and boundary paths the criterion names, not just the golden path.
+- Match the structure and naming of the existing tests in that area.
+
+### 3) Run the Tier-2 gate — once
+One full-suite run in fast mode, recorded through csdd, is the whole task-exit gate:
+
+```bash
+npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <python|typescript|java|go|rust> --path <tests-dir>
+```
+
+- `--fast` selects the coverage-free command. Coverage belongs to Tier 3 (feat exit),
+  where it is collected once instead of once per task.
+- **No typecheck and no build at task exit** — those are Tier-3 checks, run once over
+  the merged result by whoever owns integration.
+- Then lint the touched files. That is the whole gate.
+- Do not run the suite again "to be safe": this run is the evidence, and the
+  `verify-change` skill's Iron Law is already satisfied by it.
+- A report carrying an **open attention** is not green — resolve it or report the task
+  as blocked.
+
+### 4) Mark the task done
+- Once the new test passes and the recorded run is green, edit
+  `specs/<feature>/tasks.md` and change this task's checkbox from `- [ ]` to `- [x]`.
+- Mark **only** the task you just completed. If your orchestrator told you it owns the
+  checkboxes (concurrent dispatch), report the task green and leave `tasks.md` alone.
+
+### 5) Update Implementation Notes and report
+- Append any cross-task learning to `## Implementation Notes` in `tasks.md`.
+- Report the task ID, files changed, tests added, commands run with their real
+  results, and any remaining risks. Your report **is** the evidence your orchestrator
+  uses — it will not re-run your checks.
+
+## Rationalizations
+
+Every one of these is a signal to stop, not a reason to skip. **Violating the letter of
+the rule is violating its spirit.**
+
+| Excuse | Reality |
+|---|---|
+| "The code is obviously correct, the test adds nothing." | `unit` already gave up the failing-test proof. Drop the test too and the task ships on nothing but your reading of it. |
+| "I'll add the test in the validation phase." | Phase 4 holds end-to-end tests. A behavior's own test lives with the behavior, or it never gets written. |
+| "The test passes, so the behavior works." | A test written from the code passes by construction. Write it from the criterion and it can actually disagree with you. |
+| "This is money code but the task is small." | Size is not risk. Small and irreversible is the worst combination — escalate to `tdd`. |
+| "I'll batch these three tasks to save time." | Batching hides which test covers which behavior. One task per cycle. |
+
+## Red Flags — STOP
+
+- You wrote the test by reading the implementation instead of the acceptance criterion.
+- The test asserts on internal calls, mock invocation counts, or private structure.
+- You cannot name, in one sentence, the behavior the test observes.
+- The task touches money, auth, tenancy, or anything irreversible — it wants `tdd`.
+- You're about to mark the task `[x]` with the gate unrecorded, or red, or carrying an
+  open attention.
+- You're about to run the full suite a second time for the same task.
+
+If any fire, stop and return to the workflow above.
+
+## Gotchas
+
+- One task per invocation. Do not batch tasks "to save time".
+- Never delete or weaken a test to make the suite pass.
+- If no test framework exists, say so explicitly and stop — do not silently skip the test.
+- Pure scaffolding (migrations, type skeletons, config) needs no behavior test; say so
+  in the report rather than inventing one.
+- Do not name sub-tasks `RED`/`GREEN` under this flow — `csdd spec validate` reports
+  that shape as a flow mismatch, and it is telling the truth: the spec asked for `unit`.
+
+## Verification Before Reporting
+
+- Run: the new test, then the Tier-2 gate — once.
+- Record: that run via `npx -y @protonspy/csdd spec test-report <feature> --run --fast --lang <lang>`,
+  so the spec carries the evidence for this task.
+- Check: the new behavior is exercised by an assertion traceable to the criterion, the
+  suite is green, and the report carries no open attentions.
+- If blocked: report the blocked step explicitly; do not mark the task done.
+
+## Completion Criteria
+- [ ] The behavior is covered by a passing test written in the **same task**.
+- [ ] The test's assertion traces to an acceptance criterion the task cites in `_Requirements:_`.
+- [ ] The Tier-2 gate passed: full suite (fast mode) + lint on the touched files.
+- [ ] `npx -y @protonspy/csdd spec test-report <feature> --run --fast …` recorded the
+      evidence (tests green, no open attentions).
+- [ ] The completed task is marked `[x]` in `tasks.md` (only that task).
+- [ ] `## Implementation Notes` updated with any cross-task learning.
+- [ ] Report lists: task ID, files changed, tests added, commands run, remaining risks.

@@ -86,8 +86,10 @@ You authored and approved the spec; those were the decisions and they ran on you
 so **delegate it** — do not hand-write task code inline.
 - Branch before the first task: `git switch -c feat/<feat>` (kebab-case).
 - For **each** leaf task, spawn the **`implementer`** sub-agent (Agent/Task tool),
-  one task per sub-agent. It runs the `tdd-cycle` (RED → GREEN → REFACTOR) and the
-  Tier-2 task-exit gate on its own fast model, records evidence
+  one task per sub-agent. It runs the cycle the spec's `development_flow` declares —
+  `tdd-cycle` (RED → GREEN → REFACTOR) under `tdd`/`tdd-e2e`, `unit-cycle`
+  (implement → cover → gate) under `unit` — plus the Tier-2 task-exit gate on its own
+  fast model, records evidence
   (`csdd spec test-report <feat> --run --fast --lang <lang>`), and reports back —
   staying inside the approved design boundary.
 - **Take each task's result from the implementer's return message.** Do not re-run
@@ -110,7 +112,8 @@ so **delegate it** — do not hand-write task code inline.
   `security-reviewer` when auth / secrets / input handling is touched); resolve
   blockers before the next batch.
 - If the `implementer` sub-agent is not installed in this workspace, fall back to
-  running the `tdd-cycle` skill yourself, one task at a time.
+  running the flow's cycle skill yourself (`tdd-cycle` or `unit-cycle`), one task at
+  a time.
 
 ### 5a) Tier 3 — the batch integration gate
 When a batch of concurrent implementers completes, run the integration gate **once**
@@ -178,8 +181,9 @@ Return exactly one, as the JSON schema the runner gave you:
 - You are the approver here — stalling at a phase "waiting for a human" is the
   single most common failure of this loop. Approve your own validated phases.
 - You orchestrate; the `implementer` sub-agent implements. One task per implementer
-  (it runs one `tdd-cycle` pass); do not batch tasks, hand-write task code inline,
-  or skip the RED test.
+  (one cycle pass); do not batch tasks, hand-write task code inline, or drop the
+  flow's test obligation — the RED test under `tdd`/`tdd-e2e`, the same-task test
+  under `unit`.
 - Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
 - Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
   `continue` summary instead, and keep working what you can.
@@ -203,8 +207,9 @@ Return exactly one, as the JSON schema the runner gave you:
 ## Completion Criteria
 - [ ] `requirements`, `design`, `tasks` each generated, validated, and
       self-approved (`csdd spec approve … --phase …`).
-- [ ] Every leaf task delivered by an `implementer` sub-agent (test-first via
-      `tdd-cycle`) — or by a fallback `tdd-cycle` pass — and its box `[x]`.
+- [ ] Every leaf task delivered by an `implementer` sub-agent running the flow's cycle
+      (`tdd-cycle` or `unit-cycle`) — or by a fallback pass of that same skill — and
+      its box `[x]`.
 - [ ] Every batch passed the Tier-3 integration gate before the next was dispatched.
 - [ ] `csdd spec validate <feat>` and `csdd graph analyze --strict` pass.
 - [ ] Every plan Quality Gate command passes — run once, at feat exit.
