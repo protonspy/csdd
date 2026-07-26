@@ -3,6 +3,7 @@ package graph
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -136,4 +137,185 @@ func containsLabel(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestParsePyprojectExtrasDoNotCloseTheArray is regression cover for a silent
+// truncation. A PEP 508 extra spells its brackets inside the quoted requirement,
+// and treating that `]` as the end of the dependencies array dropped every
+// dependency declared below it — 50-odd libraries in a real backend manifest,
+// each of which then had its docs/stack.md row reported as phantom tech.
+func TestParsePyprojectExtrasDoNotCloseTheArray(t *testing.T) {
+	manifest := []byte(`[project]
+name = "backend"
+dependencies = [
+    "celery[librabbitmq,gevent]>=5.6.1",
+    "gevent>=25.4.1",
+    "fastapi>=0.128.0",
+    "audioop-lts",
+    "bcrypt>=4.2.0",  # Direct bcrypt usage (no passlib)
+]
+
+[tool.ruff]
+line-length = 100
+`)
+	got := parsePyproject(manifest)
+	want := []string{"celery", "gevent", "fastapi", "audioop-lts", "bcrypt"}
+	if len(got) != len(want) {
+		t.Fatalf("parsePyproject returned %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parsePyproject returned %v, want %v", got, want)
+		}
+	}
+}
+
+// TestParsePyprojectStopsAtTheRealArrayEnd proves the fix did not make the scan
+// run on: content after the closing bracket must not be read as dependencies.
+func TestParsePyprojectStopsAtTheRealArrayEnd(t *testing.T) {
+	manifest := []byte(`[project]
+dependencies = ["fastapi>=0.1"]
+
+[tool.uv]
+constraint-dependencies = ["not-a-dependency==9"]
+`)
+	got := parsePyproject(manifest)
+	for _, g := range got {
+		if g == "not-a-dependency" {
+			t.Errorf("parsePyproject read past the array end: %v", got)
+		}
+	}
+	if len(got) != 1 || got[0] != "fastapi" {
+		t.Errorf("parsePyproject = %v, want [fastapi]", got)
+	}
+}
+
+// TestStripQuotedSpans asserts the property the bracket matcher depends on —
+// delimiters inside a string disappear, structural ones survive — rather than an
+// exact run of spaces, which would break on any unrelated edit to the fixture.
+func TestStripQuotedSpans(t *testing.T) {
+	hidden := []string{
+		`"celery[a,b]>=5.6.1",`,
+		`'x]y'`,
+		`"a" "b]c"`,
+	}
+	for _, in := range hidden {
+		if got := stripQuotedSpans(in); strings.ContainsAny(got, "[]") {
+			t.Errorf("stripQuotedSpans(%q) = %q; brackets inside quotes must not survive", in, got)
+		}
+	}
+	kept := []string{`dependencies = [`, `]`, `'x]y' ]`}
+	for _, in := range kept {
+		got := stripQuotedSpans(in)
+		if !strings.ContainsAny(got, "[]") {
+			t.Errorf("stripQuotedSpans(%q) = %q; structural brackets must survive", in, got)
+		}
+		if len(got) != len(in) {
+			t.Errorf("stripQuotedSpans(%q) changed length %d -> %d; offsets must be preserved", in, len(in), len(got))
+		}
+	}
+}
+
+// TestStackContractExternalBlock covers the escape hatch for decisions no manifest
+// declares. Without it the phantom lint reported managed services and models
+// forever, and the author's only remedies were deleting a true decision or
+// switching the gate off — which is what a real workspace did.
+func TestStackContractExternalBlock(t *testing.T) {
+	doc := []byte(`# Tech contract
+
+## Decided
+
+| Domain | Choice | Version | Why | Refs |
+|---|---|---|---|---|
+| Backend · HTTP | fastapi | 0.128.0 | routes | [x](wiki/pages/x.md) |
+
+### External services
+
+| Domain | Choice | Version | Why | Refs |
+|---|---|---|---|---|
+| Database | PostgreSQL | 18 | rows | [y](wiki/pages/y.md) |
+| Messaging | Telegram Bot API | 10.1 | chat | [z](wiki/pages/z.md) |
+
+## Rules
+
+1. Not a table.
+`)
+	frags := stackContract(Source{Path: "docs/stack.md", Content: doc})
+	got := map[string]bool{}
+	for _, f := range frags {
+		for _, n := range f.Nodes {
+			got[n.Label] = asBool(n.Attrs["external"])
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 contract rows, got %d: %v", len(got), got)
+	}
+	if got["fastapi"] {
+		t.Error("a row above the external heading must stay diffed against the manifests")
+	}
+	for _, label := range []string{"PostgreSQL", "Telegram Bot API"} {
+		if !got[label] {
+			t.Errorf("%q sits under the external heading and must be marked external", label)
+		}
+	}
+}
+
+// TestIsExternalBlockHeading pins the recognized spellings. A heading the parser
+// does not recognize leaves its rows linted, so the set is closed and documented
+// rather than guessed at.
+func TestIsExternalBlockHeading(t *testing.T) {
+	for _, yes := range []string{
+		"External services", "external", "Services", "Infrastructure",
+		"Managed services", "Hosted APIs", "  external SERVICES  ",
+	} {
+		if !isExternalBlockHeading(yes) {
+			t.Errorf("%q should open the external block", yes)
+		}
+	}
+	for _, no := range []string{"Frontend", "Backend", "Notes", "Open questions", ""} {
+		if isExternalBlockHeading(no) {
+			t.Errorf("%q must not open the external block", no)
+		}
+	}
+}
+
+// TestParsePyprojectDependencyGroups covers PEP 735 groups and PEP 621 extras.
+// uv writes dev tooling into [dependency-groups] by default, and reading only the
+// PEP 621 array left those packages invisible — so their contract rows reported as
+// phantom tech for dependencies the project really declares.
+func TestParsePyprojectDependencyGroups(t *testing.T) {
+	manifest := []byte(`[project]
+dependencies = ["fastapi>=0.128.0"]
+
+[project.optional-dependencies]
+media = ["pillow>=11"]
+
+[dependency-groups]
+dev = [
+    "rich>=14.2.0",
+    "pytest-cov>=7.0.0",
+    {include-group = "test"},
+]
+test = ["pytest>=8"]
+
+[tool.ruff]
+line-length = 100
+`)
+	got := map[string]bool{}
+	for _, d := range parsePyproject(manifest) {
+		got[d] = true
+	}
+	for _, want := range []string{"fastapi", "pillow", "rich", "pytest-cov", "pytest"} {
+		if !got[want] {
+			t.Errorf("parsePyproject missed %q; got %v", want, got)
+		}
+	}
+	// An include-group reference names a group, not a package.
+	if got["test"] {
+		t.Errorf("include-group reference must not be read as a dependency; got %v", got)
+	}
+	// And the scan must still stop at the table boundary.
+	if got["line-length"] || got["100"] {
+		t.Errorf("parsePyproject read past [dependency-groups]; got %v", got)
+	}
 }

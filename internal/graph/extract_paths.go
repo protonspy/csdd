@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -10,15 +11,42 @@ import (
 // can resolve it to a real code node.
 func codeRefID(citedPath string) string { return MakeID("code_ref", citedPath) }
 
+// resolveCitedPath turns a citation written relative to the citing document into
+// a workspace-relative one. A citation with no leading "./" or "../" is already
+// workspace-relative by the corpus convention and is returned unchanged.
+//
+// Two things went wrong without this. First, NormalizeID maps every non-word
+// character to "_" and then trims, so "../../adr/0003-x.md" and "adr/0003-x.md"
+// produce the SAME node ID while being recorded as different artifacts — the
+// build reported an id collision and silently dropped one of them, losing
+// whatever edges it carried. Second, "../../adr/0003-x.md" never stats from the
+// workspace root, so resolveCitedPaths could not see that the file exists and
+// left the edge as a planned `references` instead of a `reuses` — the graph
+// described real, resolved citations as intentions.
+//
+// A citation that climbs above the workspace is kept verbatim: it names nothing
+// this graph can model, and rewriting it would only invent a path.
+func resolveCitedPath(fromFile, cited string) string {
+	if !strings.HasPrefix(cited, "./") && !strings.HasPrefix(cited, "../") {
+		return cited
+	}
+	joined := path.Clean(path.Join(path.Dir(fromFile), cited))
+	if joined == ".." || strings.HasPrefix(joined, "../") {
+		return cited
+	}
+	return joined
+}
+
 // emitCitedPath appends a code_ref node for citedPath plus a references edge from
 // fromID. Assemble reclassifies the edge to `reuses` (EXTRACTED, 1.0) when the
 // path exists on disk, or leaves it `references` (INFERRED, planned) when it does
 // not — the deterministic on-disk check the extractor cannot perform (no I/O).
 func emitCitedPath(src Source, line int, citedPath, fromID string, frag *Fragment) {
-	cid := codeRefID(citedPath)
+	resolved := resolveCitedPath(src.Path, citedPath)
+	cid := codeRefID(resolved)
 	frag.Nodes = append(frag.Nodes, Node{
-		ID: cid, Label: citedPath, FileType: TypeCodeRef,
-		SourceFile: citedPath, SourceLocation: "L1",
+		ID: cid, Label: resolved, FileType: TypeCodeRef,
+		SourceFile: resolved, SourceLocation: "L1",
 	})
 	frag.Edges = append(frag.Edges, Edge{
 		Source: fromID, Target: cid, Relation: RelReferences,
@@ -95,7 +123,13 @@ func citedPathsInTreeLine(line string) []string {
 // when it is not a plausible repo-relative file path.
 func cleanCitedToken(tok string) string {
 	tok = strings.TrimSpace(tok)
-	tok = strings.Trim(tok, "`'\"")
+	// Trailing prose punctuation travels with a citation written mid-sentence —
+	// "see `mcp/src/utils/tool_logger.py`, which…" reaches here as the path plus a
+	// backtick and a comma. Trimming only quotes left the comma outermost, so the
+	// quote never came off either, and the result was a second node for a file that
+	// already had one: same ID, two labels, reported as an id collision with one
+	// artifact silently dropped. No path ends in these characters.
+	tok = strings.Trim(tok, "`'\",;:)]}([{")
 	// Strip a trailing slash (directory) — we index files, not dirs, but keep the
 	// path for resolution; a bare directory has no extension and is rejected below.
 	tok = strings.TrimRight(tok, "/")

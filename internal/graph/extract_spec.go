@@ -165,12 +165,19 @@ func extractDesign(spec string, src Source) []Fragment {
 	curCompID := ""
 	depSubsection := "" // Inbound | Outbound | External | ""
 	inFileStructure := false
-	seenNode := map[string]bool{}
+	nodeAt := map[string]int{}
 	addNode := func(n Node) {
-		if seenNode[n.ID] {
+		// Merge rather than drop, matching dedupNodes: one design.md introduces the
+		// SAME component twice — cited in the Requirements Traceability table, which
+		// the template puts first, and then declared by its `### Name` header.
+		// First-wins discarded the header's node whole, so the `declared` marker it
+		// carries never survived and every declared component looked undeclared —
+		// silently emptying the unimplemented-component lint instead of sharpening it.
+		if i, ok := nodeAt[n.ID]; ok {
+			frag.Nodes[i] = mergeNode(frag.Nodes[i], n)
 			return
 		}
-		seenNode[n.ID] = true
+		nodeAt[n.ID] = len(frag.Nodes)
 		frag.Nodes = append(frag.Nodes, n)
 	}
 
@@ -211,6 +218,11 @@ func extractDesign(spec string, src Source) []Fragment {
 				addNode(Node{
 					ID: curCompID, Label: curComp, FileType: TypeDesign,
 					SourceFile: src.Path, SourceLocation: loc(i),
+					// A `### Name` header is what DECLARES a component this spec
+					// owns. The Requirements Traceability table only cites
+					// components — often ones another spec owns — so only nodes
+					// carrying this marker can be judged unimplemented.
+					Attrs: map[string]any{"declared": true},
 				})
 				continue
 			}
@@ -281,6 +293,37 @@ func extractDesign(spec string, src Source) []Fragment {
 }
 
 // addTraceRow emits traced_to / implements / exercises for one traceability row.
+// reComponentName is the component charset `### Name` headers use — and therefore
+// what the spec validator means by a component name — with one addition: at least
+// one alphanumeric is required, so the table's "none" placeholders ("-", "—")
+// cannot pass as a component named after a dash.
+var reComponentName = regexp.MustCompile(`^[A-Za-z0-9_\-]*[A-Za-z0-9][A-Za-z0-9_\-]*$`)
+
+// traceComponentName reduces one Requirements Traceability cell to the component
+// it names, or "" when it names none.
+//
+// That column is prose in practice. Real corpora write "RechargeLot (migration)"
+// and "PagciClient (existing)" — a component plus an aside — and "(all)" to mean
+// every component. Minting a design node from the cell verbatim produced one
+// component per spelling: the annotated ones shadowed the real component, and
+// "(all)" became a component no task could ever claim, so both were then reported
+// as unimplemented. Sixteen of twenty-one such findings in a 28-spec workspace
+// came from this column.
+//
+// A trailing parenthetical is dropped and the remainder must match the header
+// charset, so the graph's notion of a component and the validator's stay one
+// notion.
+func traceComponentName(cell string) string {
+	s := strings.TrimSpace(cell)
+	if i := strings.LastIndexByte(s, '('); i > 0 && strings.HasSuffix(s, ")") {
+		s = strings.TrimSpace(s[:i])
+	}
+	if !reComponentName.MatchString(s) {
+		return ""
+	}
+	return s
+}
+
 func addTraceRow(spec string, src Source, line int, cells []string, frag *Fragment, addNode func(Node)) {
 	reqCell := cells[0]
 	var comps, ifaces, flows []string
@@ -293,8 +336,9 @@ func addTraceRow(spec string, src Source, line int, cells []string, frag *Fragme
 	if len(cells) > 3 {
 		flows = splitList(cells[3])
 	}
-	for _, comp := range comps {
-		if comp == "—" || comp == "-" {
+	for _, raw := range comps {
+		comp := traceComponentName(raw)
+		if comp == "" {
 			continue
 		}
 		did := designID(spec, comp)

@@ -20,6 +20,28 @@ type Finding struct {
 	Label   string `json:"label,omitempty"`
 	Message string `json:"message"`
 	File    string `json:"file,omitempty"`
+	// Informational marks a finding that describes the corpus rather than faulting
+	// it — something worth seeing that is not a contract violation. `--strict`
+	// ignores these.
+	//
+	// Without the distinction, a lint whose own message reads "informational;
+	// decisions may predate plans" still failed the gate, so the only way to keep
+	// CI green was to stop running the gate. That is how a workspace ends up
+	// demoting `graph analyze --strict` to advisory and losing every real finding
+	// with it.
+	Informational bool `json:"informational,omitempty"`
+}
+
+// Blocking returns the findings that a gate should fail on: everything except the
+// purely informational ones.
+func Blocking(findings []Finding) []Finding {
+	out := make([]Finding, 0, len(findings))
+	for _, f := range findings {
+		if !f.Informational {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // GodNode is a hub — a node whose degree stands out — surfaced so reviewers see
@@ -161,8 +183,49 @@ func (es edgeSets) hasIn(rel, id string) bool {
 
 var reRange = regexp.MustCompile(`\d+\.\d+\s*[-–—]\s*\d+`)
 
+// parentTaskIDs returns the IDs of task nodes that have sub-tasks.
+//
+// Only leaf tasks carry `_Requirements:_`. That is the contract the spec
+// validator enforces — it reports "leaf task N missing _Requirements:_" and says
+// nothing about parents — and the shape tasks-generation prescribes, where a
+// parent names the behaviour and its numbered children realise it. Holding
+// parents to the leaf rule produced 7 to 13 findings per spec across a 28-spec
+// workspace, every one of them describing a correctly-written file.
+//
+// Parentage is derived per file, the way the validator derives it: two tasks in
+// the same tasks.md belong to the same spec, and a task is a parent when another
+// task's number extends it by a dotted segment.
+func parentTaskIDs(g *Graph) map[string]bool {
+	type task struct{ id, number string }
+	byFile := map[string][]task{}
+	for _, n := range g.Nodes {
+		if n.FileType != TypeTask {
+			continue
+		}
+		num, _ := n.Attrs["number"].(string)
+		if num == "" {
+			continue
+		}
+		byFile[n.SourceFile] = append(byFile[n.SourceFile], task{id: n.ID, number: num})
+	}
+	parents := map[string]bool{}
+	for _, tasks := range byFile {
+		for _, a := range tasks {
+			prefix := a.number + "."
+			for _, b := range tasks {
+				if b.number != a.number && strings.HasPrefix(b.number, prefix) {
+					parents[a.id] = true
+					break
+				}
+			}
+		}
+	}
+	return parents
+}
+
 func specFindings(g *Graph) []Finding {
 	es := buildEdgeSets(g)
+	parents := parentTaskIDs(g)
 	var out []Finding
 	for _, n := range g.Nodes {
 		switch n.FileType {
@@ -175,16 +238,21 @@ func specFindings(g *Graph) []Finding {
 				})
 			}
 		case TypeTask:
-			// R3.2 orphan task: a task with no _Requirements annotation.
-			if !es.hasOut(RelRealizes, n.ID) {
+			// R3.2 orphan task: a LEAF task with no _Requirements annotation. A
+			// parent task carries none by design — its children do — so flagging
+			// one reports the corpus for following its own rules.
+			if !parents[n.ID] && !es.hasOut(RelRealizes, n.ID) {
 				out = append(out, Finding{
 					Kind: kindOrphanTask, Corpus: corpusSpec, NodeID: n.ID, Label: n.Label,
 					Message: "task has no _Requirements annotation (realizes no criterion)", File: n.SourceFile,
 				})
 			}
 		case TypeDesign:
-			// R3.3 unimplemented component: a design component no task targets.
-			if !es.hasIn(RelInBoundary, n.ID) {
+			// R3.3 unimplemented component: a DECLARED design component no task
+			// targets. A component known only from a Requirements Traceability
+			// citation is not this spec's to implement — it is very often another
+			// spec's, and calling it unimplemented here says nothing true.
+			if asBool(n.Attrs["declared"]) && !es.hasIn(RelInBoundary, n.ID) {
 				out = append(out, Finding{
 					Kind: kindUnimplementedCompo, Corpus: corpusSpec, NodeID: n.ID, Label: n.Label,
 					Message: "design component has no task in its boundary (_Boundary)", File: n.SourceFile,
@@ -347,7 +415,10 @@ func techFindings(g *Graph, root string) []Finding {
 				Kind: kindUndeclaredTech, Corpus: corpusTech, NodeID: n.ID, Label: n.Label,
 				Message: "undeclared tech decision: \"" + n.Label + "\" is used but absent from the contract", File: n.SourceFile,
 			})
-		case declared && !used:
+		// An external technology is exempt: it sits under the contract's external
+		// block precisely because no manifest will ever declare it, so "no usage
+		// detected" describes how the lint works, not anything about the project.
+		case declared && !used && !asBool(n.Attrs["external"]):
 			out = append(out, Finding{
 				Kind: kindPhantomTech, Corpus: corpusTech, NodeID: n.ID, Label: n.Label,
 				Message: "phantom tech: \"" + n.Label + "\" is in the contract but no usage was detected", File: n.SourceFile,
@@ -415,8 +486,9 @@ func planFindings(g *Graph) []Finding {
 			if !es.hasIn(RelCites, n.ID) {
 				out = append(out, Finding{
 					Kind: kindOrphanDecision, Corpus: corpusPlan, NodeID: n.ID, Label: n.Label,
-					Message: "orphan decision: no feat cites this ADR (informational; decisions may predate plans)",
-					File:    n.SourceFile,
+					Message:       "orphan decision: no feat cites this ADR (informational; decisions may predate plans)",
+					File:          n.SourceFile,
+					Informational: true,
 				})
 			}
 		}

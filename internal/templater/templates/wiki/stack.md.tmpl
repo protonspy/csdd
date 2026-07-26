@@ -17,6 +17,19 @@ are yours.
 <!-- | Language | ... | ... | ... | ... | -->
 <!-- | HTTP router | ... | ... | ... | [notes](wiki/pages/<lib>.md) | -->
 
+### External services
+
+Decisions no dependency manifest will ever declare: managed services,
+infrastructure, hosted APIs, models. They belong in the contract like any other
+choice — put them here and `graph analyze` stops reporting them as `phantom`,
+because the phantom lint compares the contract against manifests and these have
+none. Everything above this heading is still diffed against the manifests.
+
+| Domain | Choice | Version | Why | Refs |
+|---|---|---|---|---|
+<!-- | Database | PostgreSQL | 18 | ... | [notes](wiki/pages/<name>.md) | -->
+<!-- | Messaging channel | ... | ... | ... | ... | -->
+
 ## Rules
 
 1. **The contract is law.** Use only technologies listed in **Decided**. Anything

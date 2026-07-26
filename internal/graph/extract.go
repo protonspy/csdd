@@ -54,13 +54,41 @@ func defaultExtractors() []Extractor {
 }
 
 // walkSkipDirs are directory names never descended into during corpus discovery:
-// VCS internals, dependency dumps, csdd's own state dir, build staging, and the
-// vendored graphify study material.
+// VCS internals, dependency dumps, tool caches, csdd's own state dir, and build
+// staging.
+//
+// Everything indexed here becomes a node, and every third-party import inside it
+// becomes a technology the tech contract is asked to account for. A Python
+// project's backend/.venv/**/site-packages therefore produced a wall of
+// undeclared_tech findings about libraries the project never chose — noise that
+// got `graph analyze --strict` demoted to advisory in a real workspace, which
+// means a gate the user pays for stops running.
+//
+// The list holds only names that are unambiguously not source: a bare `build` is
+// deliberately absent, since projects do keep hand-written code there.
 var walkSkipDirs = map[string]bool{
-	".git":         true,
-	"node_modules": true,
-	".csdd":        true,
-	"dist":         true,
+	".git":          true,
+	"node_modules":  true,
+	".csdd":         true,
+	"dist":          true,
+	".venv":         true, // python virtualenvs — conventional names
+	"venv":          true,
+	"site-packages": true, // an installed tree reached by any other route
+	"__pycache__":   true,
+	".tox":          true,
+	".nox":          true,
+	".mypy_cache":   true,
+	".pytest_cache": true,
+	".ruff_cache":   true,
+	"vendor":        true, // go vendored dependencies
+	"target":        true, // cargo / maven build output
+	".gradle":       true,
+	".next":         true, // framework build caches
+	".nuxt":         true,
+	".svelte-kit":   true,
+	".turbo":        true,
+	"coverage":      true, // coverage HTML dumps
+	"htmlcov":       true,
 }
 
 // collectSources walks the workspace once and returns every file some extractor
@@ -72,9 +100,139 @@ var walkSkipDirs = map[string]bool{
 // build (a transient lock must not fail `graph build`), but it is never silently
 // dropped either: it is returned as a warning the caller surfaces. Only a failure
 // on the root itself aborts, since there is then nothing to index.
+// csddOwnedDirs are the workspace's own corpus, always indexed no matter what
+// .gitignore says about them.
+//
+// This guard is not hypothetical: csdd's own repository gitignores `/specs/` and
+// `/.claude/`, because there they are generated workspace state rather than
+// source. Honouring that would make `graph build` skip the entire spec corpus and
+// every shipped artifact — the graph would go quiet instead of noisy, which is
+// the worse failure of the two.
+var csddOwnedDirs = map[string]bool{
+	"specs":   true,
+	"docs":    true,
+	".claude": true,
+}
+
+// ignoreRules holds the directory-shaped .gitignore patterns declared by each
+// directory of the tree, keyed by that directory's root-relative path ("." for
+// the root).
+//
+// A project already states which directories are not source, and it states it
+// per subtree: the Python virtualenv that flooded a real workspace's tech lint
+// with findings about libraries nobody chose is declared in backend/.gitignore,
+// not the root one. Reading them makes the skip list adapt to the project instead
+// of guessing at every ecosystem's conventions — while walkSkipDirs stays as the
+// floor, since a directory may be uncommitted for reasons that have nothing to do
+// with being source, and a workspace need not be a git repository at all.
+type ignoreRules struct {
+	byDir map[string][]ignorePattern
+}
+
+// ignorePattern is one directory-shaped rule: name matched against a path
+// relative to the directory that declared it, anchored when the rule began with
+// "/".
+type ignorePattern struct {
+	path     string // slash-separated, no leading or trailing "/"
+	anchored bool
+}
+
+func newIgnoreRules() *ignoreRules { return &ignoreRules{byDir: map[string][]ignorePattern{}} }
+
+// load parses dirRel/.gitignore, if present. A missing or unreadable file simply
+// contributes no rules.
+func (ir *ignoreRules) load(root, dirRel string) {
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dirRel), ".gitignore"))
+	if err != nil {
+		return
+	}
+	var pats []ignorePattern
+	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+		if p, ok := parseIgnoreDirPattern(line); ok {
+			pats = append(pats, p)
+		}
+	}
+	if len(pats) > 0 {
+		ir.byDir[dirRel] = pats
+	}
+}
+
+// skips reports whether any ancestor's rules exclude the directory at rel.
+func (ir *ignoreRules) skips(rel string) bool {
+	if csddOwnedDirs[rel] {
+		return false
+	}
+	// Walk the ancestors, matching rel against the rules each one declared.
+	for dir := parentDir(rel); ; dir = parentDir(dir) {
+		for _, p := range ir.byDir[dir] {
+			if p.matches(dir, rel) {
+				return true
+			}
+		}
+		if dir == "." {
+			return false
+		}
+	}
+}
+
+// matches reports whether rel (root-relative) is excluded by a rule declared in
+// dir. An anchored rule must sit directly at the declaring directory; an
+// unanchored one matches at any depth below it, which is git's own semantics for
+// a pattern without a slash.
+func (p ignorePattern) matches(dir, rel string) bool {
+	sub := rel
+	if dir != "." {
+		if !strings.HasPrefix(rel, dir+"/") {
+			return false
+		}
+		sub = rel[len(dir)+1:]
+	}
+	if p.anchored || strings.Contains(p.path, "/") {
+		return sub == p.path
+	}
+	return sub == p.path || strings.HasSuffix(sub, "/"+p.path)
+}
+
+// parseIgnoreDirPattern reads one .gitignore line and returns a rule when the
+// line unambiguously names a directory.
+//
+// The subset is deliberately narrow. Everything skipped here is content that
+// stays indexed, which is a recoverable kind of wrong; a mis-parsed glob or
+// negation that silently drops a subtree is not. So a line with wildcards, a
+// negation, or anything else this parser is not certain about contributes no rule
+// at all.
+func parseIgnoreDirPattern(line string) (ignorePattern, bool) {
+	s := strings.TrimSpace(line)
+	if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, "!") {
+		return ignorePattern{}, false
+	}
+	if strings.ContainsAny(s, "*?[]") {
+		return ignorePattern{}, false
+	}
+	anchored := strings.HasPrefix(s, "/")
+	s = strings.Trim(s, "/")
+	if s == "" || s == "." || strings.Contains(s, "..") {
+		return ignorePattern{}, false
+	}
+	// A trailing slash in the source line marked it as a directory; without one
+	// the pattern may name a file, and matching it against directories is still
+	// safe because a file and a directory never share a path.
+	return ignorePattern{path: s, anchored: anchored}, true
+}
+
+// parentDir returns the slash-separated parent of rel, or "." at the top.
+func parentDir(rel string) string {
+	if i := strings.LastIndex(rel, "/"); i > 0 {
+		return rel[:i]
+	}
+	return "."
+}
+
 func collectSources(root string, extractors []Extractor) ([]Source, []string, error) {
 	var out []Source
 	var warnings []string
+	ignores := newIgnoreRules()
+	ignores.load(root, ".")
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			if p == root {
@@ -92,6 +250,13 @@ func collectSources(root string, extractors []Extractor) ([]Source, []string, er
 			if p != root && walkSkipDirs[name] {
 				return filepath.SkipDir
 			}
+			rel := filepath.ToSlash(mustRel(root, p))
+			if p != root && ignores.skips(rel) {
+				return filepath.SkipDir
+			}
+			// WalkDir hands a directory to us before its children, so loading the
+			// rules here guarantees they are in place for everything below.
+			ignores.load(root, rel)
 			return nil
 		}
 		rel := filepath.ToSlash(mustRel(root, p))
