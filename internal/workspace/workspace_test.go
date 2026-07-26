@@ -228,3 +228,88 @@ func TestRelativeFallback(t *testing.T) {
 		t.Errorf("Relative should fall back to target on error: got %q", got)
 	}
 }
+
+// setFakeHome points os.UserHomeDir at dir for the duration of the test. Go reads
+// USERPROFILE on Windows and HOME elsewhere; setting both keeps the helper
+// portable without branching on GOOS.
+func setFakeHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
+func mkdirs(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestFindPrefersStateMarker locks the marker that means "csdd workspace". Only
+// csdd writes .csdd/, so it wins over a .claude/ that some other tool may have
+// left in a parent.
+func TestFindPrefersStateMarker(t *testing.T) {
+	outer := t.TempDir()
+	inner := filepath.Join(outer, "inner")
+	nested := filepath.Join(inner, "a", "b")
+	mkdirs(t, nested, filepath.Join(outer, ".claude"), filepath.Join(inner, ".csdd"))
+	setFakeHome(t, t.TempDir())
+
+	want, _ := filepath.Abs(inner)
+	if got := Find(nested); got != want {
+		t.Errorf("Find(%q) = %q, want the .csdd/ marker at %q", nested, got, want)
+	}
+}
+
+// TestFindAcceptsLegacyClaudeMarker keeps workspaces created before the marker
+// moved resolving exactly as they did.
+func TestFindAcceptsLegacyClaudeMarker(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "a", "b")
+	mkdirs(t, nested, filepath.Join(root, ".claude"))
+	setFakeHome(t, t.TempDir())
+
+	want, _ := filepath.Abs(root)
+	if got := Find(nested); got != want {
+		t.Errorf("Find(%q) = %q, want the legacy .claude/ root %q", nested, got, want)
+	}
+}
+
+// TestFindNeverResolvesToTheHomeDirectory is the regression that matters.
+//
+// ~/.claude is Claude Code's global config directory and exists on every machine
+// running Claude Code. Before the guard, any command run outside a workspace but
+// under $HOME resolved its root to $HOME — so `csdd skill list` listed the user's
+// GLOBAL skills, and `csdd skill delete` would have deleted one.
+//
+// The assertion is deliberately "not home" rather than an exact path: whatever
+// lives above the fake home on the test machine may legitimately be found, and
+// the property under test is only that the home directory itself is never it.
+func TestFindNeverResolvesToTheHomeDirectory(t *testing.T) {
+	home := t.TempDir()
+	nested := filepath.Join(home, "projects", "not-a-workspace")
+	mkdirs(t, nested, filepath.Join(home, ".claude"))
+	setFakeHome(t, home)
+
+	homeAbs, _ := filepath.Abs(home)
+	if got := Find(nested); got == homeAbs {
+		t.Errorf("Find(%q) resolved to the user's home %q — ~/.claude is Claude Code's global config, not a csdd workspace", nested, homeAbs)
+	}
+}
+
+// TestFindUsesHomeWhenItCarriesTheCsddMarker draws the line precisely: the guard
+// is about the AMBIGUOUS marker, not about the home directory being off-limits.
+// A home directory that csdd itself initialized carries .csdd/ and still resolves.
+func TestFindUsesHomeWhenItCarriesTheCsddMarker(t *testing.T) {
+	home := t.TempDir()
+	nested := filepath.Join(home, "a")
+	mkdirs(t, nested, filepath.Join(home, ".claude"), filepath.Join(home, ".csdd"))
+	setFakeHome(t, home)
+
+	want, _ := filepath.Abs(home)
+	if got := Find(nested); got != want {
+		t.Errorf("Find(%q) = %q, want %q — an explicit .csdd/ marker makes the root unambiguous", nested, got, want)
+	}
+}
