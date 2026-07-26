@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -503,5 +504,42 @@ func TestDetectTestScopePathsUnknownLanguage(t *testing.T) {
 	}
 	if got := DetectTestScopePaths("python", "make check"); got != nil {
 		t.Errorf("a command with no python tooling marker should yield no selectors, got %v", got)
+	}
+}
+
+// TestSpecReportLockRetriesThroughDeletePending is the regression for a real CI
+// failure: `WriteSpecReport` returned "Access is denied" on Windows under nothing
+// worse than ordinary contention.
+//
+// Deleting a file on Windows does not remove its directory entry while a handle is
+// still open — the entry survives in a "delete pending" state, and opening it then
+// fails with ERROR_ACCESS_DENIED, which Go reports as a permission error, not an
+// exists error. The lock only retried on os.IsExist, so a writer releasing the lock
+// at the moment a peer tried to take it made that peer fail outright.
+func TestSpecReportLockRetriesThroughDeletePending(t *testing.T) {
+	if !contendedLockErr(os.ErrExist) {
+		t.Error("an existing lock is contention and must be retried")
+	}
+	// The Windows spelling of the same fact.
+	if !contendedLockErr(os.ErrPermission) {
+		t.Error("a delete-pending lock surfaces as a permission error and must be retried")
+	}
+	// Anything else is a real fault and must surface immediately, not after the
+	// full wait budget.
+	if contendedLockErr(os.ErrNotExist) {
+		t.Error("a missing path is not contention")
+	}
+	if contendedLockErr(errors.New("disk on fire")) {
+		t.Error("an unrecognized error is not contention")
+	}
+}
+
+// TestSpecReportLockSurfacesTheRealCause pins that treating permission errors as
+// contention does not swallow a genuinely unwritable target: it still fails, and
+// the message still names why rather than reporting a bare timeout.
+func TestSpecReportLockSurfacesTheRealCause(t *testing.T) {
+	err := fmt.Errorf("timed out waiting for %s: %w", "x.lock", os.ErrPermission)
+	if !errors.Is(err, os.ErrPermission) {
+		t.Error("the timeout must wrap the underlying error so the cause is not lost")
 	}
 }
