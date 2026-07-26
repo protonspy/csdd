@@ -1,7 +1,7 @@
 # Master Plan — Runner resilience, then the squad
 
 > **Audience:** the LLM agent (and humans) implementing this end-to-end.
-> **Status:** draft for review — **revision 4** (2026-07-26). Not yet approved.
+> **Status:** draft for review — **revision 5** (2026-07-26). Not yet approved.
 > **Companions:** `docs/plans/PLAN-verification-tiers.md` — that plan added the
 > verdict gate this one bounds correctly.
 > **Evidence base:** one complete `csdd plan run` of `agency-telegram-platform` in
@@ -11,6 +11,12 @@
 > `docs/graph/`. Second entry after `PLAN-verification-tiers.md`.
 
 ## Revision history
+
+**r4 → r5** R8 delivered as log attribution rather than as an observer
+interface. Every appended line now names the dispatch it belongs to and every
+sub-agent carries a handle from its task_id — which also fixed a real defect: the
+append-only reporter keyed its seen-status map by the agent LABEL, so concurrent
+agents sharing a description silently collapsed into one. M1 is complete.
 
 **r3 → r4** M1 implemented, minus R8. The observer was going to be built as a
 seam with no consumer — the Telegram notifier already reads the journal and is
@@ -513,7 +519,7 @@ isolation strategy, and — optionally — the TUI.
 | ID | Milestone | Exit criteria |
 |---|---|---|
 | **M0** | Resilience | A killed run resumes with attempts, handoffs and blocked set intact. A spawn failure never consumes an attempt. `--squad-limit` absent. |
-| **M1** | Scheduling + observation | Dispatch order is topological. `blocked` round-trips. Telegram runs through the observer. `--squad-limit` validates 1..6; its effective value is 1, behaviorally identical to M0. |
+| **M1** | Scheduling + observation | Dispatch order is topological. `blocked` round-trips. Every log line is attributed to its dispatch and agent. `--squad-limit` validates 1..6; its effective value is 1, behaviorally identical to M0. |
 | **M2** | Decision gate | One real plan executed under M1, with the §6.17 measurements recorded in a revision of this document. |
 | **M3** | Concurrency | Deferred; scoped only after M2. Flips `--squad-limit` to its default of 3, together with the shared account limiter (R-B) — never separately. |
 

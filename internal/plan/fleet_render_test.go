@@ -98,7 +98,7 @@ func TestSnapshotPrefersActiveAgents(t *testing.T) {
 // output routinely lands in a redirected log file.
 func TestLogReporterEmitsPlainTransitions(t *testing.T) {
 	var buf bytes.Buffer
-	r := &logReporter{out: &buf, now: time.Now, seen: map[string]string{}}
+	r := &logReporter{out: &buf, now: time.Now, feat: "auth-core", seen: map[string]string{}}
 
 	s := newSessionStream(time.Now)
 	s.line(`{"type":"system","subtype":"task_started","task_id":"t1","description":"Task 4","subagent_type":"implementer"}`)
@@ -110,8 +110,15 @@ func TestLogReporterEmitsPlainTransitions(t *testing.T) {
 	if strings.Contains(out, "\033[") {
 		t.Errorf("log output must not contain ANSI escapes: %q", out)
 	}
-	if !strings.Contains(out, "dispatched implementer: Task 4") {
+	if !strings.Contains(out, "implementer#t1 dispatched: Task 4") {
 		t.Errorf("missing the dispatch line: %q", out)
+	}
+	// Every line names the dispatch it belongs to, so an interleaved log stays
+	// readable and greppable per feat.
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if !strings.HasPrefix(line, "  [auth-core] ") {
+			t.Errorf("every line must be attributed to its feat, got %q", line)
+		}
 	}
 	if !strings.Contains(out, "completed") {
 		t.Errorf("missing the completion line: %q", out)
@@ -128,7 +135,7 @@ func TestLogReporterEmitsPlainTransitions(t *testing.T) {
 // terminal instead of updating in place.
 func TestLiveReporterRedrawsInPlace(t *testing.T) {
 	var buf bytes.Buffer
-	r := &liveReporter{out: &buf, now: time.Now}
+	r := &liveReporter{out: &buf, now: time.Now, feat: "auth-core"}
 
 	s := newSessionStream(time.Now)
 	s.line(`{"type":"system","subtype":"task_started","task_id":"t1","description":"Task 4","subagent_type":"implementer"}`)
@@ -138,7 +145,7 @@ func TestLiveReporterRedrawsInPlace(t *testing.T) {
 	if strings.Contains(first, "\033[") {
 		t.Errorf("the first frame has nothing to erase yet: %q", first)
 	}
-	if !strings.Contains(first, "● main") || !strings.Contains(first, "○ implementer  Task 4") {
+	if !strings.Contains(first, "● auth-core") || !strings.Contains(first, "○ implementer#t1  Task 4") {
 		t.Errorf("frame does not render the tree: %q", first)
 	}
 
@@ -173,4 +180,55 @@ func contains(hay []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestLogReporterDistinguishesSameLabelAgents is a regression for a real defect in
+// the append-only reporter: `seen` was keyed by the agent's LABEL, and two agents
+// of the same kind routinely carry the same description — three `implementer`s all
+// reading "Task 4". The second one's dispatch was swallowed as "already reported",
+// so the log claimed one agent where three were running.
+func TestLogReporterDistinguishesSameLabelAgents(t *testing.T) {
+	var buf bytes.Buffer
+	r := &logReporter{out: &buf, now: time.Now, feat: "auth-core", seen: map[string]string{}}
+
+	s := newSessionStream(time.Now)
+	for _, id := range []string{"task_aaaaaaaa11", "task_bbbbbbbb22", "task_cccccccc33"} {
+		s.line(`{"type":"system","subtype":"task_started","task_id":"` + id +
+			`","description":"Task 4","subagent_type":"implementer"}`)
+	}
+	r.report(s.view())
+
+	out := buf.String()
+	if n := strings.Count(out, "dispatched"); n != 3 {
+		t.Errorf("three concurrent agents must produce three dispatch lines, got %d:\n%s", n, out)
+	}
+	for _, want := range []string{"implementer#aaaaaaaa", "implementer#bbbbbbbb", "implementer#cccccccc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in:\n%s", want, out)
+		}
+	}
+}
+
+func TestShortAgentID(t *testing.T) {
+	cases := map[string]string{
+		"task_aaaaaaaa1111": "aaaaaaaa", // the opaque tail is what varies
+		"short":             "short",    // nothing to trim
+		"":                  "",
+	}
+	for in, want := range cases {
+		if got := shortAgentID(in); got != want {
+			t.Errorf("shortAgentID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestFeatTagAbsentWithoutAFeat keeps the renderer usable outside a plan run,
+// where there is no dispatch to attribute a line to.
+func TestFeatTagAbsentWithoutAFeat(t *testing.T) {
+	if got := featTag(""); got != "" {
+		t.Errorf("no feat means no tag, got %q", got)
+	}
+	if got := mainLabel(""); got != "main" {
+		t.Errorf("the live view falls back to %q, got %q", "main", got)
+	}
 }
