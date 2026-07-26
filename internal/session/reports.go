@@ -159,15 +159,17 @@ const specReportLockStale = 2 * specReportLockWait
 func lockSpecReport(specDir string) (func(), error) {
 	path := filepath.Join(specDir, SpecReportFile+".lock")
 	deadline := time.Now().Add(specReportLockWait)
+	var lastErr error
 	for {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if err == nil {
 			_ = f.Close()
 			return func() { _ = os.Remove(path) }, nil
 		}
-		if !os.IsExist(err) {
+		if !contendedLockErr(err) {
 			return nil, err
 		}
+		lastErr = err
 		if st, serr := os.Stat(path); serr == nil && time.Since(st.ModTime()) > specReportLockStale {
 			// Claim the stale lock by moving it aside under a name only this
 			// caller knows. If another waiter got there first, the rename fails
@@ -179,10 +181,30 @@ func lockSpecReport(specDir string) (func(), error) {
 			continue
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for %s", path)
+			return nil, fmt.Errorf("timed out waiting for %s: %w", path, lastErr)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// contendedLockErr reports whether a failed O_CREATE|O_EXCL open means "somebody
+// else holds the lock right now" — the condition worth retrying — rather than a
+// real fault.
+//
+// The obvious test is os.IsExist, and on Unix that is the whole story. Windows has
+// a second spelling of the same fact. Deleting a file there does not remove its
+// directory entry while any handle is still open: the entry survives in a
+// "delete pending" state, and opening it in that window fails with
+// ERROR_ACCESS_DENIED, which Go surfaces as a permission error rather than an
+// exists error. So a writer releasing the lock at the exact moment a peer tries to
+// take it made that peer fail outright instead of waiting its turn — the report
+// write returned "Access is denied" under nothing worse than ordinary contention.
+//
+// Treating permission errors as contention costs nothing in correctness: a
+// genuinely unwritable directory still fails, it just fails when the wait budget
+// runs out, with the underlying error wrapped so the message names the real cause.
+func contendedLockErr(err error) bool {
+	return os.IsExist(err) || os.IsPermission(err)
 }
 
 // ParseJUnit parses a single JUnit XML file into a TestSummary (used by the CLI
