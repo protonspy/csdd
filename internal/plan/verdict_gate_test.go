@@ -291,9 +291,23 @@ func TestSessionRecordsEveryAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recs := LoadSessionRecords(root, "p")
+	all := LoadSessionRecords(root, "p")
+	// Every attempt writes two rows: `started` before the session, and its outcome
+	// after. The opening row is what makes an attempt killed mid-session visible to
+	// a later resume.
+	var started, recs []SessionRecord
+	for _, r := range all {
+		if r.Status == SessionStarted {
+			started = append(started, r)
+			continue
+		}
+		recs = append(recs, r)
+	}
+	if len(started) != calls {
+		t.Errorf("expected one `started` row per session attempt (%d), got %d", calls, len(started))
+	}
 	if len(recs) != calls {
-		t.Fatalf("expected one record per session attempt (%d), got %d", calls, len(recs))
+		t.Fatalf("expected one settled record per session attempt (%d), got %d", calls, len(recs))
 	}
 	wantStatus := []string{"failed", "continue", "continue", "done", "done"}
 	for i, want := range wantStatus {

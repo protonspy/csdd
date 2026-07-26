@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/protonspy/csdd/internal/paths"
 )
 
 // Account-limit wait tuning. When a session stops because the Claude account hit
@@ -101,10 +99,11 @@ type RunOptions struct {
 
 // Run outcomes, chosen so the CLI can surface them as distinct exit codes.
 const (
-	OutcomeComplete = 0 // every feat is delivered
-	OutcomeCapped   = 6 // hit the iteration cap without finishing
-	OutcomeStalled  = 8 // the stall guard tripped: consecutive failures with no progress
-	OutcomeBlocked  = 9 // a feat exhausted its attempt bound; the run finished around it
+	OutcomeComplete    = 0  // every feat is delivered
+	OutcomeCapped      = 6  // hit the iteration cap without finishing
+	OutcomeStalled     = 8  // the stall guard tripped: consecutive failures with no progress
+	OutcomeBlocked     = 9  // a feat exhausted its attempt bound; the run finished around it
+	OutcomeSpawnFailed = 10 // `claude` could not be started at all; the environment is broken
 )
 
 // RunSummary is the totals reported on exit (R9.7).
@@ -178,7 +177,13 @@ func Run(opts RunOptions) (RunSummary, error) {
 	// is imported into the ledger so the loop skips it instead of redoing finished
 	// work. This never unmarks; it only records completion the ledger did not know.
 	reconcileLedgerFromDisk(opts, doc, ledger, logf)
-	st := newRunState()
+	// Rebuild what the loop knew when it was last interrupted. A fresh plan yields
+	// an empty state, so this is invisible unless there is genuinely something to
+	// resume (R3).
+	st := restoreRunState(opts.Root, opts.Slug, opts.FeatAttempts, ledger)
+	if s := st.resumeSummary(); s != "" {
+		logf("%s", s)
+	}
 	var sum RunSummary
 	stall := 0
 
@@ -209,6 +214,14 @@ func Run(opts RunOptions) (RunSummary, error) {
 		case iterFailed:
 			sum.Failures++
 			stall++
+		case iterSpawnAborted:
+			// Not a feat failure and not a stall: `claude` itself will not start, so
+			// every remaining feat would fail identically. End loudly (R1.4).
+			sum.Outcome = OutcomeSpawnFailed
+			sum.Reason = fmt.Sprintf("could not start the claude session %d times in a row — the environment is broken, not the plan; "+
+				"check that `claude` runs from this shell, then `csdd plan run %s` resumes from here", maxSpawnRetries, opts.Slug)
+			logf(sum.Reason)
+			return summarize(out, sum), nil
 		}
 		// R10.5: an unfinished feat that has spent its whole attempt budget is
 		// surfaced, not retried forever. This is checked outside the stall guard on
@@ -239,9 +252,10 @@ func Run(opts RunOptions) (RunSummary, error) {
 type iterResult int
 
 const (
-	iterFailed   iterResult = iota // context for the next iteration
-	iterAdvanced                   // the feat was delivered (ledger recorded it)
-	iterContinue                   // honest partial work, handoff recorded
+	iterFailed       iterResult = iota // context for the next iteration
+	iterAdvanced                       // the feat was delivered (ledger recorded it)
+	iterContinue                       // honest partial work, handoff recorded
+	iterSpawnAborted                   // `claude` would not start; the run must end (R1.4)
 )
 
 // executeFeat runs exactly one session for the feat and records what it declared.
@@ -269,8 +283,7 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 	}
 
 	attempt := st.nextAttempt(key)
-	outcome, err := sessionOrWait(opts, feat, base+runContext(st, key))
-	sum.Sessions++
+	var outcome SessionOutcome
 	record := func(status, detail string, gated bool) {
 		rec := newSessionRecord(feat.Slug, iter, attempt, status, detail, outcome.Metrics, h.Now())
 		rec.Gated = gated
@@ -279,8 +292,31 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 			logf("  ⚠ could not record this session's metrics: %v", err)
 		}
 	}
+	// Open the attempt on disk BEFORE spawning. If the host dies mid-session this
+	// row is the only evidence the attempt ever happened, and restoreRunState
+	// counts it (R2.1, R2.2).
+	record(SessionStarted, "", false)
+
+	outcome, err = sessionOrWait(opts, feat, base+runContext(st, key), st)
+
+	// A spawn failure that survived every retry is the environment, not the feat.
+	// Give the attempt back (the session never ran), settle the `started` row so a
+	// later resume does not read it as a crash, and end the run — grinding the rest
+	// of the plan against a `claude` that will not start only manufactures blocked
+	// feats, which is exactly what happened in the `violet` run (R1.2, R1.4).
+	var spawn *SpawnError
+	if errors.As(err, &spawn) {
+		st.undoAttempt(key)
+		record(SessionInfra, firstLine(err.Error()), false)
+		journal(opts, feat.Slug, "infra",
+			fmt.Sprintf("spawn failed %d× in a row: %s", maxSpawnRetries, firstLine(spawn.Err.Error())))
+		logf("  ✗ could not start the claude session after %d attempts: %v", maxSpawnRetries, spawn.Err)
+		return iterSpawnAborted
+	}
+
+	sum.Sessions++
 	if err != nil {
-		record("failed", firstLine(err.Error()), false)
+		record(SessionFailed, firstLine(err.Error()), false)
 		hist.add("session error", err.Error())
 		st.logs[key] = writeFailureLog(opts, feat, hist)
 		journal(opts, feat.Slug, "failed", "session error: "+firstLine(err.Error()))
@@ -291,7 +327,7 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 	verdict := outcome.Verdict
 	switch verdict.Status {
 	case VerdictContinue:
-		record("continue", oneLine(verdict.Summary), false)
+		record(SessionContinue, oneLine(verdict.Summary), false)
 		st.handoffs[key] = strings.TrimSpace(verdict.Summary)
 		journal(opts, feat.Slug, "progress", "handoff: "+oneLine(verdict.Summary))
 		logf("  … progress — handing off to the next session")
@@ -301,7 +337,7 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		if findings := gateDone(opts.Root, feat); len(findings) > 0 {
 			sum.Gated++
 			names := gateCheckNames(findings)
-			record("continue", "verdict gate refused `done`: "+names, true)
+			record(SessionContinue, "verdict gate refused `done`: "+names, true)
 			st.handoffs[key] = gateHandoff(feat, findings, verdict.Summary)
 			journal(opts, feat.Slug, "progress", "verdict gate refused `done`: "+names)
 			logf("  ⚠ %s claimed done but the on-disk checks refused it (%s) — handing back for %d more attempt(s)",
@@ -313,13 +349,13 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		}
 		ledger.MarkDone(feat.Slug, oneLine(verdict.Summary), h.Now())
 		if err := ledger.Save(opts.Root, opts.Slug); err != nil {
-			record("failed", "ledger save: "+firstLine(err.Error()), false)
+			record(SessionFailed, "ledger save: "+firstLine(err.Error()), false)
 			hist.add("ledger save failed", err.Error())
 			journal(opts, feat.Slug, "failed", "ledger save: "+firstLine(err.Error()))
 			logf("  ✗ could not record %s as delivered: %v", feat.Slug, err)
 			return iterFailed
 		}
-		record("done", oneLine(verdict.Summary), false)
+		record(SessionDone, oneLine(verdict.Summary), false)
 		journalDone(opts, feat.Slug, oneLine(verdict.Summary))
 		st.clearFeat(key)
 		sum.Steps++
@@ -327,7 +363,7 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		return iterAdvanced
 	default:
 		// parseVerdict enforces done|continue, so this is defensive only.
-		record("failed", "unknown verdict status: "+verdict.Status, false)
+		record(SessionFailed, "unknown verdict status: "+verdict.Status, false)
 		hist.add("unknown verdict", verdict.Status)
 		journal(opts, feat.Slug, "failed", "unknown verdict status: "+verdict.Status)
 		logf("  ✗ unknown verdict status %q", verdict.Status)
@@ -335,23 +371,73 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 	}
 }
 
-// sessionOrWait runs one session, transparently absorbing account-limit stops:
-// when the session reports "you've hit your session limit", the runner sleeps
-// until the reset window reopens and retries the SAME feat, looping until it gets
-// a real result. From executeFeat's view a limit is invisible — it never counts as
-// a failure, burns the stall guard, or pollutes the failure log. The iteration is
-// not consumed either, since the caller only advances once this returns.
-func sessionOrWait(opts RunOptions, feat Feat, brief string) (SessionOutcome, error) {
+// sessionOrWait runs one session, transparently absorbing the two INFRASTRUCTURE
+// stops — an account limit and a failed spawn — so neither is mistaken for the
+// feat failing.
+//
+// An account limit sleeps until the reset window reopens and retries the SAME
+// feat. A spawn failure backs off briefly and retries the same feat, up to
+// maxSpawnRetries consecutive times; past that the environment is broken rather
+// than flaky, and the SpawnError is returned so the run can end honestly instead
+// of grinding every feat to `blocked` against a `claude` that will not start.
+//
+// From executeFeat's view both are invisible while they are being absorbed: they
+// never count as a failure, burn the stall guard, or pollute the failure log, and
+// the iteration is not consumed since the caller only advances once this returns.
+func sessionOrWait(opts RunOptions, feat Feat, brief string, st *runState) (SessionOutcome, error) {
 	h := opts.Hooks
 	for {
 		out, err := h.Session(feat, brief, opts.SessionBudget)
 		var lim *LimitError
 		if errors.As(err, &lim) {
+			st.spawnFailures = 0 // the child ran; only the account said no
 			waitForLimit(opts, feat, lim)
 			continue
 		}
+		var spawn *SpawnError
+		if errors.As(err, &spawn) {
+			st.spawnFailures++
+			if st.spawnFailures >= maxSpawnRetries {
+				return out, err
+			}
+			waitForSpawn(opts, feat, spawn, st.spawnFailures)
+			continue
+		}
+		// Any session that actually ran — success or failure — proves the exec path
+		// works, so a later spawn failure starts its own count.
+		st.spawnFailures = 0
 		return out, err
 	}
+}
+
+// Spawn-retry tuning. A failed exec is usually environmental (a too-long command
+// line, a binary mid-upgrade, an exhausted handle table), so a short backoff is
+// worth trying; a persistent one is an operator problem and must surface fast.
+const (
+	// maxSpawnRetries bounds consecutive failed spawns before the run gives up.
+	// Deliberately smaller than FeatAttempts: five identical exec failures say the
+	// environment is broken, and the `violet` run showed what waiting longer costs
+	// — eight and ten in a row, on two feats, both wrongly marked blocked.
+	maxSpawnRetries = 5
+	// spawnBackoff is the first wait between spawn retries; it doubles each time.
+	spawnBackoff = 5 * time.Second
+)
+
+// waitForSpawn reports a failed spawn and backs off before the next try. The
+// backoff doubles per consecutive failure, which keeps a transient fault cheap
+// without spinning on a permanent one.
+func waitForSpawn(opts RunOptions, feat Feat, spawn *SpawnError, consecutive int) {
+	logf := runLogf(opts)
+	// Clamped rather than trusted: a negative shift is a runtime panic, and this
+	// would be a graceless way to lose a run if a future caller ever passed 0.
+	if consecutive < 1 {
+		consecutive = 1
+	}
+	wait := spawnBackoff << (consecutive - 1)
+	logf("  ⚠ could not start the claude session (%d/%d) — retrying %s in %s: %v",
+		consecutive, maxSpawnRetries, feat.Slug, wait.Round(time.Second), spawn.Err)
+	journal(opts, feat.Slug, "infra", "spawn failed: "+firstLine(spawn.Err.Error()))
+	opts.Hooks.Sleep(wait)
 }
 
 // waitForLimit logs the account-limit pause and sleeps until the session window
@@ -421,7 +507,7 @@ func sleepWithCountdown(opts RunOptions, total time.Duration, label string) {
 // development in a session, or an earlier run whose transient ledger was cleaned).
 func reconcileLedgerFromDisk(opts RunOptions, doc *PlanDoc, ledger *Ledger, logf func(string, ...any)) {
 	done := ledger.doneSet()
-	changed := false
+	var reconciled []string
 	for _, f := range doc.Feats {
 		if done[f.Slug] {
 			continue
@@ -430,14 +516,21 @@ func reconcileLedgerFromDisk(opts RunOptions, doc *PlanDoc, ledger *Ledger, logf
 			continue
 		}
 		ledger.MarkDone(f.Slug, "reconciled: spec fully delivered on disk before this run", opts.Hooks.Now())
-		journal(opts, f.Slug, "done", "reconciled from disk (spec fully delivered before this run)")
 		logf("  ✓ %s already delivered on disk — recorded in the ledger", f.Slug)
-		changed = true
+		reconciled = append(reconciled, f.Slug)
 	}
-	if changed {
-		if err := ledger.Save(opts.Root, opts.Slug); err != nil {
-			logf("  ⚠ could not persist the reconciled ledger: %v", err)
-		}
+	if len(reconciled) == 0 {
+		return
+	}
+	// One journal entry, not one per feat. The ledger lives in the transient state
+	// dir, so a plan that loses it re-reconciles EVERY delivered feat on the next
+	// run: in the `violet` plan that made 40 of 94 journal entries identical
+	// "reconciled from disk" lines, burying the eight handoffs and twenty failures
+	// the journal exists to preserve. The feat names are the detail (R9.1).
+	journal(opts, "-", "reconciled",
+		fmt.Sprintf("%d feat(s) already delivered on disk: %s", len(reconciled), strings.Join(reconciled, ", ")))
+	if err := ledger.Save(opts.Root, opts.Slug); err != nil {
+		logf("  ⚠ could not persist the reconciled ledger: %v", err)
 	}
 }
 
@@ -458,6 +551,15 @@ type runState struct {
 	// blocked is the set of feats that exhausted the bound. The sequencer skips
 	// them so the rest of the plan can still run (R10.5).
 	blocked map[string]bool
+	// spawnFailures counts CONSECUTIVE failed execs of `claude`. Any session that
+	// actually ran resets it, so this measures "the exec path is broken right now",
+	// not "the run has had trouble". It lives here rather than in sessionOrWait so
+	// the count survives across feats: five failures spread over five feats is the
+	// same broken environment as five on one.
+	spawnFailures int
+	// crashed counts attempts recovered from disk that opened but never settled —
+	// a host that died mid-session. Reported once at run start (R3.5).
+	crashed int
 }
 
 func newRunState() *runState {
@@ -482,6 +584,15 @@ func (s *runState) hist(key string) *failureHistory {
 func (s *runState) nextAttempt(key string) int {
 	s.attempts[key]++
 	return s.attempts[key]
+}
+
+// undoAttempt gives back an attempt that was opened but never spent, because the
+// session never started. Without it a broken exec path would spend a feat's whole
+// attempt budget without the feat ever being tried once (R1.2).
+func (s *runState) undoAttempt(key string) {
+	if s.attempts[key] > 0 {
+		s.attempts[key]--
+	}
 }
 
 // clearFeat forgets a feat's trail once it is delivered.
@@ -605,7 +716,7 @@ func tailCap(s string, n int) string {
 // points at. It is rewritten (not appended) so the file always mirrors the history
 // exactly. An I/O failure yields "" — a lost log must never take the run down.
 func writeFailureLog(opts RunOptions, feat Feat, hist *failureHistory) string {
-	rel := filepath.Join(paths.StateDir, "plan", opts.Slug, "failures", feat.Slug+".log")
+	rel := failureLogRel(opts.Slug, feat.Slug)
 	var b strings.Builder
 	fmt.Fprintf(&b, "# plan %s · feat %s\n", opts.Slug, feat.Slug)
 	fmt.Fprintf(&b, "# %s · %d attempt(s)\n\n", opts.Hooks.Now().UTC().Format(time.RFC3339), hist.len())
@@ -619,7 +730,7 @@ func writeFailureLog(opts RunOptions, feat Feat, hist *failureHistory) string {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		return ""
 	}
-	return filepath.ToSlash(rel)
+	return rel
 }
 
 // --- journal + summary --------------------------------------------------------

@@ -353,9 +353,15 @@ func TestRunnerReconcilesDiskDelivered(t *testing.T) {
 	if l := LoadLedger(root, "p"); !l.Done("a") {
 		t.Errorf("reconcile should have recorded a in the ledger")
 	}
+	// One aggregate entry naming the feats, not one entry per feat: a plan whose
+	// transient ledger is lost re-reconciles everything on the next run, and a line
+	// each would bury the handoffs and failures the journal exists to preserve.
 	logData, _ := os.ReadFile(filepath.Join(Dir(root, "p"), "log.md"))
-	if !strings.Contains(string(logData), "reconciled from disk") {
-		t.Errorf("reconciled feat should be journaled: %s", logData)
+	if !strings.Contains(string(logData), "1 feat(s) already delivered on disk: a") {
+		t.Errorf("reconciliation should be journaled once, naming the feats: %s", logData)
+	}
+	if n := strings.Count(string(logData), "| reconciled"); n != 1 {
+		t.Errorf("expected exactly one reconciliation entry, got %d: %s", n, logData)
 	}
 }
 

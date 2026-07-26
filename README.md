@@ -288,7 +288,9 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
 
 The session's verdict declares one of two intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass) or `continue` (honest partial work; the summary is the handoff to the next session on the same feat).
 
-The run ends four ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), or a preflight refusal (unapproved or drifted plan).
+The run ends five ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), the session **cannot be started at all** (5 consecutive spawn failures — a broken environment, not a broken plan), or a preflight refusal (unapproved or drifted plan).
+
+A run is **resumable**: re-running `csdd plan run <slug>` after a crash or a Ctrl-C picks up where it stopped. Delivered feats come from the ledger and the spec tree; how many attempts each unfinished feat has spent, the handoff its last session left, and which feats already exhausted their bound are rebuilt from the append-only session record (`.csdd/plan/<slug>/sessions.jsonl`) — so an interruption neither resets a feat's attempt budget nor throws away the handoff.
 
 ```bash
 csdd plan status <slug>                    # feats, milestones, what's next
