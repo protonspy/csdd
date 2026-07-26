@@ -434,7 +434,7 @@ So nothing is silently overwritten: any file you customized is preserved as a nu
 |------|--------|
 | **spec · requirements** | Every criterion starts with WHEN/WHILE/IF/WHERE/THE SYSTEM · none uses `should` · `### Requirement N:` headers unique |
 | **spec · design** | Boundary Map and File Structure Plan sections present · every requirement ID appears in the traceability table · `design.md` ≤ 1000 lines (else split the spec) |
-| **spec · tasks** | Every leaf has `_Requirements:_` with real IDs · every `(P)` has a `_Boundary:_` that matches the design · no `(P)` pair shares a boundary |
+| **spec · tasks** | Every leaf has `_Requirements:_` with real IDs · every `(P)` has a `_Boundary:_` that matches the design · no `(P)` pair shares a boundary · task shape matches the spec's `development_flow` (under `tdd`/`tdd-e2e` a GREEN step follows a RED and a RED is answered by a GREEN; under `unit` the RED/GREEN shape is a flow mismatch) |
 | **plan** | Feats table well-formed · `Depends` resolve with no cycles · every `Refs` token (`[[wiki]]` · `stack:` · `adr:`) resolves · ≥1 quality gate · no avoided glossary terms |
 | **graph · analyze** | Traceability gaps + tech lints (`undeclared`/`phantom`/`unrefined`) + wiki lints · `--strict` exits non-zero |
 | **wiki · lint** | Broken wikilinks · orphan pages · index/log desync · unprocessed `docs/raw/` sources |

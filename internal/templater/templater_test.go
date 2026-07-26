@@ -282,7 +282,8 @@ func TestImplementerAgentEncodesDiscipline(t *testing.T) {
 	}
 	body := agents["implementer.md"]
 	for _, want := range []string{
-		"tdd-cycle",            // 2.1 RED→GREEN→REFACTOR
+		"tdd-cycle",            // 2.1 RED→GREEN→REFACTOR under tdd/tdd-e2e
+		"unit-cycle",           // 2.1 implement→cover→gate under unit
 		"Scope discipline",     // 2.2 one task, in-boundary, no scope creep
 		"one task",             // 2.2 binds the discipline, not a bare keyword
 		"verify-change",        // 2.3 run the gate

@@ -51,6 +51,14 @@ Common to every flow:
   - "Add metric auth.login.failed with non-sensitive labels."
 
 ## Mechanical Checks
+
+`csdd spec validate <feature>` enforces the annotation boxes and the RED/GREEN
+**naming** against the declared flow — it exits `2` naming the task and its line.
+What it cannot decide is whether a task carries behavior or is pure scaffolding, so
+the boxes that turn on that distinction (the `unit` test sub-task, the `tdd-e2e`
+Phase-4 task) stay yours to check. A clean run means the shape is right, not that
+every behavior is covered.
+
 - [ ] Every leaf task carries `_Requirements:_` with numeric IDs only.
 - [ ] Every `(P)` task carries `_Boundary:_`.
 - [ ] Every `_Depends:_` references a task ID that exists in this file.

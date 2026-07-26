@@ -826,7 +826,7 @@ func TestSkillListEmpty(t *testing.T) {
 func TestSkillListIncludesShippedDefaults(t *testing.T) {
 	dir := freshWorkspace(t)
 	_, out, _ := run(t, "skill", "list", "--root", dir)
-	for _, want := range []string{"tdd-cycle", "verify-change", "safe-refactor", "pr-review"} {
+	for _, want := range []string{"tdd-cycle", "unit-cycle", "verify-change", "safe-refactor", "pr-review"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("skill list missing shipped default %q:\n%s", want, out)
 		}
@@ -848,7 +848,7 @@ func TestShippedWorkflowSkillsValidate(t *testing.T) {
 	}
 	// The shipped discipline skills (test-first, verification, review, refactor) must
 	// validate too — a regression guard for their required headings (e.g. ## Goal).
-	disciplineSkills := []string{"tdd-cycle", "verify-change", "pr-review", "safe-refactor", "plan-dev"}
+	disciplineSkills := []string{"tdd-cycle", "unit-cycle", "verify-change", "pr-review", "safe-refactor", "plan-dev"}
 	for _, name := range append(workflowSkills, disciplineSkills...) {
 		code, out, errOut := run(t, "skill", "validate", name, "--root", dir)
 		if code != 0 {

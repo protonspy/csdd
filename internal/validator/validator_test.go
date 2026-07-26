@@ -691,3 +691,193 @@ func TestValidateSpecCRLFRequirements(t *testing.T) {
 		}
 	}
 }
+
+// specJSON renders a minimal spec.json carrying just the development flow, which
+// is all the flow checks read.
+func specJSON(flow string) string {
+	if flow == "" {
+		return `{"schema_version": 1, "feature_name": "albums"}`
+	}
+	return `{"schema_version": 1, "feature_name": "albums", "development_flow": "` + flow + `"}`
+}
+
+// flowIssues narrows a validation run to the messages the flow checks emit, so a
+// fixture's unrelated findings never mask (or fake) the assertion.
+func flowIssues(t *testing.T, files map[string]string) []Issue {
+	t.Helper()
+	var out []Issue
+	for _, is := range ValidateSpec(writeSpec(t, files), PhaseAll) {
+		if strings.Contains(is.Msg, "RED") || strings.Contains(is.Msg, "GREEN") {
+			out = append(out, is)
+		}
+	}
+	return out
+}
+
+func TestValidateSpecTDDFlowCatchesOrphanGreenAndDanglingRed(t *testing.T) {
+	tasks := `# Tasks
+
+## Phase 1
+- [ ] 1. Connect
+  - [ ] 1.1 GREEN — implement without a failing test first
+    - _Requirements: 1.1_
+- [ ] 2. Rotate
+  - [ ] 2.1 RED — write the failing test
+    - _Requirements: 1.2_
+`
+	issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON("tdd"),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        tasks,
+	})
+	var sawOrphanGreen, sawDanglingRed bool
+	for _, is := range issues {
+		if strings.Contains(is.Msg, "task 1.1 is a GREEN step with no preceding RED") {
+			sawOrphanGreen = true
+		}
+		if strings.Contains(is.Msg, "task 2.1 is a RED step with no GREEN sub-task after it") {
+			sawDanglingRed = true
+		}
+	}
+	if !sawOrphanGreen {
+		t.Errorf("orphan GREEN not reported. issues: %v", issues)
+	}
+	if !sawDanglingRed {
+		t.Errorf("dangling RED not reported. issues: %v", issues)
+	}
+}
+
+func TestValidateSpecTDDFlowAcceptsRealCorpusShapes(t *testing.T) {
+	// Both shapes are taken from the shipped corpus: one RED answered by several
+	// separate GREEN steps, and a single sub-task carrying both halves. Requiring
+	// the RED to be the *immediately* preceding sibling would fail all of these.
+	tasks := `# Tasks
+
+## Phase 1
+- [ ] 1. Harness
+  - [ ] 1.1 RED — the failing test
+    - _Requirements: 1.1_
+  - [ ] 1.2 GREEN (mechanical) — the generated half
+    - _Requirements: 1.1_
+  - [ ] 1.3 GREEN (by hand) — the rest
+    - _Requirements: 1.2_
+  - [ ] 1.4 GREEN (baseline) — record it
+    - _Requirements: 1.3_
+- [ ] 2. Routes
+  - [ ] 2.1 RED — the failing test
+    - _Requirements: 1.1_
+  - [ ] 2.2 GREEN — make it pass
+    - _Requirements: 1.1_
+  - [ ] 2.3 RED→GREEN — one step that opens and closes the pair
+    - _Requirements: 1.2_
+`
+	if issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON("tdd"),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        tasks,
+	}); len(issues) != 0 {
+		t.Errorf("well-formed tdd tasks produced flow issues: %v", issues)
+	}
+}
+
+func TestValidateSpecTDDFlowGroupsBySibling(t *testing.T) {
+	// A RED under task 1 must not answer a GREEN under task 2 — the pair is only
+	// meaningful among siblings.
+	tasks := `# Tasks
+
+## Phase 1
+- [ ] 1. First
+  - [ ] 1.1 RED — the failing test
+    - _Requirements: 1.1_
+  - [ ] 1.2 GREEN — make it pass
+    - _Requirements: 1.1_
+- [ ] 2. Second
+  - [ ] 2.1 GREEN — borrowed someone else's RED
+    - _Requirements: 1.2_
+`
+	issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON("tdd"),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        tasks,
+	})
+	if len(issues) != 1 || !strings.Contains(issues[0].Msg, "task 2.1 is a GREEN step") {
+		t.Errorf("expected exactly the cross-parent GREEN to be reported, got: %v", issues)
+	}
+}
+
+func TestValidateSpecUnitFlowRejectsRedGreenShape(t *testing.T) {
+	tasks := `# Tasks
+
+## Phase 1
+- [ ] 1. Connect
+  - [ ] 1.1 RED — write the failing test
+    - _Requirements: 1.1_
+  - [ ] 1.2 GREEN — make it pass
+    - _Requirements: 1.1_
+`
+	issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON("unit"),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        tasks,
+	})
+	if len(issues) != 2 {
+		t.Fatalf("expected both RED/GREEN tasks flagged under 'unit', got: %v", issues)
+	}
+	for _, is := range issues {
+		if !strings.Contains(is.Msg, "development_flow 'unit'") {
+			t.Errorf("unit mismatch message does not name the flow: %v", is)
+		}
+	}
+}
+
+func TestValidateSpecUnitFlowAcceptsTestsAfterShape(t *testing.T) {
+	tasks := `# Tasks
+
+## Phase 1
+- [ ] 1. Connect
+  - [ ] 1.1 Implement the connect action
+    - _Requirements: 1.1_
+  - [ ] 1.2 Cover connect with unit tests
+    - _Requirements: 1.1_
+`
+	if issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON("unit"),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        tasks,
+	}); len(issues) != 0 {
+		t.Errorf("tests-after tasks produced flow issues under 'unit': %v", issues)
+	}
+}
+
+func TestValidateSpecFlowDefaultsAndSilence(t *testing.T) {
+	orphanGreen := `# Tasks
+
+## Phase 1
+- [ ] 1. Connect
+  - [ ] 1.1 GREEN — implement without a failing test first
+    - _Requirements: 1.1_
+`
+	// spec.json present but no development_flow: the documented default is tdd.
+	if issues := flowIssues(t, map[string]string{
+		"spec.json":       specJSON(""),
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        orphanGreen,
+	}); len(issues) != 1 {
+		t.Errorf("absent development_flow should default to tdd and report the orphan GREEN, got: %v", issues)
+	}
+	// No spec.json at all: nothing declares a flow, so the checks stay silent
+	// rather than inventing one.
+	if issues := flowIssues(t, map[string]string{
+		"requirements.md": validRequirements,
+		"design.md":       validDesign,
+		"tasks.md":        orphanGreen,
+	}); len(issues) != 0 {
+		t.Errorf("a spec with no spec.json must not get flow findings, got: %v", issues)
+	}
+}
