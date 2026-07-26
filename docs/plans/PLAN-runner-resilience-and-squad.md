@@ -1,7 +1,7 @@
 # Master Plan — Runner resilience, then the squad
 
 > **Audience:** the LLM agent (and humans) implementing this end-to-end.
-> **Status:** draft for review — **revision 1** (2026-07-26). Not yet approved.
+> **Status:** draft for review — **revision 2** (2026-07-26). Not yet approved.
 > **Companions:** `docs/plans/PLAN-verification-tiers.md` — that plan added the
 > verdict gate this one bounds correctly.
 > **Evidence base:** one complete `csdd plan run` of `agency-telegram-platform` in
@@ -11,6 +11,10 @@
 > `docs/graph/`. Second entry after `PLAN-verification-tiers.md`.
 
 ## Revision history
+
+**r1 → r2** bounded `--squad-limit` to 1..6 and set its target default to 3
+(R7), with the sequencing note that a default above 1 makes the shared account
+limiter a hard prerequisite of M3 rather than a refinement of it (R-B).
 
 **r1** — first revision. Written after auditing the `violet` run end-to-end
 (`docs/plans/agency-telegram-platform/log.md`, `.csdd/plan/*/sessions.jsonl`,
@@ -151,7 +155,7 @@ where cost and risk concentrate, and the evidence raises a specific doubt about 
 - Diagnosing the undiagnosed `exit status 1` class (R4).
 - A DAG-aware sequencer, with `(P)` given real meaning (R5).
 - A third verdict status for a feat blocked on a peer (R6).
-- `--squad-limit`, shipped **locked at 1** (R7).
+- `--squad-limit`, bounded 1..6, shipped with an effective value of 1 (R7).
 - `SquadObserver`, wired to the existing Telegram notifier (R8).
 - Journal noise reduction (R9).
 
@@ -276,14 +280,33 @@ re-dispatch it only once every named feat is done.
 
 **R6.5** The scheduler SHALL union plan-declared and discovered dependencies.
 
-### Requirement 7: `--squad-limit` exists and is inert
+### Requirement 7: `--squad-limit` exists, bounded, and lands inert
 
-**R7.1** `plan run` SHALL accept `--squad-limit N`, default 1, rejecting N < 1.
+**R7.1** `plan run` SHALL accept `--squad-limit N`, rejecting N < 1 and N > 6.
 
-**R7.2** N > 1 SHALL be accepted but warn that concurrency is not yet implemented,
-so the flag's contract is fixed before the capability lands.
+**R7.2** The **hard ceiling is 6**, anchored on the widest topological wave the
+evidence plan admits (§1.4). A plan cannot use more than its own graph allows, so
+a higher number buys nothing and only burns account quota faster.
 
-**R7.3** The frontmatter key `squad_limit` SHALL be honored, with the CLI winning.
+**R7.3** The **target default is 3**. It does NOT take effect in M1: with
+concurrency unimplemented, a default of 3 would either lie about what the run does
+or force M3's work into M1. M1 therefore ships the flag with an effective value of
+1, and M3 flips the default to 3 in the same change that makes concurrency real —
+together with the shared account limiter (§8, R-B), which a default above 1 makes
+mandatory rather than optional.
+
+**R7.4** N > 1 in M1 SHALL be accepted but warn that concurrency is not yet
+implemented, so the flag's contract is fixed before the capability lands.
+
+**R7.5** The frontmatter key `squad_limit` SHALL be honored, with the CLI winning,
+and SHALL be subject to the same 1..6 bound.
+
+**Note on a default above 1.** It makes parallel execution the behavior a user gets
+without asking for it, in a tool that spends money unattended for hours. Two things
+make that acceptable: `(P)` is the real gate (R5.3), so a plan that has not
+declared parallel-safe feats stays serial whatever the limit says; and the ceiling
+is low enough that the worst case is bounded. The corollary is that the default
+buys nothing until plans are re-annotated — see §8, R-C.
 
 ### Requirement 8: Observation is an interface
 
@@ -471,9 +494,9 @@ isolation strategy, and — optionally — the TUI.
 | ID | Milestone | Exit criteria |
 |---|---|---|
 | **M0** | Resilience | A killed run resumes with attempts, handoffs and blocked set intact. A spawn failure never consumes an attempt. `--squad-limit` absent. |
-| **M1** | Scheduling + observation | Dispatch order is topological. `blocked` round-trips. Telegram runs through the observer. `--squad-limit 1` is behaviorally identical to M0. |
+| **M1** | Scheduling + observation | Dispatch order is topological. `blocked` round-trips. Telegram runs through the observer. `--squad-limit` validates 1..6; its effective value is 1, behaviorally identical to M0. |
 | **M2** | Decision gate | One real plan executed under M1, with the §6.17 measurements recorded in a revision of this document. |
-| **M3** | Concurrency | Deferred; scoped only after M2. |
+| **M3** | Concurrency | Deferred; scoped only after M2. Flips `--squad-limit` to its default of 3, together with the shared account limiter (R-B) — never separately. |
 
 M0 and M1 are independently mergeable and independently valuable. M0 alone repays
 the two wrongly-blocked feats observed in `violet`.
@@ -503,9 +526,12 @@ rate in M2; if it climbs, tighten by requiring the blocker to be a *declared*
 dependency.
 
 **R-B — The account limit is a shared global.** Not a risk at limit 1 (only 2
-`waiting` entries in 94), but at limit 3 it binds three times sooner and the
-per-loop `waitForLimit` (`runner.go:361`) becomes wrong. The shared limiter is a
-prerequisite of M3, not of M1.
+`waiting` entries in 94), but the target default of 3 (R7.3) binds it three times
+sooner, and at that rate the per-loop `waitForLimit` (`runner.go:361`) is actively
+wrong: three agents would each sleep their own countdown, uncoordinated, and any
+re-dispatch during the window burns more quota to rediscover that the quota is
+gone. A default above 1 therefore makes the shared limiter a **hard prerequisite**
+of M3 rather than a refinement of it — the two ship together or neither does.
 
 **R-C — `plan.md` re-annotation.** Realizing the 2.8× requires `(P)` on far more
 than 3 of 31 feats. That is authoring work on each plan, not runner work, and it
