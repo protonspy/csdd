@@ -93,20 +93,25 @@ func (s supervised) run() (stdout, stderr string, err error) {
 	if s.idle <= 0 {
 		s.idle = defaultSessionIdle
 	}
+	// The three failures below all mean the same thing: the child never ran. They
+	// are wrapped as *SpawnError so the runner can tell "the session failed" from
+	// "there was no session", which is the difference between charging the feat an
+	// attempt and not (R1.1). Sniffing the error string would be fragile; the exec
+	// boundary itself is the honest signal.
 	outPipe, err := s.cmd.StdoutPipe()
 	if err != nil {
-		return "", "", err
+		return "", "", &SpawnError{Err: err}
 	}
 	errPipe, err := s.cmd.StderrPipe()
 	if err != nil {
-		return "", "", err
+		return "", "", &SpawnError{Err: err}
 	}
 	// Put the child in its own process group: what actually hangs is often a
 	// grandchild (a shell the session spawned waiting on credentials, a stuck MCP
 	// server), and killing only `claude` would leave it holding the pipe open.
 	setProcessGroup(s.cmd)
 	if err := s.cmd.Start(); err != nil {
-		return "", "", err
+		return "", "", &SpawnError{Err: err}
 	}
 
 	var (

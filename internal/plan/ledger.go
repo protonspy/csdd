@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -97,6 +98,26 @@ func (l *Ledger) doneSet() map[string]bool {
 // spent, one JSON object per line, beside the ledger in the runner's state dir.
 const SessionsFile = "sessions.jsonl"
 
+// Session record statuses. The first four settle an attempt; SessionStarted opens
+// one.
+//
+// SessionStarted is written BEFORE the session is spawned, and is what makes a
+// crashed attempt visible at all. Every settled status is written after the
+// session returns, so a run killed mid-session (a reboot, a Ctrl-C, a machine
+// crash) previously left NO trace: the attempt was invisible to a later run, and
+// a feat that reliably crashed its host could loop past its attempt bound
+// forever. A `started` row with no matching settled row is exactly that crash.
+const (
+	SessionStarted  = "started"
+	SessionDone     = "done"
+	SessionContinue = "continue"
+	SessionFailed   = "failed"
+	// SessionInfra settles a `started` row whose session never ran — the spawn
+	// itself failed. It is recorded so the row is not mistaken for a crash, and
+	// deliberately does NOT count as an attempt at the feat (R1.2).
+	SessionInfra = "infra"
+)
+
 // SessionRecord is one session attempt: what it was working, how it ended, and
 // what it cost. Every attempt gets a row — `done`, `continue`, and failures alike
 // (R9.2) — because the attempts that did NOT deliver are exactly the ones an
@@ -146,10 +167,18 @@ func sessionsPath(root, slug string) string {
 	return filepath.Join(stateDir(root, slug), SessionsFile)
 }
 
+// sessionsMu serializes appends to sessions.jsonl. O_APPEND makes a single small
+// write atomic on POSIX but carries no such guarantee on Windows, which is a
+// first-class target here; the mutex costs nothing and removes the question. It
+// is package-level because the file is per-plan while the process is one.
+var sessionsMu sync.Mutex
+
 // AppendSessionRecord persists one attempt. Errors are returned but callers treat
 // them as non-fatal: instrumentation that can end a run is worse than no
 // instrumentation.
 func AppendSessionRecord(root, slug string, rec SessionRecord) error {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
 	if err := os.MkdirAll(stateDir(root, slug), 0o755); err != nil {
 		return err
 	}

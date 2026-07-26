@@ -3,6 +3,7 @@ package plan
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -131,7 +132,8 @@ func sessionArgs(budgetUSD float64, model, effort string) []string {
 // only when it has produced neither output nor CPU for the idle budget, so long
 // honest work is never cut short — see watchdog.go.
 func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
-	cmd := exec.Command("claude", sessionArgs(budgetUSD, model, effort)...)
+	args := sessionArgs(budgetUSD, model, effort)
+	cmd := exec.Command("claude", args...)
 	// The brief rides in on stdin, not argv: a large feat's brief exceeds Windows'
 	// 32,767-char command-line limit, and passing it as `-p <brief>` made the spawn
 	// itself fail (CreateProcess) so the session never opened. `claude -p` reads the
@@ -153,6 +155,13 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort st
 	}.run()
 	close(stop)
 
+	// A spawn failure carries nothing else worth reading — no stream, no metrics,
+	// no verdict — so surface it immediately and let the runner absorb it (R1.1).
+	var spawn *SpawnError
+	if errors.As(err, &spawn) {
+		return SessionOutcome{}, err
+	}
+
 	// The `result` event carries both the verdict and what the session cost, so
 	// read the metrics ONCE here and attach them to every return path below. A
 	// session that failed still spent time and money, and R9.2 wants that attempt
@@ -172,7 +181,8 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort st
 		return out, lim
 	}
 	if err != nil {
-		return out, fmt.Errorf("claude session failed: %v: %s", err, strings.TrimSpace(stderr))
+		return out, fmt.Errorf("claude session failed: %v: %s%s", err, strings.TrimSpace(stderr),
+			sessionFailureContext(args, brief, stream, stdout))
 	}
 	// The verdict rides in the final `result` event; fall back to the whole stream
 	// so a stream that ended unusually still gets parseVerdict's last-ditch scan.
@@ -183,6 +193,53 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort st
 	v, err := parseVerdict([]byte(raw))
 	out.Verdict = v
 	return out, err
+}
+
+// SpawnError signals the `claude` child process never started: the exec itself
+// failed, so no session ran and no work was attempted.
+//
+// It is the second member of the same family as LimitError — an INFRASTRUCTURE
+// stop, not a work failure — and the runner treats it the same way: retry without
+// charging the feat. The distinction is load-bearing, not cosmetic. A real run
+// (`agency-telegram-platform` in the `violet` workspace, 2026-07-20 and 07-24) hit
+// `fork/exec claude.exe: the filename or extension is too long` eight times in a
+// row on two separate feats. Each failure consumed one of the feat's eight
+// attempts (R10.4), so both feats were surfaced as `blocked` — "this feat cannot
+// converge" — while their code sat finished on disk. The bound is meant to catch a
+// feat that will not converge; it caught a process that never existed.
+type SpawnError struct {
+	Err error // the underlying exec error, verbatim
+}
+
+func (e *SpawnError) Error() string {
+	return "the claude session could not be started: " + e.Err.Error()
+}
+
+func (e *SpawnError) Unwrap() error { return e.Err }
+
+// sessionFailureContext annotates a failed session with the few facts that
+// distinguish its failure modes from one another. It exists because the `violet`
+// run produced ten identical, undiagnosable failures — `exit status 1:` with an
+// EMPTY stderr and nothing else — which is not enough to tell a rejected prompt
+// from a child that died before it opened its stream.
+//
+// It reports what the message could not: whether the stream produced any event at
+// all (none means the child died before saying anything), how much output arrived,
+// and the sizes of the two inputs that have historically broken the spawn — argv
+// and the brief. It never echoes the brief itself, only its length.
+//
+// Instrumentation only: nothing branches on this string (R4.2).
+func sessionFailureContext(args []string, brief string, stream *sessionStream, stdout string) string {
+	argvLen := len("claude")
+	for _, a := range args {
+		argvLen += len(a) + 1
+	}
+	events := 0
+	if stream != nil {
+		_, events = stream.snapshot()
+	}
+	return fmt.Sprintf(" [diagnostics: stream events=%d, stdout=%dB, argv=%dB, brief=%dB]",
+		events, len(stdout), argvLen, len(brief))
 }
 
 // LimitError signals the claude session stopped because the Claude account hit
