@@ -207,6 +207,10 @@ type fleetView struct {
 }
 
 type agentView struct {
+	// ID is the stream's task_id, shortened. It is what distinguishes two agents
+	// of the same kind working on the same-looking thing — without it a log line
+	// says "implementer" and leaves the reader to guess which of three.
+	ID       string
 	Kind     string
 	Desc     string
 	Tool     string
@@ -234,6 +238,7 @@ func (s *sessionStream) view() fleetView {
 			end = s.now()
 		}
 		v.Agents = append(v.Agents, agentView{
+			ID:   shortAgentID(id),
 			Kind: a.kind, Desc: a.desc, Tool: a.tool,
 			Tokens: a.tokens, ToolUses: a.toolUses, Status: a.status,
 			Elapsed: end.Sub(a.started),
@@ -280,6 +285,20 @@ func agentLabel(a agentView) string {
 		return a.Kind
 	}
 	return "agent"
+}
+
+// shortAgentID trims a task_id to a readable handle. The full id is a long opaque
+// token; eight characters is enough to tell concurrent agents apart in a log and
+// short enough that the line still reads as prose.
+func shortAgentID(id string) string {
+	const width = 8
+	if i := strings.LastIndexByte(id, '_'); i >= 0 && i+1 < len(id) {
+		id = id[i+1:]
+	}
+	if len(id) > width {
+		return id[:width]
+	}
+	return id
 }
 
 // verdictSource returns the final `result` event when the stream produced one.

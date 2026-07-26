@@ -50,15 +50,47 @@ type sessionReporter interface {
 	run(s *sessionStream, stop <-chan struct{})
 }
 
-// newReporter picks the renderer that suits the destination.
-func newReporter(out io.Writer, tty bool, now func() time.Time) sessionReporter {
+// newReporter picks the renderer that suits the destination. `feat` is the slug of
+// the dispatch being reported; every line it emits is attributed to it, so a log
+// that will one day interleave several sessions never leaves the reader guessing
+// which feat a line belongs to.
+func newReporter(out io.Writer, tty bool, now func() time.Time, feat string) sessionReporter {
 	if now == nil {
 		now = time.Now
 	}
 	if tty {
-		return &liveReporter{out: out, now: now}
+		return &liveReporter{out: out, now: now, feat: feat}
 	}
-	return &logReporter{out: out, now: now}
+	return &logReporter{out: out, now: now, feat: feat}
+}
+
+// featTag is the per-dispatch prefix every appended line carries. Fixed-shape and
+// leading, so a reader — or a grep — can pick one feat out of an interleaved log
+// without parsing the rest of the line.
+func featTag(feat string) string {
+	if feat == "" {
+		return ""
+	}
+	return "[" + feat + "] "
+}
+
+// agentTag names one sub-agent: its kind plus a short handle from the stream's
+// task_id. The handle is what makes three concurrent `implementer`s three
+// different things rather than one repeated word.
+func agentTag(a agentView) string {
+	if a.ID == "" {
+		return agentKind(a)
+	}
+	return agentKind(a) + "#" + a.ID
+}
+
+// mainLabel names the orchestrating session itself in the live view: the feat it
+// is driving, or a bare "main" when there is no feat context.
+func mainLabel(feat string) string {
+	if feat == "" {
+		return "main"
+	}
+	return feat
 }
 
 // --- terminal: redraw in place ----------------------------------------------
@@ -66,6 +98,7 @@ func newReporter(out io.Writer, tty bool, now func() time.Time) sessionReporter 
 type liveReporter struct {
 	out   io.Writer
 	now   func() time.Time
+	feat  string
 	lines int // lines painted last frame, to erase before the next
 }
 
@@ -88,10 +121,10 @@ func (r *liveReporter) paint(v fleetView, elapsed time.Duration) {
 	var b strings.Builder
 	r.eraseInto(&b)
 
-	fmt.Fprintf(&b, "  ● main  %s · %s (%d events)\n",
-		compactDuration(elapsed), v.Main, v.Events)
+	fmt.Fprintf(&b, "  ● %s  %s · %s (%d events)\n",
+		mainLabel(r.feat), compactDuration(elapsed), v.Main, v.Events)
 	for _, a := range v.Agents {
-		fmt.Fprintf(&b, "  %s %s  %s%s\n", agentBullet(a), agentKind(a), agentLabel(a), agentDetail(a))
+		fmt.Fprintf(&b, "  %s %s  %s%s\n", agentBullet(a), agentTag(a), agentLabel(a), agentDetail(a))
 	}
 
 	// One line for main, one per agent — what the next frame must erase.
@@ -161,7 +194,8 @@ func compactTokens(n int) string {
 type logReporter struct {
 	out  io.Writer
 	now  func() time.Time
-	seen map[string]string // agent label → last status reported
+	feat string
+	seen map[string]string // agent ID → last status reported
 }
 
 func (r *logReporter) run(s *sessionStream, stop <-chan struct{}) {
@@ -183,28 +217,39 @@ func (r *logReporter) run(s *sessionStream, stop <-chan struct{}) {
 			r.report(s.view())
 		case <-beat.C:
 			activity, events := s.snapshot()
-			r.printf("    · %s — %s (%d events)",
+			r.printf("· %s — %s (%d events)",
 				compactDuration(r.now().Sub(start)), activity, events)
 		}
 	}
 }
 
 // report emits a line for each sub-agent whose status changed since last time.
+//
+// Keyed by agent ID, not by label. Two agents of the same kind routinely carry the
+// same description — three `implementer`s all reading "Task 4" — and keying on that
+// made them share one status slot, so the second one's dispatch and completion were
+// silently swallowed as "already reported".
 func (r *logReporter) report(v fleetView) {
 	for _, a := range v.Agents {
-		label := agentLabel(a)
-		if r.seen[label] == a.Status {
+		key := a.ID
+		if key == "" {
+			key = agentLabel(a)
+		}
+		if r.seen[key] == a.Status {
 			continue
 		}
-		r.seen[label] = a.Status
+		r.seen[key] = a.Status
 		if a.Running() {
-			r.printf("    ↳ dispatched %s: %s", agentKind(a), label)
+			r.printf("↳ %s dispatched: %s", agentTag(a), agentLabel(a))
 		} else {
-			r.printf("    ↳ %s %s: %s%s", agentKind(a), a.Status, label, agentDetail(a))
+			r.printf("↳ %s %s: %s%s", agentTag(a), a.Status, agentLabel(a), agentDetail(a))
 		}
 	}
 }
 
+// printf writes one attributed line. The feat tag leads so the output stays
+// greppable per dispatch, and the two-space indent keeps it visually nested under
+// the runner's own "→ <feat>" heading.
 func (r *logReporter) printf(format string, a ...any) {
-	_, _ = fmt.Fprintf(r.out, format+"\n", a...)
+	_, _ = fmt.Fprintf(r.out, "  "+featTag(r.feat)+format+"\n", a...)
 }

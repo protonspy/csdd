@@ -135,7 +135,7 @@ func sessionArgs(budgetUSD float64, model, effort string) []string {
 // silently, and that is the failure this addresses. The watchdog kills a session
 // only when it has produced neither output nor CPU for the idle budget, so long
 // honest work is never cut short — see watchdog.go.
-func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
+func execClaudeSession(feat Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
 	args := sessionArgs(budgetUSD, model, effort)
 	cmd := exec.Command("claude", args...)
 	// The brief rides in on stdin, not argv: a large feat's brief exceeds Windows'
@@ -148,7 +148,7 @@ func execClaudeSession(_ Feat, brief string, budgetUSD float64, model, effort st
 	stream := newSessionStream(sess.now)
 	stop := make(chan struct{})
 	if sess.out != nil {
-		go newReporter(sess.out, sess.tty, sess.now).run(stream, stop)
+		go newReporter(sess.out, sess.tty, sess.now, feat.Slug).run(stream, stop)
 	}
 
 	stdout, stderr, err := supervised{
