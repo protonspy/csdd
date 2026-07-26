@@ -960,9 +960,12 @@ func specTestReport(args []string) int {
 				// not earned — so name the narrowing flags on the artifact itself
 				// (R11.1). An attention, not a rejection: legitimate exclusions
 				// exist, but they must be visible.
-				if flags := session.DetectTestScopeFlags(lang, cmd); len(flags) > 0 {
+				// Selectors, not just flags: a bare path (`pytest tests/unit`)
+				// narrows the run exactly as hard and carries no flag, so it used
+				// to write a green whole-suite claim unchallenged (R11.1).
+				if sel := session.DetectTestScopeSelectors(lang, cmd); len(sel) > 0 {
 					msg := fmt.Sprintf("--cmd narrows the test run (%s): this evidence does not cover the whole suite",
-						strings.Join(flags, ", "))
+						strings.Join(sel, ", "))
 					render.Warn(msg)
 					rep.Attentions = append(rep.Attentions, msg)
 				}

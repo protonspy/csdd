@@ -73,6 +73,15 @@ export interface SpecCovSummary {
   lines: number
 }
 
+/** One task's own recorded run, keyed by task ID in SpecReport.tasks. */
+export interface SpecTaskReport {
+  updatedAt: string
+  command?: string
+  tests?: SpecTestCounts
+  coverage?: SpecCovSummary
+  attentions?: string[]
+}
+
 export interface SpecReport {
   feature: string
   updatedAt: string
@@ -81,6 +90,13 @@ export interface SpecReport {
   coverage?: SpecCovSummary
   testPaths?: string[]
   attentions?: string[]
+  /**
+   * Per-task evidence, keyed by task ID, written by
+   * `csdd spec test-report <feature> --run --task <id>`. The fields above stay
+   * the latest run's rollup; this is what says WHICH task produced a result,
+   * which is the only thing that survives several implementers running at once.
+   */
+  tasks?: Record<string, SpecTaskReport>
 }
 
 export interface SpecDetail extends SpecCard {

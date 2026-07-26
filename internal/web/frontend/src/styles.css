@@ -1951,3 +1951,51 @@ div.vis-tooltip {
   padding: 8px 10px !important;
   font-family: var(--sans) !important;
 }
+
+/* Per-task test evidence (SpecReport.tasks). One row per task that recorded a
+   run; the attentions list, when present, wraps onto its own line under the row
+   so the grid columns stay aligned across tasks. */
+.task-ev {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+.task-ev-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 62px 108px auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-soft, var(--bg-3));
+}
+.task-ev-row:last-child {
+  border-bottom: 0;
+}
+.task-ev-id {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+.task-ev-cov {
+  font-family: var(--mono);
+  text-align: right;
+}
+.task-ev-when {
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.task-ev-att {
+  grid-column: 1 / -1;
+  margin: 2px 0 4px;
+}
+@media (max-width: 720px) {
+  .task-ev-row {
+    grid-template-columns: 56px 1fr auto;
+  }
+  .task-ev-cov,
+  .task-ev-when {
+    display: none;
+  }
+}
