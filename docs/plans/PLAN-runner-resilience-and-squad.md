@@ -1,7 +1,7 @@
 # Master Plan — Runner resilience, then the squad
 
 > **Audience:** the LLM agent (and humans) implementing this end-to-end.
-> **Status:** draft for review — **revision 2** (2026-07-26). Not yet approved.
+> **Status:** draft for review — **revision 3** (2026-07-26). Not yet approved.
 > **Companions:** `docs/plans/PLAN-verification-tiers.md` — that plan added the
 > verdict gate this one bounds correctly.
 > **Evidence base:** one complete `csdd plan run` of `agency-telegram-platform` in
@@ -11,6 +11,12 @@
 > `docs/graph/`. Second entry after `PLAN-verification-tiers.md`.
 
 ## Revision history
+
+**r2 → r3** closed R2.2's durable half: the resume line now reaches `log.md`
+naming the feats whose attempts died mid-session, not just stdout. R5.2 retired as
+already-satisfied — `validate.go` rejects range shorthand, self-deps and unknown
+slugs, and approval requires a clean validate, so the scheduler can trust
+`Depends`.
 
 **r1 → r2** bounded `--squad-limit` to 1..6 and set its target default to 3
 (R7), with the sequencing note that a default above 1 makes the shared account
@@ -217,7 +223,8 @@ spawning, carrying feat, iteration and attempt.
 
 **R2.2** On resume, a `started` record with no matching settled record for the same
 (feat, iteration, attempt) SHALL be treated as a crashed attempt: it counts against
-`FeatAttempts` and is journaled as such.
+`FeatAttempts`, and the feats it belongs to SHALL be named in the run journal — not
+only on stdout, which a long unattended run has nobody reading.
 
 **R2.3** Appends SHALL be serialized (mutex), since `O_APPEND` atomicity is not
 guaranteed on Windows.
@@ -254,9 +261,13 @@ occurrence.
 **R5.1** `readyFeats` SHALL return every feat whose `Depends` entries are all in the
 done set and which is neither running nor blocked.
 
-**R5.2** Range shorthand in `Depends` (never expanded, `model.go:43`) SHALL be
-resolved or rejected explicitly at validate time — an unexpanded range must not
-silently read as an unknown dependency.
+**R5.2** ~~Range shorthand in `Depends` SHALL be resolved or rejected at validate
+time.~~ **Already satisfied — no work.** `validate.go:71-77` rejects range
+shorthand outright ("list feat slugs explicitly"), and the same loop rejects
+self-dependencies and unknown slugs. `plan run` preflights on approval and
+approval requires a clean validate, so by the time the scheduler sees a plan its
+`Depends` cells are guaranteed to be resolvable feat slugs. Kept here as a pinned
+assumption: if that validation is ever relaxed, `readyFeats` becomes unsound.
 
 **R5.3** `(P)` SHALL gate concurrency permission, distinct from DAG readiness which
 gates correctness. A ready feat without `(P)` SHALL run alone.

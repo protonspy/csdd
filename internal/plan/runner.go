@@ -183,6 +183,11 @@ func Run(opts RunOptions) (RunSummary, error) {
 	st := restoreRunState(opts.Root, opts.Slug, opts.FeatAttempts, ledger)
 	if s := st.resumeSummary(); s != "" {
 		logf("%s", s)
+		// Durable, not just on stdout. A run that resumed — and especially one that
+		// resumed over an attempt which died mid-session — is exactly the event the
+		// journal exists to preserve; printing it only to a terminal nobody was
+		// watching leaves no trace of why a feat's budget was already partly spent.
+		journal(opts, "-", "resumed", s)
 	}
 	var sum RunSummary
 	stall := 0
@@ -557,9 +562,11 @@ type runState struct {
 	// the count survives across feats: five failures spread over five feats is the
 	// same broken environment as five on one.
 	spawnFailures int
-	// crashed counts attempts recovered from disk that opened but never settled —
-	// a host that died mid-session. Reported once at run start (R3.5).
-	crashed int
+	// crashed names the feats with an attempt recovered from disk that opened but
+	// never settled — a host that died mid-session. Feat slugs rather than a bare
+	// count because the journal entry has to be actionable: "something crashed" is
+	// not a thing anyone can follow up on. Sorted and deduplicated (R2.2, R3.5).
+	crashed []string
 }
 
 func newRunState() *runState {
