@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -39,17 +40,95 @@ func run(t *testing.T, args ...string) (int, string, string) {
 	return capture(t, func() int { return Run(args, templater.FS) })
 }
 
-// freshWorkspace creates an empty directory and runs `csdd init --root` so the
-// rest of the test has a normal Claude Code layout to operate on.
+// TestMain builds one initialized workspace for the whole package run and removes
+// it afterwards. See freshWorkspace.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if workspaceTemplateDir != "" {
+		_ = os.RemoveAll(workspaceTemplateDir)
+	}
+	os.Exit(code)
+}
+
+var (
+	workspaceTemplateOnce sync.Once
+	workspaceTemplateDir  string
+	workspaceTemplateErr  error
+)
+
+// workspaceTemplate returns a path to one `csdd init`-ed workspace, built at most
+// once per package run.
+func workspaceTemplate(t *testing.T) string {
+	t.Helper()
+	workspaceTemplateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "csdd-ws-template-")
+		if err != nil {
+			workspaceTemplateErr = err
+			return
+		}
+		// A complete workspace for tests exercises every tree, so opt into the
+		// hooks and pre-push components that a bare `csdd init` now leaves out.
+		if code, _, errOut := run(t, "init", "--root", dir, "--with-baseline", "--hooks", "--prepush"); code != 0 {
+			workspaceTemplateErr = fmt.Errorf("init failed (code=%d): %s", code, errOut)
+			_ = os.RemoveAll(dir)
+			return
+		}
+		workspaceTemplateDir = dir
+	})
+	if workspaceTemplateErr != nil {
+		t.Fatal(workspaceTemplateErr)
+	}
+	return workspaceTemplateDir
+}
+
+// freshWorkspace returns a private directory holding a normal Claude Code layout.
+//
+// It copies a workspace built once per package rather than running `csdd init`
+// again. init renders ~110 templates, writes them, and sha256s each into the
+// manifest; the 150+ tests that call this need the RESULT of that work, not the
+// work. Copying the finished tree gives the same guarantee — every test still
+// gets its own writable, isolated workspace under t.TempDir() — for a fraction of
+// the cost.
+//
+// A test that needs to observe init ITSELF must call it directly (see
+// TestInitDefaultCwd), because this path deliberately never runs it.
 func freshWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	// A complete workspace for tests exercises every tree, so opt into the
-	// hooks and pre-push components that a bare `csdd init` now leaves out.
-	if code, _, errOut := run(t, "init", "--root", dir, "--with-baseline", "--hooks", "--prepush"); code != 0 {
-		t.Fatalf("init failed (code=%d): %s", code, errOut)
+	if err := copyTree(workspaceTemplate(t), dir); err != nil {
+		t.Fatalf("copying the workspace template: %v", err)
 	}
 	return dir
+}
+
+// copyTree copies src's contents into dst, preserving file modes so a hook script
+// stays executable.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			if rel == "." {
+				return nil
+			}
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
 }
 
 // ---------- top-level dispatch ----------
