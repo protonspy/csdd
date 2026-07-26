@@ -194,3 +194,65 @@ func gateCheckNames(findings []gateFinding) string {
 	}
 	return strings.Join(names, ", ")
 }
+
+// --- the blocked gate (R6.2) --------------------------------------------------
+
+// gateBlocked decides whether a `blocked` verdict is believable, and returns the
+// dependencies worth recording plus the reason to refuse when it is not.
+//
+// The check exists because `blocked` is the one verdict that costs the session
+// nothing: it parks the feat without spending an attempt, which is exactly the
+// property that makes it useful for a genuine cross-feat dependency and exactly
+// the property that would make it an attractive escape from hard work. So the
+// claim is verified the same way a `done` is — mechanically, against what is on
+// disk, with no judgement about the session's reasoning.
+//
+// A named feat must exist in the plan and must not already be delivered. An
+// unknown slug cannot block anything, and a delivered one is not blocking anybody:
+// in both cases the session has mis-stated its situation, and the honest handling
+// is to refuse the verdict and hand the feat back as ordinary partial work.
+func gateBlocked(doc *PlanDoc, done map[string]bool, feat Feat, v Verdict) (deps []string, refusal string) {
+	if len(v.BlockedOn) == 0 {
+		return nil, "the verdict declared `blocked` but named no feat in blocked_on"
+	}
+	var unknown, delivered []string
+	for _, dep := range v.BlockedOn {
+		switch {
+		case dep == feat.Slug:
+			unknown = append(unknown, dep+" (itself)")
+		case !planHasFeat(doc, dep):
+			unknown = append(unknown, dep)
+		case done[dep]:
+			delivered = append(delivered, dep)
+		default:
+			deps = append(deps, dep)
+		}
+	}
+	switch {
+	case len(unknown) > 0:
+		return nil, "blocked_on names a feat this plan does not have: " + strings.Join(unknown, ", ")
+	case len(deps) == 0 && len(delivered) > 0:
+		return nil, "blocked_on names only feats that are already delivered: " + strings.Join(delivered, ", ")
+	}
+	return deps, ""
+}
+
+func planHasFeat(doc *PlanDoc, slug string) bool {
+	_, ok := doc.Feat(slug)
+	return ok
+}
+
+// blockedRefusalHandoff tells the successor session why its predecessor's
+// `blocked` claim was not accepted, so it re-plans instead of repeating it.
+func blockedRefusalHandoff(feat Feat, refusal, summary string) string {
+	var b strings.Builder
+	b.WriteString("Your predecessor declared feat `" + feat.Slug + "` blocked on another feat, and the runner refused the claim:\n\n")
+	b.WriteString("  " + refusal + "\n\n")
+	b.WriteString("`blocked` is only for a feat that genuinely cannot proceed until a DIFFERENT, ")
+	b.WriteString("not-yet-delivered feat of this plan lands. If what you need already exists, build against it. ")
+	b.WriteString("If the work is merely hard or large, do it incrementally and report `continue`.\n")
+	if s := strings.TrimSpace(summary); s != "" {
+		b.WriteString("\nWhat it reported:\n\n" + s + "\n")
+	}
+	return b.String()
+}

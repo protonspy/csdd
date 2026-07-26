@@ -299,7 +299,9 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
 
 `csdd plan run <slug>` is a **deliberately dumb, Ralph-style loop** where **one iteration = one Claude session** (default cap 100), and each session is handed **one whole feat as its mission**. The session — Claude driving csdd — owns the entire flow: it authors and approves the spec (`csdd spec generate/validate/approve`), implements every task, runs the dev-cycle, owns git (branch, `/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes (a `docs/stack.md` Decided row, an ADR when the why needs more than a line). **The loop trusts the session and does not verify** — there is no runner-side gate. It hands out feats in plan order, spawns the session, and records what it declares in a per-feat ledger (`.csdd/plan/<slug>/progress.json`). Nothing parks mid-run — **every failure becomes the next session's context** (the failure trail, the predecessor's handoff), which is what makes the loop self-correcting.
 
-The session's verdict declares one of two intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass) or `continue` (honest partial work; the summary is the handoff to the next session on the same feat).
+The session's verdict declares one of three intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass), `continue` (honest partial work; the summary is the handoff to the next session on the same feat), or `blocked` (the feat turned out to need another feat of this plan that has not landed — it parks without spending an attempt, and the discovered edge is recorded in `.csdd/plan/<slug>/discovered-deps.json`, never written back into `plan.md`).
+
+Feats are handed out in **dependency order**, not table order: the `Depends` column the plan already declares is what schedules the run, so a feat is only dispatched once everything it builds on is delivered. If a feat is blocked, everything downstream of it is reported as unreachable with the root cause named, instead of being dispatched into a tree where its foundation does not exist.
 
 The run ends five ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), the session **cannot be started at all** (5 consecutive spawn failures — a broken environment, not a broken plan), or a preflight refusal (unapproved or drifted plan).
 
@@ -310,6 +312,7 @@ csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
+                        --squad-limit 3      # max concurrent sessions (1..6, default 1 — concurrency not yet implemented)
 ```
 
 #### When a run ends without completing

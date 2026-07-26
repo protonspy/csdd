@@ -128,3 +128,21 @@ func TestPlanValidateJSONExitCode(t *testing.T) {
 		t.Errorf("validate --json should report ok=false: %s", out)
 	}
 }
+
+// TestPlanRunSquadLimitBounds pins the flag's contract before the capability it
+// describes exists. The ceiling is not arbitrary: 6 is the widest topological wave
+// the evidence plan admits, so past it a plan's own Depends graph cannot supply the
+// parallelism and a larger number would only consume the shared Claude account
+// limit faster.
+func TestPlanRunSquadLimitBounds(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"7", "99", "-2"} {
+		code, _, errOut := run(t, "plan", "run", "photos", "--root", dir, "--squad-limit", n)
+		if code == 0 {
+			t.Errorf("--squad-limit %s should be rejected", n)
+		}
+		if !strings.Contains(errOut, "must be between 1 and 6") {
+			t.Errorf("--squad-limit %s should name the bound, got %q", n, errOut)
+		}
+	}
+}

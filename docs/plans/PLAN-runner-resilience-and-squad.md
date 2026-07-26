@@ -1,7 +1,7 @@
 # Master Plan — Runner resilience, then the squad
 
 > **Audience:** the LLM agent (and humans) implementing this end-to-end.
-> **Status:** draft for review — **revision 3** (2026-07-26). Not yet approved.
+> **Status:** draft for review — **revision 4** (2026-07-26). Not yet approved.
 > **Companions:** `docs/plans/PLAN-verification-tiers.md` — that plan added the
 > verdict gate this one bounds correctly.
 > **Evidence base:** one complete `csdd plan run` of `agency-telegram-platform` in
@@ -11,6 +11,14 @@
 > `docs/graph/`. Second entry after `PLAN-verification-tiers.md`.
 
 ## Revision history
+
+**r3 → r4** M1 implemented, minus R8. The observer was going to be built as a
+seam with no consumer — the Telegram notifier already reads the journal and is
+better off decoupled, so wiring it through an observer would have replaced working
+code to no end. It moves to its own slice with a concrete deliverable instead:
+attributing every event line to the dispatch and agent it came from, which is
+useful at a squad limit of 1 (sub-agents within one session are already
+indistinguishable in a piped log) and mandatory above it.
 
 **r2 → r3** closed R2.2's durable half: the resume line now reaches `log.md`
 naming the feats whose attempts died mid-session, not just stdout. R5.2 retired as

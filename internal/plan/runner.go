@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -93,8 +94,15 @@ type RunOptions struct {
 	// the runner kills it as hung. It is NOT a time limit on a session: honest work
 	// of any duration keeps resetting it. Default 15 minutes (--session-idle).
 	SessionIdle time.Duration
-	Out         io.Writer
-	Hooks       Hooks
+	// SquadLimit is how many claude sessions may run at once. Bounded 1..6 by the
+	// CLI: the ceiling is the widest topological wave a real plan admitted, and a
+	// plan cannot use more concurrency than its own dependency graph allows.
+	//
+	// Concurrency is NOT implemented yet, so any value behaves as 1. The field
+	// exists now so the contract is fixed before the capability lands (R7).
+	SquadLimit int
+	Out        io.Writer
+	Hooks      Hooks
 }
 
 // Run outcomes, chosen so the CLI can surface them as distinct exit codes.
@@ -181,6 +189,13 @@ func Run(opts RunOptions) (RunSummary, error) {
 	// an empty state, so this is invisible unless there is genuinely something to
 	// resume (R3).
 	st := restoreRunState(opts.Root, opts.Slug, opts.FeatAttempts, ledger)
+	// Dependency edges earlier runs discovered. They are unioned with the plan's own
+	// by the scheduler, so a feat that was found to need a peer stays parked across
+	// runs instead of being re-dispatched to rediscover the same wall.
+	st.extraDeps = LoadDiscoveredDeps(opts.Root, opts.Slug)
+	if n := len(st.extraDeps); n > 0 {
+		logf("carrying %d discovered dependency edge(s) from earlier runs (%s)", n, DiscoveredDepsFile)
+	}
 	if s := st.resumeSummary(); s != "" {
 		logf("%s", s)
 		// Durable, not just on stdout. A run that resumed — and especially one that
@@ -193,19 +208,29 @@ func Run(opts RunOptions) (RunSummary, error) {
 	stall := 0
 
 	for iter := 1; iter <= opts.MaxIterations; iter++ {
-		// A blocked feat is out of the rotation: it exhausted its attempt bound, so
-		// re-handing it would burn the remaining iterations on the one feat that has
-		// already proven it cannot converge. The rest of the plan still runs.
-		feat, ok := nextFeat(doc, unionSets(ledger.doneSet(), st.blocked))
+		// The done set drives readiness; `unavailable` is what must not be handed out.
+		// A blocked feat exhausted its attempt bound, so re-handing it would burn the
+		// remaining iterations on the one feat that has already proven it cannot
+		// converge. A parked feat is waiting on a peer and is not workable yet.
+		done := ledger.doneSet()
+		feat, ok := nextFeat(doc, done, unionSets(st.blocked, st.parked), st.extraDeps)
 		if !ok {
-			sum.Completed = len(sum.Blocked) == 0
-			if sum.Completed {
+			// Nothing is ready. That is completion only if nothing is left; otherwise
+			// what remains is stranded behind something that will not finish, and the
+			// run must name the root cause rather than report a quiet early exit.
+			strand := stranded(doc, done, unionSets(st.blocked, st.parked), st.extraDeps)
+			sum.Completed = len(sum.Blocked) == 0 && len(strand) == 0
+			switch {
+			case sum.Completed:
 				sum.Outcome = OutcomeComplete
 				sum.Reason = "plan complete: every feat is delivered"
-			} else {
+			case len(sum.Blocked) > 0:
 				sum.Outcome = OutcomeBlocked
-				sum.Reason = fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s",
-					len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "))
+				sum.Reason = fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s%s",
+					len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "), strandedSuffix(strand))
+			default:
+				sum.Outcome = OutcomeBlocked
+				sum.Reason = "stopped: nothing is workable" + strandedSuffix(strand)
 			}
 			logf(sum.Reason)
 			return summarize(out, sum), nil
@@ -216,6 +241,10 @@ func Run(opts RunOptions) (RunSummary, error) {
 		switch res {
 		case iterAdvanced, iterContinue:
 			stall = 0 // a delivered feat or honest partial work is forward motion
+		case iterParked:
+			// Parking is neither progress nor failure. It must not reset the stall
+			// guard — a plan whose feats all park would otherwise spin forever — and
+			// it must not trip it either, since the feat has not failed at anything.
 		case iterFailed:
 			sum.Failures++
 			stall++
@@ -260,6 +289,7 @@ const (
 	iterFailed       iterResult = iota // context for the next iteration
 	iterAdvanced                       // the feat was delivered (ledger recorded it)
 	iterContinue                       // honest partial work, handoff recorded
+	iterParked                         // waiting on a peer feat; no attempt spent (R6.3)
 	iterSpawnAborted                   // `claude` would not start; the run must end (R1.4)
 )
 
@@ -331,6 +361,35 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 
 	verdict := outcome.Verdict
 	switch verdict.Status {
+	case VerdictBlocked:
+		// The session says it needs a peer the plan never declared. Believe it only
+		// if the claim survives the same on-disk check a `done` gets (R6.2): the named
+		// feats must exist and must not already be delivered. A refused claim is
+		// demoted to ordinary partial work, so a session cannot dodge a hard feat by
+		// naming a blocker that isn't one.
+		deps, refusal := gateBlocked(doc, ledger.doneSet(), feat, verdict)
+		if refusal != "" {
+			record(SessionContinue, "blocked verdict refused: "+refusal, true)
+			st.handoffs[key] = blockedRefusalHandoff(feat, refusal, verdict.Summary)
+			journal(opts, feat.Slug, "progress", "blocked verdict refused: "+refusal)
+			logf("  ⚠ %s declared itself blocked but the claim did not hold (%s) — handing back as partial work", feat.Slug, refusal)
+			return iterContinue
+		}
+		// Park it and remember the edge. Parking costs no attempt: the feat is
+		// waiting, not failing, and charging it would spend the budget of a feat that
+		// has not been allowed to try.
+		st.undoAttempt(key)
+		st.parked[key] = true
+		merged, err := RecordDiscoveredDeps(opts.Root, opts.Slug, feat.Slug, deps)
+		st.extraDeps = merged
+		if err != nil {
+			logf("  ⚠ could not persist the discovered dependency: %v", err)
+		}
+		record(SessionBlocked, strings.Join(deps, ", "), false)
+		st.handoffs[key] = strings.TrimSpace(verdict.Summary)
+		journal(opts, feat.Slug, "blocked-on", strings.Join(deps, ", "))
+		logf("  ⏸ %s is waiting on %s — parked until it lands (no attempt spent)", feat.Slug, strings.Join(deps, ", "))
+		return iterParked
 	case VerdictContinue:
 		record(SessionContinue, oneLine(verdict.Summary), false)
 		st.handoffs[key] = strings.TrimSpace(verdict.Summary)
@@ -562,6 +621,15 @@ type runState struct {
 	// the count survives across feats: five failures spread over five feats is the
 	// same broken environment as five on one.
 	spawnFailures int
+	// parked holds feats that reported themselves blocked on a peer. Unlike
+	// `blocked` this is not a verdict on the feat — it is waiting, not failing — so
+	// it costs no attempt and clears as soon as its dependency is delivered. The
+	// scheduler simply stops offering it, and depsSatisfied lets it back in.
+	parked map[string]bool
+	// extraDeps are the dependency edges sessions discovered at run time, unioned
+	// with the plan's own by the scheduler and persisted to the sidecar so a later
+	// run does not have to rediscover them.
+	extraDeps map[string][]string
 	// crashed names the feats with an attempt recovered from disk that opened but
 	// never settled — a host that died mid-session. Feat slugs rather than a bare
 	// count because the journal entry has to be actionable: "something crashed" is
@@ -571,12 +639,33 @@ type runState struct {
 
 func newRunState() *runState {
 	return &runState{
-		hists:    map[string]*failureHistory{},
-		handoffs: map[string]string{},
-		logs:     map[string]string{},
-		attempts: map[string]int{},
-		blocked:  map[string]bool{},
+		hists:     map[string]*failureHistory{},
+		handoffs:  map[string]string{},
+		logs:      map[string]string{},
+		attempts:  map[string]int{},
+		blocked:   map[string]bool{},
+		parked:    map[string]bool{},
+		extraDeps: map[string][]string{},
 	}
+}
+
+// strandedSuffix renders the stranded map as an explanatory tail for the run's
+// closing reason, or "" when nothing is stranded. Sorted, because a run summary
+// that reorders itself between identical runs is a summary nobody trusts.
+func strandedSuffix(strand map[string]string) string {
+	if len(strand) == 0 {
+		return ""
+	}
+	feats := make([]string, 0, len(strand))
+	for f := range strand {
+		feats = append(feats, f)
+	}
+	sort.Strings(feats)
+	parts := make([]string, 0, len(feats))
+	for _, f := range feats {
+		parts = append(parts, f+" (waiting on "+strand[f]+")")
+	}
+	return "; unreachable: " + strings.Join(parts, ", ")
 }
 
 func (s *runState) hist(key string) *failureHistory {
@@ -608,6 +697,7 @@ func (s *runState) clearFeat(key string) {
 	delete(s.handoffs, key)
 	delete(s.logs, key)
 	delete(s.attempts, key)
+	delete(s.parked, key)
 }
 
 // unionSets merges membership sets without mutating either input — the ledger's
@@ -787,6 +877,9 @@ func fillRunDefaults(opts *RunOptions) {
 	}
 	if opts.SessionIdle <= 0 {
 		opts.SessionIdle = defaultSessionIdle
+	}
+	if opts.SquadLimit <= 0 {
+		opts.SquadLimit = 1
 	}
 	// Hooks.Now may still be nil here; the reporter resolves that itself, and
 	// installRealHooks fills the hook right after.
