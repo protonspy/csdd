@@ -79,8 +79,24 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmpName, path)
 }
 
-// Find walks upward from start looking for the nearest .claude/ directory.
-// Returns the start directory unchanged when no workspace is found.
+// Find walks upward from start looking for the nearest workspace marker and
+// returns the directory holding it, or start unchanged when there is none.
+//
+// The marker is .csdd/ — csdd writes it and nothing else does, so finding it is
+// unambiguous. .claude/ is still accepted at the same level, for workspaces
+// created before the marker moved (paths.StateDir), with one exception: never at
+// the user's home directory.
+//
+// That exception is the whole point. ~/.claude is Claude Code's own global
+// config directory and exists on every machine that runs Claude Code, so a bare
+// upward walk for .claude/ resolved the root to $HOME for any command run
+// outside a workspace — and every command then read and wrote the user's global
+// configuration. `csdd skill list` listed the user's global skills; `csdd skill
+// delete` would have removed one.
+//
+// A legacy workspace whose root really is $HOME therefore stops resolving
+// implicitly; `--root ~` still addresses it, because an explicit path is an
+// explicit decision.
 func Find(start string) string {
 	abs, err := filepath.Abs(start)
 	if err != nil {
@@ -88,7 +104,10 @@ func Find(start string) string {
 	}
 	cur := abs
 	for {
-		if info, err := os.Stat(paths.Claude(cur)); err == nil && info.IsDir() {
+		if isDir(paths.State(cur)) {
+			return cur
+		}
+		if isDir(paths.Claude(cur)) && !isHomeDir(cur) {
 			return cur
 		}
 		parent := filepath.Dir(cur)
@@ -97,6 +116,36 @@ func Find(start string) string {
 		}
 		cur = parent
 	}
+}
+
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// isHomeDir reports whether dir is the current user's home directory.
+//
+// The comparison goes through os.SameFile rather than string equality on
+// purpose: on Windows the same directory reaches us as both "C:\Users\a.name"
+// and its 8.3 short form "C:\Users\A~1.NAM", and either may carry different
+// casing. Comparing the identities the filesystem reports makes all of those
+// agree. An unreadable home is reported as "not home", which keeps the legacy
+// fallback working rather than failing closed on a machine we cannot inspect.
+func isHomeDir(dir string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	hi, err := os.Stat(home)
+	if err != nil {
+		return false
+	}
+	di, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(hi, di)
 }
 
 // Resolve normalizes the user-supplied --root flag. An empty arg falls back to Find(cwd).
