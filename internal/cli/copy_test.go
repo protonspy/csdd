@@ -22,17 +22,17 @@ func bareWorkspace(t *testing.T) string {
 
 func TestCopySkillTree(t *testing.T) {
 	dir := bareWorkspace(t)
-	code, out, errOut := run(t, "copy", "--root", dir, "skills/dev-architecture")
+	code, out, errOut := run(t, "copy", "--root", dir, "skills/quick-prd")
 	if code != 0 {
 		t.Fatalf("copy skill failed (code=%d): %s", code, errOut)
 	}
-	if !strings.Contains(out, "copied skills/dev-architecture") {
+	if !strings.Contains(out, "copied skills/quick-prd") {
 		t.Errorf("missing success line:\n%s", out)
 	}
 	// A skill copies its whole tree, not just SKILL.md.
 	for _, f := range []string{
-		".claude/skills/dev-architecture/SKILL.md",
-		".claude/skills/dev-architecture/assets/adr-template.md",
+		".claude/skills/quick-prd/SKILL.md",
+		".claude/skills/quick-prd/assets/prd-template.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("skill tree missing %s: %v", f, err)
@@ -98,7 +98,7 @@ func TestCopyListsAvailable(t *testing.T) {
 	dir := bareWorkspace(t)
 	// Bare `copy` lists everything copyable.
 	if code, out, _ := run(t, "copy", "--root", dir); code != 0 ||
-		!strings.Contains(out, "skills/dev-architecture") || !strings.Contains(out, "agents/code-reviewer") {
+		!strings.Contains(out, "skills/quick-prd") || !strings.Contains(out, "agents/code-reviewer") {
 		t.Errorf("bare copy should list items; code=%d out=%s", code, out)
 	}
 	// `copy <kind>` lists only that kind.
@@ -106,7 +106,7 @@ func TestCopyListsAvailable(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "agents/implementer") {
 		t.Errorf("copy <kind> should list that kind; code=%d out=%s", code, out)
 	}
-	if strings.Contains(out, "skills/dev-architecture") {
+	if strings.Contains(out, "skills/quick-prd") {
 		t.Errorf("copy agents should not list skills:\n%s", out)
 	}
 }

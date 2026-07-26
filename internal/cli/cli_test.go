@@ -840,16 +840,12 @@ func TestSkillListIncludesShippedDefaults(t *testing.T) {
 // guards the spec-brainstorm on-ramp shipped alongside them.
 func TestShippedWorkflowSkillsValidate(t *testing.T) {
 	dir := freshWorkspace(t)
-	workflowSkills := []string{
-		"discovery-product-brief", "discovery-research", "discovery-prfaq",
-		"discovery-prd", "discovery-ux-spec", "discovery-handoff",
-		"dev-architecture", "dev-epics-stories", "dev-readiness-check",
-		"dev-sprint", "dev-retrospective",
-	}
 	// The shipped discipline skills (test-first, verification, review, refactor) must
-	// validate too — a regression guard for their required headings (e.g. ## Goal).
+	// validate — a regression guard for their required headings (e.g. ## Goal).
 	disciplineSkills := []string{"tdd-cycle", "unit-cycle", "verify-change", "pr-review", "safe-refactor", "plan-dev"}
-	for _, name := range append(workflowSkills, disciplineSkills...) {
+	// The knowledge-base authoring skills ship alongside them.
+	knowledgeSkills := []string{"graph", "wiki", "glossary", "stack", "prd"}
+	for _, name := range append(disciplineSkills, knowledgeSkills...) {
 		code, out, errOut := run(t, "skill", "validate", name, "--root", dir)
 		if code != 0 {
 			t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", name, code, out, errOut)
@@ -864,8 +860,8 @@ func TestShippedWorkflowSkillsValidate(t *testing.T) {
 	if code, out, errOut := run(t, "skill", "validate", "quick-prd", "--root", dir); code != 0 {
 		t.Errorf("shipped skill %q failed validation (code=%d):\n%s%s", "quick-prd", code, out, errOut)
 	}
-	// Both orchestrator agents must scaffold as shown-able artifacts.
-	for _, name := range []string{"wf-product-discovery", "wf-development"} {
+	// Every shipped agent must scaffold as a shown-able artifact.
+	for _, name := range []string{"implementer", "code-reviewer", "security-reviewer", "quality-gate"} {
 		if code, showOut, _ := run(t, "agent", "show", name, "--root", dir); code != 0 || !strings.Contains(showOut, "name: "+name) {
 			t.Errorf("shipped agent %q not scaffolded by init: code=%d out=%q", name, code, showOut)
 		}
@@ -935,7 +931,7 @@ func TestAgentCreateErrors(t *testing.T) {
 
 func TestAgentListShowDelete(t *testing.T) {
 	// Bare dir: no shipped agents, so the empty path is exercised. `csdd init`
-	// ships default reviewer sub-agents (code-reviewer, test-designer, ...).
+	// ships default reviewer sub-agents (code-reviewer, security-reviewer, ...).
 	dir := t.TempDir()
 	_, out, _ := run(t, "agent", "list", "--root", dir)
 	if !strings.Contains(out, "no agents found") {

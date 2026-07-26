@@ -410,7 +410,7 @@ func TestInitWritesManifest(t *testing.T) {
 	for _, key := range []string{
 		".claude/rules/ears-format.md",
 		".claude/skills/tdd-cycle/SKILL.md",
-		".claude/agents/wf-development.md",
+		".claude/agents/implementer.md",
 	} {
 		if _, ok := m.Files[key]; !ok {
 			t.Errorf("manifest missing managed file %q", key)

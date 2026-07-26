@@ -209,13 +209,26 @@ Once the gate is open, the agent implements in **TDD**:
 RED (write the test) → GREEN (minimum to pass) → REFACTOR (clean under green) → widen the net (full suite + lint)
 ```
 
-Drive it with the shipped **`implementer` agent** — a language-agnostic sub-agent that takes one task, runs the `tdd-cycle`, stays inside its `design.md` boundary, runs the gate, records evidence, **marks the task done**, and reports. Specialize it per stack (e.g. a `go-developer`) via steering and skills — `/csdd-setup-init` derives one for your project.
+Drive it with the shipped **`implementer` agent** — a language-agnostic sub-agent that takes one task, drives it through the cycle the spec's `development_flow` declares, stays inside its `design.md` boundary, runs the gate, records evidence, **marks the task done**, and reports. Specialize it per stack (e.g. a `go-developer`) via steering and skills — `/csdd-setup-init` derives one for your project.
 
-### 🔴 Skill `tdd-cycle`
+### The flow decides the cycle — `development_flow`
+
+Each spec declares how its behaviors are delivered, and `csdd spec validate` **enforces the shape** it implies (exit 2, naming the task and line). Set it at creation: `csdd spec init <feature> --flow unit|tdd|tdd-e2e`, or workspace-wide via `default_development_flow` in steering.
+
+| Flow | Cycle | Use it for |
+|---|---|---|
+| **`tdd`** (default) | `tdd-cycle` — RED → GREEN → REFACTOR | money, auth, tenancy, anything irreversible |
+| **`unit`** | `unit-cycle` — implement → cover → gate | surfaces whose behaviors are render/CRUD states; halves the verification round-trips per behavior |
+| **`tdd-e2e`** | `tdd-cycle` + an end-to-end pass | flows that must be exercised whole |
+
+### 🔴 Skill `tdd-cycle` (under `tdd` / `tdd-e2e`)
 - **One leaf task per invocation.** Takes the ID from `specs/<f>/tasks.md`; doesn't batch tasks "to save time".
 - **RED fails for the right reason.** A compile error doesn't count — it cites the failure before moving on.
 - **Never weakens a test** to make the suite pass. New behavior = new RED.
 - **Marks the task done.** Once it's green, checks the task `[x]` in `tasks.md` — so progress (and the dashboard) reflect reality.
+
+### 🟢 Skill `unit-cycle` (under `unit`)
+`unit` drops the RED-first ritual, **not the test**. It buys one fewer process invocation and one fewer round-trip per behavior; it costs the proof that the test could ever fail. So the cycle charges the cheap substitute: **write the assertion from the acceptance criterion the task cites**, never from the code you just wrote — a test written after the implementation drifts toward describing what the code *does*. It also names when to stop and escalate back to `tdd`.
 
 ### ✅ `verify-change` + Definition of Done
 Before reporting done: run the executable checks and produce **real evidence** — "compiles" and "looks right" are not *done*.
@@ -347,42 +360,19 @@ csdd graph export             # a self-contained docs/graph/graph.html visualiza
 
 ---
 
-## Workflows — upstream & downstream (BMAD-style)
+## On-ramps — from an idea to an approved spec
 
-Everything above is the *downstream* contract: requirements → design → tasks → code. But where do the requirements come from, and who decides *what* to build? `csdd init` ships two orchestrator workflows — modeled on the [BMAD Method](https://github.com/bmadcode/BMAD-METHOD)'s phase-gated lifecycle — that bracket the SDD core. Each is an **agent** (the lead) fronting a set of phase **skills**, and the seam between them is a normal, validated csdd spec (or plan).
+The contract above starts at `requirements.md`. Three skills bracket it upstream, all
+landing in the same place: a normal, validated csdd spec or plan.
 
-```
-wf:product/discovery  ──(handoff: steering + spec requirements)──▶  wf:development
-        UPSTREAM                                                        DOWNSTREAM
-   what & why, decision-ready                                  how, built & verified
-```
+| Skill | For | Produces |
+|---|---|---|
+| **`prd`** (`/prd`) | a whole initiative — several features, with dependencies and a why | a `docs/plans/<slug>/` plan whose feats each become one spec |
+| **`quick-prd`** | a single feature | `docs/product/prd-<feature>.md` — stories + EARS-shaped `FR-N`, decision-ready in one pass |
+| **`spec-brainstorm`** | an idea that needs requirements now | question-driven EARS requirements, straight into `csdd spec` |
 
-### 🧭 `wf-product-discovery` — *what & why* (upstream)
-
-Drives a raw idea to a decision-ready PRD, one optional phase at a time, then lands it into csdd:
-
-| Skill | Produces |
-|-------|----------|
-| `discovery-product-brief` | `docs/product/product-brief.md` — vision, user, value, scope |
-| `discovery-research` | `docs/product/research/*.md` — evidence-graded market / domain / technical findings |
-| `discovery-prfaq` | `docs/product/prfaq.md` — Working-Backwards press release + hardest FAQ |
-| `discovery-prd` | `docs/product/prd.md` — features with numbered, testable `FR-N` (+ validation checklist) |
-| `discovery-ux-spec` | `docs/product/ux/DESIGN.md` + `EXPERIENCE.md` — structure + behavior, traced to journeys |
-| `discovery-handoff` | **bridge:** updates steering, runs `csdd spec init`, translates each `FR-N` into EARS requirements that pass `csdd spec validate` |
-
-### 🏗️ `wf-development` — *how, built & verified* (downstream)
-
-Takes an approved spec and drives it to shipped code — **reusing** the existing `tdd-cycle`, `verify-change`, `code-reviewer`/`security-reviewer`, `pr-review`, and the `csdd spec` gates rather than duplicating them. The `dev-*` skills add only the planning layer BMAD covers that csdd did not:
-
-| Skill | Produces | Feeds csdd gate |
-|-------|----------|-----------------|
-| `dev-architecture` | `architecture.md` + ADRs | fills & approves `design.md` |
-| `dev-epics-stories` | `epics.md` + stories | fills & approves `tasks.md` |
-| `dev-readiness-check` | PASS / CONCERNS / FAIL verdict | required before the first `tdd-cycle` |
-| `dev-sprint` | `sprint-status.yaml` | live task tracking |
-| `dev-retrospective` | `retrospective.md` | folds durable lessons into steering |
-
-> 🔑 The workflows never bypass the contract. Discovery output becomes a real EARS spec; architecture and stories become a real `design.md`/`tasks.md`. The phase gates stay mechanical — the workflows just decide *which* gate to open next.
+> 🔑 An on-ramp never bypasses the contract. Whatever it produces still enters through
+> `csdd spec generate` and still passes the same mechanical gates.
 
 ---
 

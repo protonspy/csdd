@@ -170,7 +170,7 @@ EXAMPLES
   %[1]s destroy --dry-run                                    # preview exactly what removing the workspace would delete
   %[1]s destroy --force                                      # remove the workspace for a fresh re-install (keeps specs/)
   %[1]s copy                                                 # list every shipped artifact you can cherry-pick
-  %[1]s copy skills/dev-architecture                         # drop one skill into .claude/skills/
+  %[1]s copy skills/tdd-cycle                                # drop one skill into .claude/skills/
   %[1]s copy steering/product.md                             # add a single baseline steering file
   %[1]s steering create api-conventions \
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
