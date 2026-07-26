@@ -432,3 +432,36 @@ func TestSetupCommandsEncodeFlow(t *testing.T) {
 		}
 	}
 }
+
+// TestSpecTemplatesCiteTheirRules keeps every artifact template pointing at the
+// rules that govern its content.
+//
+// The rules only reach the model when something cites them — CLAUDE.md carries no
+// @-imports and steering/ can be empty — so an uncited rule is a rule that never
+// runs. requirements.md cited ears-format and tasks.md cited tasks-generation,
+// but design.md, the largest artifact in a real corpus at ~470 lines against
+// requirements' ~139, cited nothing at all. The review-gate counterparts were
+// missing on all three.
+func TestSpecTemplatesCiteTheirRules(t *testing.T) {
+	specs, err := WorkflowTemplateFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"specs/requirements.md": {"ears-format.md", "requirements-review-gate.md"},
+		"specs/design.md":       {"design-principles.md", "design-review-gate.md"},
+		"specs/tasks.md":        {"tasks-generation.md", "tasks-parallel-analysis.md"},
+	}
+	for file, rules := range want {
+		body, ok := specs[file]
+		if !ok {
+			t.Errorf("spec templates missing %q", file)
+			continue
+		}
+		for _, rule := range rules {
+			if !strings.Contains(body, rule) {
+				t.Errorf("%s should cite %s — an uncited rule never reaches the model", file, rule)
+			}
+		}
+	}
+}
