@@ -161,7 +161,12 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 	if live, err := liveWorktree(path); err != nil {
 		return "", err
 	} else if live {
-		return path, nil
+		// Re-marked, not assumed. The marker is what stops `csdd` walking out of this
+		// tree onto the shared root, and a tree can be live without carrying one: it
+		// may predate the marker existing, or something may have cleaned .csdd/ out.
+		// Skipping this because the tree is "already there" is how the isolation goes
+		// back to being a fiction through the one path that does not create it.
+		return path, markWorkspace(path)
 	}
 	// Clear both kinds of debris a killed run leaves: a registration git still
 	// holds, and the directory itself. `git worktree add` refuses a target that is

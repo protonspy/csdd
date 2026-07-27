@@ -35,9 +35,9 @@ status: draft
 // an assignment to the exported Hooks.Trees field needs.
 type rootTrees struct{ root string }
 
-func (t rootTrees) Ensure(string) (string, error) { return t.root, nil }
-func (t rootTrees) Integrate(string) error        { return nil }
-func (t rootTrees) Discard(string) error          { return nil }
+func (t *rootTrees) Ensure(string) (string, error) { return t.root, nil }
+func (t *rootTrees) Integrate(string) error        { return nil }
+func (t *rootTrees) Discard(string) error          { return nil }
 
 // mustWrite writes content under an ensured parent directory.
 func mustWrite(t *testing.T, path, content string) {
@@ -98,7 +98,7 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 	//    test and what it is actually asserting.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
-		Trees: rootTrees{dir},
+		Trees: &rootTrees{root: dir},
 		Session: func(plan.SessionRequest) (plan.SessionOutcome, error) {
 			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
 			mustWrite(t, filepath.Join(specDir, "test-report.json"),

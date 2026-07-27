@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,10 +20,15 @@ import (
 // that, so it fails rather than passing quietly), the second by leaving the
 // bookkeeping assertions exactly as the serial tests make them.
 
-// squadPlan has two independent (P) feats and one unmarked feat that depends on
-// both. It is the smallest shape that distinguishes "runs a squad" from "runs one
-// at a time": a and b may share the tree, c may not join anything and nothing may
-// join c.
+// squadPlan has two independent feats and a third that depends on both. It is the
+// smallest shape that distinguishes "runs a squad" from "runs one at a time": a and
+// b are ready together so they may overlap, and c cannot start until both land
+// however wide the squad is.
+//
+// The (P) markers on a and b are deliberately left in place and are NOT what admits
+// them — the scheduler no longer reads that column. They stay so this plan and
+// unmarkedPlan differ only in the marker, which is what makes the pair evidence that
+// it is ignored.
 const squadPlan = `---
 name: p
 status: draft
@@ -41,9 +47,11 @@ status: draft
 - verify: make check
 `
 
-// serialPlan is squadPlan's control: the same two independent feats with the (P)
-// marker taken off, so the squad must refuse to pair them however high the limit is.
-const serialPlan = `---
+// unmarkedPlan is squadPlan's control: the same two independent feats with the (P)
+// marker taken off. Everything the scheduler acts on is identical, so a difference in
+// behavior between the two could only come from the marker — and there must not be
+// one.
+const unmarkedPlan = `---
 name: p
 status: draft
 ---
@@ -247,13 +255,13 @@ status: draft
 
 // TestUnmarkedFeatsStillShareTheSquad pins the rule the worktrees bought.
 //
-// Nothing in serialPlan is marked (P), and both feats still run at once, because
+// Nothing in unmarkedPlan is marked (P), and both feats still run at once, because
 // the marker is no longer consulted: it used to be the author's consent to SHARE a
 // working tree, and feats do not share one any more. Had this stayed a gate, every
 // plan written before the capability existed would have run serially forever — the
 // template told authors the column was decorative.
 func TestUnmarkedFeatsStillShareTheSquad(t *testing.T) {
-	root := approvedSquadWorkspace(t, serialPlan)
+	root := approvedSquadWorkspace(t, unmarkedPlan)
 	// The barrier applies to every feat here, marked or not: if the scheduler still
 	// refused to pair unmarked feats, neither would reach it and the test fails on
 	// the timeout rather than on a lucky reading of peak concurrency.
@@ -332,6 +340,109 @@ func TestSquadNeverHandsOutAnInflightFeat(t *testing.T) {
 	if ok && got.Slug == "b" {
 		t.Error("a feat already in flight must never be dispatched again")
 	}
+}
+
+// TestIntegrationFailureHandsTheFeatBack covers what the LOOP does with the two
+// ways a finished feat can fail to land. Both are work outcomes, not failures — the
+// feat is done, it just is not on the base — so both come back as partial work with
+// a handoff, and neither may mark the feat delivered or release its worktree.
+//
+// The keeper is stubbed because what is under test is the settle path, not whether
+// git produces these errors; that half is proved against a real repository in
+// tree_test.go. Without this, the runner's half of both was verified only by reading.
+func TestIntegrationFailureHandsTheFeatBack(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantLog  string
+		wantHand string
+	}{
+		{
+			name:     "uncommitted work",
+			err:      &UncommittedWorkError{Feat: "a", Branch: "csdd/p/a", Paths: []string{"?? a.go"}},
+			wantLog:  "uncommitted",
+			wantHand: "never COMMITTED",
+		},
+		{
+			name:     "merge conflict",
+			err:      &MergeConflictError{Feat: "a", Branch: "csdd/p/a", Files: []string{"shared.go"}, Detail: "CONFLICT"},
+			wantLog:  "conflicts with the run base",
+			wantHand: "Rebase this feat's branch",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := approvedRunnerWorkspace(t)
+			trees := &rootTrees{root: root}
+			attempts := 0
+			// Refuse `a` the first time it tries to land, accept everything after, so
+			// the feat has to come BACK and succeed — a handoff nobody acts on would
+			// otherwise look the same as one that worked.
+			trees.integrate = func(feat string) error {
+				if feat != "a" {
+					return nil
+				}
+				if attempts++; attempts == 1 {
+					return tc.err
+				}
+				return nil
+			}
+			var briefs []string
+			h := baseHooks(t, root)
+			h.Trees = trees
+			h.Session = func(req SessionRequest) (SessionOutcome, error) {
+				briefs = append(briefs, req.Brief)
+				deliverSpec(t, root, req.Feat.Slug)
+				return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
+			}
+
+			var out bytes.Buffer
+			sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &out})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.String(), tc.wantLog) {
+				t.Errorf("the run should say why the feat came back (%q), got:\n%s", tc.wantLog, out.String())
+			}
+			// The successor is told what to do about it — and told the narrow thing,
+			// not "your done was refused".
+			var carried bool
+			for _, b := range briefs[1:] {
+				if strings.Contains(b, tc.wantHand) {
+					carried = true
+				}
+			}
+			if !carried {
+				t.Errorf("the handoff must reach the next session (%q), briefs=%d", tc.wantHand, len(briefs))
+			}
+			// It counts as a gated verdict, not a failure, and the feat still lands.
+			if sum.Gated != 1 {
+				t.Errorf("a refused integration is a gated verdict, got %d", sum.Gated)
+			}
+			if sum.Failures != 0 {
+				t.Errorf("the feat did not fail, got %d failure(s)", sum.Failures)
+			}
+			if !sum.Completed || sum.Steps != 2 {
+				t.Errorf("both feats should land once the retry succeeds: completed=%v steps=%d (%s)",
+					sum.Completed, sum.Steps, sum.Reason)
+			}
+			// And the worktree survives the refusal — it holds the work the next
+			// session has to commit or rebase.
+			if n := countOf(trees.discarded, "a"); n != 1 {
+				t.Errorf("a's tree must be released exactly once, after it lands, got %d", n)
+			}
+		})
+	}
+}
+
+func countOf(hay []string, needle string) int {
+	n := 0
+	for _, h := range hay {
+		if h == needle {
+			n++
+		}
+	}
+	return n
 }
 
 // TestSquadKeepsBookkeepingSingleWriter runs a squad under the race detector's

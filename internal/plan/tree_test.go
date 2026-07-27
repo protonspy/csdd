@@ -198,6 +198,21 @@ func TestWorktreeResolvesAsItsOwnWorkspaceRoot(t *testing.T) {
 	if got := workspace.Find(restored); !sameDir(got, restored) {
 		t.Errorf("a restored worktree must still be its own root, got %s want %s", got, restored)
 	}
+
+	// And it is repaired on a LIVE tree too. A worktree can be usable without
+	// carrying the marker — one created before the marker existed, or one whose
+	// .csdd/ was cleaned — and that path is the one Ensure returns earliest from, so
+	// it is the easiest place to lose the isolation by assuming rather than checking.
+	if err := os.RemoveAll(filepath.Join(restored, ".csdd")); err != nil {
+		t.Fatal(err)
+	}
+	reused, err := trees.Ensure("feat-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := workspace.Find(reused); !sameDir(got, reused) {
+		t.Errorf("reusing a live worktree must restore its marker, got %s want %s", got, reused)
+	}
 }
 
 // TestIntegrateRefusesUncommittedWork closes the gap between the two things that

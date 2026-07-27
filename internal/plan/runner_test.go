@@ -84,11 +84,31 @@ func doneOutcome(summary string) SessionOutcome {
 // reads the root are describing the same tree, which is exactly the serial world
 // these tests were written for. Worktree isolation and the merge have their own
 // tests, against a real repository (tree_test.go).
-type rootTrees struct{ root string }
+type rootTrees struct {
+	root string
+	// integrate, when set, decides what merging a feat returns. It is how a loop
+	// test drives the two integration outcomes — a conflict, uncommitted work —
+	// without a repository: what is under test there is what the LOOP does with the
+	// error, not whether git produced it.
+	integrate func(feat string) error
+	// discarded records the feats whose worktree was released, so a test can assert
+	// the tree is only given up once the work is actually on the base.
+	discarded []string
+}
 
-func (t rootTrees) Ensure(string) (string, error) { return t.root, nil }
-func (t rootTrees) Integrate(string) error        { return nil }
-func (t rootTrees) Discard(string) error          { return nil }
+func (t *rootTrees) Ensure(string) (string, error) { return t.root, nil }
+
+func (t *rootTrees) Integrate(feat string) error {
+	if t.integrate != nil {
+		return t.integrate(feat)
+	}
+	return nil
+}
+
+func (t *rootTrees) Discard(feat string) error {
+	t.discarded = append(t.discarded, feat)
+	return nil
+}
 
 // baseHooks returns hooks whose session delivers each feat properly and declares
 // `done`, so a fresh plan runs to completion (one session per feat). The runner
@@ -103,7 +123,7 @@ func baseHooks(t *testing.T, root string) Hooks {
 		ClaudeAvailable: func() bool { return true },
 		Now:             fixedNow,
 		Sleep:           func(time.Duration) {},
-		Trees:           rootTrees{root},
+		Trees:           &rootTrees{root: root},
 	}
 }
 
