@@ -115,6 +115,19 @@ func admitFeat(doc *PlanDoc, done, unavailable map[string]bool, inflight map[str
 	return ready[0], true
 }
 
+// undelivered lists the plan's feats the ledger does not mark done, in table order.
+// It is the direct answer to "is this plan finished", which the scheduler having
+// nothing to offer only implies.
+func undelivered(doc *PlanDoc, done map[string]bool) []string {
+	var out []string
+	for _, f := range doc.Feats {
+		if !done[f.Slug] {
+			out = append(out, f.Slug)
+		}
+	}
+	return out
+}
+
 // stranded returns the feats that are neither delivered nor workable because
 // something they depend on is unavailable or itself stranded, each paired with the
 // dependency that stops it.

@@ -76,6 +76,28 @@ func (e *MergeConflictError) Error() string {
 	return fmt.Sprintf("merging %s into the run base conflicted in %s", e.Branch, strings.Join(e.Files, ", "))
 }
 
+// UncommittedWorkError signals that a feat's `done` cleared the verdict gate but its
+// worktree still holds uncommitted changes.
+//
+// It closes the gap between the two things that must agree before a feat is recorded
+// delivered: the gate reads FILES on disk, the merge carries COMMITS. A session that
+// produced every artifact and never committed satisfies the first and delivers
+// nothing through the second — and since a delivered feat's worktree is discarded,
+// the work would be gone with the ledger claiming otherwise.
+//
+// Like a merge conflict it is handed back as partial work rather than failed: the
+// session did the job, it just has not saved it where the runner can see it.
+type UncommittedWorkError struct {
+	Feat   string
+	Branch string
+	Paths  []string // git's porcelain status lines
+}
+
+func (e *UncommittedWorkError) Error() string {
+	return fmt.Sprintf("%s left %d uncommitted path(s) in its worktree; only committed work reaches %s",
+		e.Feat, len(e.Paths), e.Branch)
+}
+
 // gitTrees is the production treeKeeper: one worktree per feat, all cut from the
 // run's base branch and merged back into it.
 type gitTrees struct {
@@ -156,7 +178,7 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 		if out, err := runGit(g.root, "worktree", "add", path, branch); err != nil {
 			return "", fmt.Errorf("could not restore the worktree for %s from %s: %w: %s", feat, branch, err, out)
 		}
-		return path, nil
+		return path, markWorkspace(path)
 	}
 	base, err := g.baseCommit()
 	if err != nil {
@@ -165,7 +187,29 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 	if out, err := runGit(g.root, "worktree", "add", "-b", branch, path, base); err != nil {
 		return "", fmt.Errorf("could not create the worktree for %s: %w: %s", feat, err, out)
 	}
-	return path, nil
+	return path, markWorkspace(path)
+}
+
+// markWorkspace creates the .csdd/ directory that makes a worktree resolve as a
+// workspace root in its own right.
+//
+// Without it the isolation is a fiction. Every `csdd` command the session runs
+// resolves its root by walking UP from the working directory looking for .csdd/ or
+// .claude/ (workspace.Find), and a fresh worktree contains only tracked files —
+// .csdd/ is transient and never committed, and .claude/ and specs/ are gitignored in
+// a typical csdd workspace. So the walk would leave the worktree entirely and land
+// on the shared repository root, where every concurrent session would then author
+// its spec: the exact collision the worktrees exist to prevent, with the verdict
+// gate reading an empty tree and refusing every `done`.
+//
+// One empty directory stops the walk at the worktree. It is created per tree rather
+// than committed because it is operational state, which is precisely what must not
+// be in the repository.
+func markWorkspace(path string) error {
+	if err := os.MkdirAll(filepath.Join(path, paths.StateDir), 0o755); err != nil {
+		return fmt.Errorf("could not mark %s as a workspace root: %w", path, err)
+	}
+	return nil
 }
 
 // baseCommit resolves the run's base branch to the commit a new worktree is cut
@@ -219,6 +263,13 @@ func liveWorktree(path string) (bool, error) {
 // a conflict is rolled back so the base is never left mid-merge.
 func (g gitTrees) Integrate(feat string) error {
 	branch := g.branch(feat)
+	// The gate reads FILES; the merge carries COMMITS. A session that wrote every
+	// artifact and never committed passes the gate and would merge nothing — the
+	// feat would be recorded delivered, its worktree discarded, and the work gone.
+	// The two must be checked against each other before the ledger is touched.
+	if dirty, err := gitDirty(g.path(feat)); err == nil && len(withoutRunnerState(dirty)) > 0 {
+		return &UncommittedWorkError{Feat: feat, Branch: branch, Paths: withoutRunnerState(dirty)}
+	}
 	out, err := runGit(g.root, "merge", "--no-ff", "--no-edit",
 		"-m", fmt.Sprintf("Merge feat %s of plan %s", feat, g.slug), branch)
 	if err == nil {
@@ -292,6 +343,20 @@ func preflightGit(root string) (string, error) {
 			base, len(dirty), firstDirtyPath(dirty))
 	}
 	return base, nil
+}
+
+// specsAreIgnored reports whether the repository gitignores specs/.
+//
+// It is a warning rather than a refusal, but a load-bearing one. Integration carries
+// commits, so an ignored specs/ means every feat's spec stays in the worktree that
+// authored it and is destroyed with it: the code lands on the base and the artifacts
+// that justify it do not. The run still works — a dependent feat needs its
+// predecessor's code, not its spec — but `plan status` and the graph will disagree
+// with the ledger afterwards, and that is worth saying out loud once rather than
+// leaving to be discovered.
+func specsAreIgnored(root string) bool {
+	_, err := runGit(root, "check-ignore", "-q", paths.SpecsSeg)
+	return err == nil
 }
 
 // withoutRunnerState drops the runner's own state directory from a dirty listing.

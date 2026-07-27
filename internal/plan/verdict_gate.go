@@ -217,6 +217,37 @@ func mergeConflictHandoff(feat Feat, conflict *MergeConflictError, summary strin
 	return b.String()
 }
 
+// uncommittedHandoff is the brief for a session whose feat is finished on disk but
+// not in git.
+//
+// The instruction is narrow on purpose: commit, then declare done again. A session
+// told only "done was refused" would reasonably re-audit the work it already
+// finished, which is both expensive and the wrong end of the problem.
+func uncommittedHandoff(feat Feat, unc *UncommittedWorkError, summary string) string {
+	var b strings.Builder
+	b.WriteString("The previous session finished this feat and its `done` passed the loop's\n")
+	b.WriteString("on-disk checks — but it never COMMITTED the work, so there is nothing for the\n")
+	b.WriteString("runner to merge into the run's base.\n\n")
+	b.WriteString("The verdict gate reads files; integration carries commits. Files alone do not\n")
+	b.WriteString("deliver a feat.\n\n")
+	if len(unc.Paths) > 0 {
+		b.WriteString("### Left uncommitted\n\n")
+		for _, p := range unc.Paths {
+			fmt.Fprintf(&b, "- %s\n", p)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("### What to do\n\n")
+	fmt.Fprintf(&b, "You are already on this feat's branch (`%s`) in its own worktree. Commit\n", unc.Branch)
+	b.WriteString("everything above there — do not create or switch branches — and return `done`\n")
+	b.WriteString("again. The work itself is finished; this is a commit, not a rewrite. If any of\n")
+	b.WriteString("those paths should NOT be part of the feat, remove or ignore them instead.\n")
+	if s := strings.TrimSpace(summary); s != "" {
+		b.WriteString("\n### What that session reported it had finished\n\n" + s + "\n")
+	}
+	return b.String()
+}
+
 // gateCheckNames lists the failed checks compactly, for one-line logs and the
 // journal.
 func gateCheckNames(findings []gateFinding) string {

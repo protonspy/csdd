@@ -119,11 +119,11 @@ type RunOptions struct {
 	// graph allows. Default 1 — a serial run, which is what every plan gets unless
 	// it asks for more.
 	//
-	// Two feats share the tree only when the graph allows it AND both carry the (P)
-	// marker; see squadAdmits. Everything the loop does with what a session returns
-	// still happens on one goroutine, so the ledger, the journal and the run's
-	// bookkeeping are written in exactly the order they were before — only the
-	// sessions themselves overlap.
+	// Feats run together whenever the graph allows it; each works in its own git
+	// worktree, so they never share a working tree (tree.go). Everything the loop
+	// does with what a session returns still happens on one goroutine, so the
+	// ledger, the journal and the run's bookkeeping are written in exactly the order
+	// they were before — only the sessions themselves overlap.
 	SquadLimit int
 	Out        io.Writer
 	Hooks      Hooks
@@ -196,6 +196,11 @@ func Run(opts RunOptions) (RunSummary, error) {
 		opts.Hooks.Trees = gitTrees{root: opts.Root, slug: opts.Slug, base: base}
 		h = opts.Hooks
 		logf("worktrees: one per feat, branched from and merged back into %s", base)
+		if specsAreIgnored(opts.Root) {
+			logf("⚠ specs/ is gitignored: each feat's spec will stay in the worktree that authored it and be")
+			logf("  discarded with it. The code lands on %s; the artifacts justifying it will not, so", base)
+			logf("  `csdd plan status` and the graph will disagree with the ledger after this run.")
+		}
 	}
 	// Every session runs bypass-mode (--dangerously-skip-permissions), so a
 	// verified sandbox is the expected home (principle 7). When doctor fails, the
@@ -320,12 +325,18 @@ func Run(opts RunOptions) (RunSummary, error) {
 				break
 			}
 			// The done set drives readiness; `unavailable` is what must not be handed
-			// out. A blocked feat exhausted its attempt bound, so re-handing it would
-			// burn the remaining iterations on the one feat that has already proven it
-			// cannot converge. A parked feat is waiting on a peer and is not workable
-			// yet. The feats in flight are excluded by admitFeat itself.
+			// out — only the feats that exhausted their attempt bound, since re-handing
+			// one would burn the remaining iterations on a feat that has already proven
+			// it cannot converge. The feats in flight are excluded by admitFeat itself.
+			//
+			// A PARKED feat is deliberately NOT excluded here. It is held back by the
+			// dependency it discovered, which lives in extraDeps and gates readiness
+			// through depsSatisfied — so it comes back on its own the moment that peer
+			// lands. Listing it as unavailable as well made the exclusion permanent:
+			// nothing ever cleared it, so a parked feat was never re-dispatched and the
+			// run went on to report itself complete without it.
 			done := ledger.doneSet()
-			feat, ok := admitFeat(doc, done, unionSets(st.blocked, st.parked), inflight, st.extraDeps)
+			feat, ok := admitFeat(doc, done, st.blocked, inflight, st.extraDeps)
 			if !ok {
 				// Nothing can start. With sessions still in flight that is ordinary —
 				// what they deliver may open the next wave — so only an empty squad
@@ -335,16 +346,29 @@ func Run(opts RunOptions) (RunSummary, error) {
 				if len(inflight) > 0 {
 					break
 				}
-				strand := stranded(doc, done, unionSets(st.blocked, st.parked), st.extraDeps)
-				sum.Completed = len(sum.Blocked) == 0 && len(strand) == 0
+				strand := stranded(doc, done, st.blocked, st.extraDeps)
+				// Completion is asserted against the LEDGER, not inferred from the
+				// scheduler having nothing to offer. Those two agreeing is the normal
+				// case; when they disagree the scheduler is wrong, and "plan complete"
+				// over an undelivered feat is the one report that must never be
+				// possible — it is what the parked bug produced.
+				left := undelivered(doc, done)
+				sum.Completed = len(sum.Blocked) == 0 && len(strand) == 0 && len(left) == 0
 				switch {
 				case sum.Completed:
 					stop(OutcomeComplete, "plan complete: every feat is delivered")
 				case len(sum.Blocked) > 0:
 					stop(OutcomeBlocked, fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s%s",
 						len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "), strandedSuffix(strand)))
-				default:
+				case len(strand) > 0:
 					stop(OutcomeBlocked, "stopped: nothing is workable"+strandedSuffix(strand))
+				default:
+					// Nothing is blocked, nothing is stranded, and yet feats remain
+					// undelivered: the scheduler declined to offer a workable feat.
+					// Name it as the defect it is rather than dressing it as an outcome.
+					stop(OutcomeBlocked, fmt.Sprintf("stopped: %d feat(s) are neither delivered, blocked nor stranded, "+
+						"and the scheduler offered none of them — this is a scheduling defect, please report it: %s",
+						len(left), strings.Join(left, ", ")))
 				}
 				break
 			}
@@ -527,7 +551,6 @@ func settleDispatch(opts RunOptions, doc *PlanDoc, d *dispatch, ledger *Ledger, 
 		// waiting, not failing, and charging it would spend the budget of a feat that
 		// has not been allowed to try.
 		st.undoAttempt(key)
-		st.parked[key] = true
 		merged, err := RecordDiscoveredDeps(opts.Root, opts.Slug, feat.Slug, deps)
 		st.extraDeps = merged
 		if err != nil {
@@ -567,6 +590,19 @@ func settleDispatch(opts RunOptions, doc *PlanDoc, d *dispatch, ledger *Ledger, 
 		// runs BEFORE the ledger records anything: a feat marked delivered on a merge
 		// that did not happen is a lie the rest of the run would build on.
 		if err := opts.Hooks.Trees.Integrate(feat.Slug); err != nil {
+			var uncommitted *UncommittedWorkError
+			if errors.As(err, &uncommitted) {
+				// Finished on disk, absent from git. Handed back like a gate rejection,
+				// because that is what it is: an artifact the session contracted to
+				// produce — a commit — that is not there.
+				sum.Gated++
+				record(SessionContinue, "uncommitted work: "+oneLine(uncommitted.Error()), true)
+				st.handoffs[key] = uncommittedHandoff(feat, uncommitted, verdict.Summary)
+				journal(opts, feat.Slug, "progress", "uncommitted work: "+oneLine(uncommitted.Error()))
+				logf("  ⚠ %s claimed done but left %d path(s) uncommitted — only committed work reaches the base",
+					feat.Slug, len(uncommitted.Paths))
+				return iterContinue
+			}
 			var conflict *MergeConflictError
 			if errors.As(err, &conflict) {
 				// Finished work that no longer applies to a base that moved under it.
@@ -812,12 +848,15 @@ type runState struct {
 	// same broken environment as five on one — and, with a squad, across the
 	// sessions running side by side.
 	spawnFailures int
-	// parked holds feats that reported themselves blocked on a peer. Unlike
-	// `blocked` this is not a verdict on the feat — it is waiting, not failing — so
-	// it costs no attempt and clears as soon as its dependency is delivered. The
-	// scheduler simply stops offering it, and depsSatisfied lets it back in.
-	parked map[string]bool
-	// extraDeps are the dependency edges sessions discovered at run time, unioned
+	// A feat that reported itself blocked on a peer is NOT tracked here. It used to
+	// be, in a `parked` set the scheduler treated as unavailable — and nothing ever
+	// removed it, so the feat was never offered again and the run reported itself
+	// complete without it. What actually holds a parked feat back is the edge it
+	// discovered: it goes into extraDeps, depsSatisfied gates on it, and the feat
+	// becomes ready again by itself the moment that peer is delivered. One mechanism,
+	// which clears on its own, instead of two, one of which did not.
+	//
+	// extraDeps are those edges: discovered at run time, unioned
 	// with the plan's own by the scheduler and persisted to the sidecar so a later
 	// run does not have to rediscover them.
 	extraDeps map[string][]string
@@ -835,7 +874,6 @@ func newRunState() *runState {
 		logs:      map[string]string{},
 		attempts:  map[string]int{},
 		blocked:   map[string]bool{},
-		parked:    map[string]bool{},
 		extraDeps: map[string][]string{},
 	}
 }
@@ -907,7 +945,6 @@ func (s *runState) clearFeat(key string) {
 	delete(s.handoffs, key)
 	delete(s.logs, key)
 	delete(s.attempts, key)
-	delete(s.parked, key)
 }
 
 // unionSets merges membership sets without mutating either input — the ledger's

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/protonspy/csdd/internal/workspace"
 )
 
 // Worktree isolation and integration, against a real repository.
@@ -153,6 +155,89 @@ func TestEnsureRestoresACrashedTreeFromItsBranch(t *testing.T) {
 	}
 	if got := readRepoFile(t, restored, "landed.go"); !strings.Contains(got, "committed before the crash") {
 		t.Errorf("committed work must survive the tree, got %q", got)
+	}
+}
+
+// TestWorktreeResolvesAsItsOwnWorkspaceRoot is the difference between real isolation
+// and the appearance of it.
+//
+// Every `csdd` command the session runs walks UP from its working directory looking
+// for .csdd/ or .claude/. A fresh worktree holds only TRACKED files, and in a typical
+// csdd workspace .csdd/ is transient while .claude/ and specs/ are gitignored — so
+// without a marker the walk leaves the worktree and lands on the shared repository
+// root, where every concurrent session would author its spec. The worktrees would
+// exist and isolate nothing.
+func TestWorktreeResolvesAsItsOwnWorkspaceRoot(t *testing.T) {
+	root := gitRepo(t)
+	trees := newTrees(root)
+
+	dir, err := trees.Ensure("feat-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := workspace.Find(dir); !sameDir(got, dir) {
+		t.Errorf("a session running in the worktree must resolve the worktree as its root, got %s want %s", got, dir)
+	}
+	// And from a subdirectory, which is where a session actually works.
+	sub := filepath.Join(dir, "internal", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := workspace.Find(sub); !sameDir(got, dir) {
+		t.Errorf("the walk from a subdirectory must stop at the worktree, got %s want %s", got, dir)
+	}
+
+	// The marker survives a restore, or the second attempt at a feat loses isolation.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := trees.Ensure("feat-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := workspace.Find(restored); !sameDir(got, restored) {
+		t.Errorf("a restored worktree must still be its own root, got %s want %s", got, restored)
+	}
+}
+
+// TestIntegrateRefusesUncommittedWork closes the gap between the two things that
+// must agree before a feat is recorded delivered: the verdict gate reads FILES, the
+// merge carries COMMITS. A session that wrote every artifact and never committed
+// satisfies the first and delivers nothing through the second — and because a
+// delivered feat's worktree is discarded, the work would be gone with the ledger
+// claiming it landed.
+func TestIntegrateRefusesUncommittedWork(t *testing.T) {
+	root := gitRepo(t)
+	trees := newTrees(root)
+
+	dir, err := trees.Ensure("feat-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRepoFile(t, dir, "a.go", "package a // written, never committed\n")
+
+	err = trees.Integrate("feat-a")
+	if err == nil {
+		t.Fatal("uncommitted work must not be accepted as delivered")
+	}
+	var unc *UncommittedWorkError
+	if !asUncommitted(err, &unc) {
+		t.Fatalf("the refusal must be typed so the runner hands the feat back, got %T: %v", err, err)
+	}
+	if !containsSubstring(unc.Paths, "a.go") {
+		t.Errorf("the refusal must name what was left behind, got %v", unc.Paths)
+	}
+	if got := readRepoFile(t, root, "a.go"); got != "" {
+		t.Errorf("nothing may have reached the base, got %q", got)
+	}
+
+	// Committing is the whole fix — the work itself was already finished.
+	commitAll(t, dir, "feat-a: commit the work")
+	if err := trees.Integrate("feat-a"); err != nil {
+		t.Fatalf("the same feat must land once committed: %v", err)
+	}
+	if got := readRepoFile(t, root, "a.go"); !strings.Contains(got, "never committed") {
+		t.Errorf("the base must carry the feat after the commit, got %q", got)
 	}
 }
 
@@ -405,6 +490,14 @@ func asMergeConflict(err error, target **MergeConflictError) bool {
 	c, ok := err.(*MergeConflictError)
 	if ok {
 		*target = c
+	}
+	return ok
+}
+
+func asUncommitted(err error, target **UncommittedWorkError) bool {
+	u, ok := err.(*UncommittedWorkError)
+	if ok {
+		*target = u
 	}
 	return ok
 }

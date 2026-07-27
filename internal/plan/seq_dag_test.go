@@ -242,6 +242,85 @@ func TestBlockedVerdictParksWithoutSpendingAnAttempt(t *testing.T) {
 	}
 }
 
+// TestParkedFeatIsRedispatchedOnceItsPeerLands is the regression for a defect that
+// made a run LIE.
+//
+// A parked feat used to be added to a `parked` set the scheduler treated as
+// unavailable, and nothing ever removed it from there — clearFeat only runs when a
+// feat is delivered, and a feat that is never offered is never delivered. So `a`
+// parked on `b`, `b` landed, `a` was never handed out again, and the run reported
+// "plan complete: every feat is delivered" with `a` undelivered.
+//
+// What actually holds a parked feat back is the edge it discovered (extraDeps), and
+// that clears by itself when the peer lands. This asserts the feat comes back AND is
+// recorded — the old test asserted only that the run completed, which is exactly the
+// claim the bug forged.
+func TestParkedFeatIsRedispatchedOnceItsPeerLands(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	var dispatched []string
+	calls := 0
+	h := baseHooks(t, root)
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		calls++
+		dispatched = append(dispatched, req.Feat.Slug)
+		if req.Feat.Slug == "a" && calls == 1 {
+			return SessionOutcome{Verdict: Verdict{
+				Status: VerdictBlocked, Summary: "needs b's schema", BlockedOn: []string{"b"},
+			}}, nil
+		}
+		deliverSpec(t, root, req.Feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
+	}
+
+	var out bytes.Buffer
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 10, Out: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !LoadLedger(root, "p").Done("a") {
+		t.Errorf("the parked feat must be re-dispatched and delivered, dispatches=%v\n%s", dispatched, out.String())
+	}
+	if sum.Steps != 2 {
+		t.Errorf("both feats should be delivered, got %d step(s), dispatches=%v", sum.Steps, dispatched)
+	}
+	// a parks, b delivers, a comes back and delivers.
+	if strings.Join(dispatched, ",") != "a,b,a" {
+		t.Errorf("want dispatches [a b a], got %v", dispatched)
+	}
+}
+
+// TestCompletionIsAssertedAgainstTheLedger is the backstop under the bug above: even
+// if a future scheduler change strands a feat silently, the run must not be able to
+// call itself complete. Completion is a fact about the ledger, not an inference from
+// the scheduler having run out of things to say.
+func TestCompletionIsAssertedAgainstTheLedger(t *testing.T) {
+	root := approvedRunnerWorkspace(t)
+	h := baseHooks(t, root)
+	// `b` parks on a feat that will never be delivered because the session keeps
+	// declaring it blocked — so the run legitimately ends with `b` undelivered.
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		if req.Feat.Slug == "b" {
+			return SessionOutcome{Verdict: Verdict{
+				Status: VerdictBlocked, Summary: "needs a again", BlockedOn: []string{"a"},
+			}}, nil
+		}
+		deliverSpec(t, root, req.Feat.Slug)
+		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
+	}
+	// FeatAttempts 1 so `a` is blocked after its one attempt, leaving `b` waiting on
+	// a peer that cannot land.
+	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 12, Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Completed {
+		t.Errorf("the run must never report complete while a feat is undelivered: %+v", sum)
+	}
+	if sum.Outcome == OutcomeComplete {
+		t.Errorf("outcome must not be OutcomeComplete, got %d (%s)", sum.Outcome, sum.Reason)
+	}
+}
+
 // TestBlockedVerdictRefusedWhenClaimDoesNotHold covers R6.2. `blocked` costs the
 // session nothing, which is what makes it useful for a genuine dependency and what
 // would make it an attractive escape from hard work — so the claim is checked
