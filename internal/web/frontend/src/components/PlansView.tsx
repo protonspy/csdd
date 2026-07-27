@@ -36,7 +36,7 @@ export function PlansView({ slug, version }: { slug: string | null; version: num
         {plans.map((p) => (
           <a key={p.slug} className="card plan-card" href={href('plans', p.slug)}>
             <div className="card-title">
-              {p.name || p.slug} <ApprovalBadge approved={p.approved} drift={p.drift} />
+              {p.name || p.slug} <PlanStateBadge approved={p.approved} drift={p.drift} complete={p.complete} />
             </div>
             <div className="muted small">{p.slug}</div>
             <div className="stat-grid">
@@ -79,7 +79,7 @@ function PlanDetailView({ slug, version, feat }: { slug: string; version: number
           ← Plans
         </a>
         <h1>
-          {d.name || d.slug} <ApprovalBadge approved={d.approved} drift={d.drift} />
+          {d.name || d.slug} <PlanStateBadge approved={d.approved} drift={d.drift} complete={d.complete} />
         </h1>
       </div>
 
@@ -147,8 +147,23 @@ function MilestoneRow({ m }: { m: MilestoneProgress }) {
   )
 }
 
-function ApprovalBadge({ approved, drift }: { approved: boolean; drift: boolean }) {
+/**
+ * One badge for the plan's state, in priority order: drift first because it is
+ * a problem, then complete because it is the terminal state and says more than
+ * "approved", then approval. Showing complete *and* approved together would be
+ * two badges saying one thing.
+ */
+export function PlanStateBadge({
+  approved,
+  drift,
+  complete,
+}: {
+  approved: boolean
+  drift: boolean
+  complete?: boolean
+}) {
   if (drift) return <span className="badge warn">drift</span>
+  if (complete) return <span className="badge ok">complete</span>
   if (approved) return <span className="badge ready">approved</span>
   return <span className="badge muted">draft</span>
 }

@@ -252,3 +252,63 @@ func TestPlanFeatsCarryRefs(t *testing.T) {
 		t.Errorf("refs must never be null")
 	}
 }
+
+// A plan reads as complete only when every feat is delivered — the state the
+// Plans list, the rail and the Overview all render, derived once so they cannot
+// disagree.
+func TestPlanCompletion(t *testing.T) {
+	// Two feats, both delivered: every phase approved and every task checked.
+	deliveredSpec := func(name string) map[string]string {
+		return map[string]string{
+			"specs/" + name + "/spec.json": `{"feature_name":"` + name + `","phase":"tasks-approved",` +
+				`"ready_for_implementation":true,"approvals":{"requirements":{"generated":true,"approved":true},` +
+				`"design":{"generated":true,"approved":true},"tasks":{"generated":true,"approved":true}}}`,
+			"specs/" + name + "/tasks.md": "## Phase 1: Foundation\n\n- [x] 1. done\n  - _Requirements: 1.1_\n",
+		}
+	}
+	files := map[string]string{
+		"CLAUDE.md": "# c\n",
+		"docs/plans/finished/plan.md": "---\nname: Finished\n---\n\n## Feats\n\n" +
+			"| # | Feat | Objective | Depends | Milestone | (P) | Refs |\n|---|---|---|---|---|---|---|\n" +
+			"| 1 | alpha | First | — | M1 | | |\n| 2 | beta | Second | alpha | M1 | | |\n\n" +
+			"## Quality Gates\n\n- tests: go test ./...\n",
+		"docs/plans/partial/plan.md": "---\nname: Partial\n---\n\n## Feats\n\n" +
+			"| # | Feat | Objective | Depends | Milestone | (P) | Refs |\n|---|---|---|---|---|---|---|\n" +
+			"| 1 | alpha | First | — | M1 | | |\n| 2 | gamma | Not started | alpha | M1 | | |\n\n" +
+			"## Quality Gates\n\n- tests: go test ./...\n",
+		// A plan with no feats at all: unstarted, which is not the same as finished.
+		"docs/plans/empty/plan.md": "---\nname: Empty\n---\n\n## Feats\n\n" +
+			"| # | Feat | Objective | Depends | Milestone | (P) | Refs |\n|---|---|---|---|---|---|---|\n\n" +
+			"## Quality Gates\n\n- tests: go test ./...\n",
+	}
+	for k, v := range deliveredSpec("alpha") {
+		files[k] = v
+	}
+	for k, v := range deliveredSpec("beta") {
+		files[k] = v
+	}
+	srv := testServer(t, tempWorkspace(t, files))
+
+	var list []planSummary
+	if code := getJSON(t, srv.URL+"/api/plans", &list); code != http.StatusOK {
+		t.Fatalf("GET /api/plans = %d", code)
+	}
+	want := map[string]bool{"finished": true, "partial": false, "empty": false}
+	for _, p := range list {
+		if got, ok := want[p.Slug]; ok && p.Complete != got {
+			t.Errorf("plan %q complete = %v (%d/%d done), want %v", p.Slug, p.Complete, p.Done, p.Feats, got)
+		}
+	}
+
+	// The per-plan view has to agree with the list, or the badge changes when
+	// you click through.
+	for slug, wantComplete := range want {
+		var d planDetail
+		if code := getJSON(t, srv.URL+"/api/plan/"+slug, &d); code != http.StatusOK {
+			t.Fatalf("GET /api/plan/%s = %d", slug, code)
+		}
+		if d.Complete != wantComplete {
+			t.Errorf("plan detail %q complete = %v, want %v", slug, d.Complete, wantComplete)
+		}
+	}
+}

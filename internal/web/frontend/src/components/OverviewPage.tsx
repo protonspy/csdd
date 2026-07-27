@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { Overview, PlanSummary, SpecCard, TestReport } from '../types'
 import { KpiRow, Panel, ProgressBar, Stat, toneFor } from './bits'
 import { href } from '../router'
+import { PlanStateBadge } from './PlansView'
 
 // The one screen that answers "where does this workspace stand". Everything on
 // it is a link to the page that owns the number — this is a landing, not a
@@ -148,16 +149,10 @@ export function OverviewPage({ overview, version }: { overview: Overview | null;
           <Panel title="Plans" right={<a className="badge muted" href="#/plans">all plans</a>}>
             {plans.map((p) => (
               <a className="mini-row" key={p.slug} href={href('plans', p.slug)}>
-                <span className={`state-dot ${p.done >= p.feats ? 'done' : 'running'}`} />
+                <span className={`state-dot ${p.complete ? 'done' : 'running'}`} />
                 <span className="mini-row-name">{p.name || p.slug}</span>
                 <span className="mini-row-spacer" />
-                {p.drift ? (
-                  <span className="badge warn">drift</span>
-                ) : p.approved ? (
-                  <span className="badge ready">approved</span>
-                ) : (
-                  <span className="badge muted">draft</span>
-                )}
+                <PlanStateBadge approved={p.approved} drift={p.drift} complete={p.complete} />
               </a>
             ))}
           </Panel>

@@ -5,6 +5,7 @@ import { RESOURCES, type ResourceKind } from '../resources'
 import { api } from '../api'
 import { FileTree } from './FileTree'
 import { ProgressBar } from './bits'
+import { PlanStateBadge } from './PlansView'
 import { href, hrefWithQuery, navigate, type Route } from '../router'
 
 // The contextual rail. It carries two things: where else this area can go, and
@@ -126,13 +127,7 @@ function PlansRail({ version, current }: { version: number; current: string | nu
           >
             <div className="spec-row-head">
               <span className="spec-name">{p.name || p.slug}</span>
-              {p.drift ? (
-                <span className="badge warn">drift</span>
-              ) : p.approved ? (
-                <span className="badge ready">approved</span>
-              ) : (
-                <span className="badge muted">draft</span>
-              )}
+              <PlanStateBadge approved={p.approved} drift={p.drift} complete={p.complete} />
             </div>
             <div className="spec-row-meta">
               <span className="muted small">

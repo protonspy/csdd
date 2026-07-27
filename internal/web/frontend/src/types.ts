@@ -192,6 +192,8 @@ export interface PlanSummary {
   drift: boolean
   feats: number
   done: number
+  /** Every feat delivered. Derived server-side so each surface agrees. */
+  complete: boolean
 }
 
 export interface PlanFeat {
@@ -219,6 +221,7 @@ export interface PlanDetail {
   name: string
   approved: boolean
   drift: boolean
+  complete: boolean
   feats: PlanFeat[]
   milestones: MilestoneProgress[]
 }
