@@ -947,20 +947,6 @@ func (s *runState) clearFeat(key string) {
 	delete(s.attempts, key)
 }
 
-// unionSets merges membership sets without mutating either input — the ledger's
-// done set is reused across iterations, so the blocked set must not leak into it.
-func unionSets(sets ...map[string]bool) map[string]bool {
-	out := map[string]bool{}
-	for _, s := range sets {
-		for k, v := range s {
-			if v {
-				out[k] = true
-			}
-		}
-	}
-	return out
-}
-
 // maxContextAttempts bounds how many failed attempts the rolling context replays.
 // The full history is always in the on-disk failure log; the brief carries the
 // recent tail because a session that cannot converge after five replayed attempts
