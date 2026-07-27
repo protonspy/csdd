@@ -1,7 +1,7 @@
 The workspace carries a **knowledge base** — a graph brain and an LLM-wiki — plus
 a **tech contract**. Drive them through the CLI (or `npx @protonspy/csdd …`); the CLI
-is the only author of `docs/graph/` and `.csdd/`, and nothing ever edits
-`docs/raw/`.
+is the only author of `docs/graph/` and `.csdd/`; nothing ever edits what is
+already under `docs/raw/` — `codewiki` only ever adds one new document.
 
 **Workflow moments — do these without being asked:**
 
@@ -14,8 +14,13 @@ is the only author of `docs/graph/` and `.csdd/`, and nothing ever edits
 - **Ingest raw sources.** When a file lands in `docs/raw/`, run the `wiki` skill's
   **Ingest** workflow: read it, write/extend pages under `docs/wiki/pages/` with
   `sources:` provenance, cross-link, update `index.md` + `log.md`.
-- **Gate before commit/PR:** `csdd graph analyze --strict` (SDD + tech lints) and
-  `csdd wiki lint` (wiki health) must be clean.
+- **Read a source checkout first.** A repository dropped in `docs/raw/<dir>/` (or
+  an archive unpacked beside itself) is not ingested page by page: run the
+  `codewiki` skill (`/csdd-codewiki`) to compile it into one cited document at
+  `docs/raw/<owner>-<repo>.md`, then Ingest *that*.
+- **Gate before commit/PR:** `csdd graph analyze --strict` (SDD + tech lints),
+  `csdd wiki lint` (wiki health), and — when `docs/raw/` holds repo-derived
+  documents — `csdd codewiki lint` (citations resolve) must be clean.
 
 **The tech contract (`docs/stack.md`) is law.** Any technology **not** listed
 there is an **open decision**: propose 2–3 options with trade-offs and **ask the
