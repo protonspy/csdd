@@ -304,6 +304,16 @@ type StackRow struct {
 	Refs    string
 }
 
+// DecidedRows is decidedRows for readers outside this package (the web read
+// model), keyed the same way a `stack:<name>` citation is resolved — so the
+// dashboard and `csdd plan validate` agree on what "the contract lists it"
+// means, rather than each parsing docs/stack.md its own way.
+func DecidedRows(root string) map[string]StackRow { return decidedRows(root) }
+
+// NormalizeTechName is normalizeTechName for the same readers: it turns a
+// `stack:<name>` citation into the key DecidedRows uses.
+func NormalizeTechName(s string) string { return normalizeTechName(s) }
+
 // decidedRows parses the Decided table of docs/stack.md into full rows, keyed by
 // the normalized Choice name. A missing contract yields an empty map.
 func decidedRows(root string) map[string]StackRow {

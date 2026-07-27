@@ -7,6 +7,10 @@ import type {
   PlanSummary,
   PlanDetail,
   WikiOverview,
+  ADROverview,
+  StackOverview,
+  GlossaryOverview,
+  RefResolution,
 } from './types'
 import { authHeader, requireAuth } from './auth'
 
@@ -34,4 +38,14 @@ export const api = {
   plans: () => get<PlanSummary[]>('/api/plans'),
   plan: (slug: string) => get<PlanDetail>(`/api/plan/${encodeURIComponent(slug)}`),
   wiki: () => get<WikiOverview>('/api/wiki'),
+  adr: () => get<ADROverview>('/api/adr'),
+  stack: () => get<StackOverview>('/api/stack'),
+  glossary: () => get<GlossaryOverview>('/api/glossary'),
+  // Batched on purpose: a Refs column is resolved in one request, and the
+  // server answers in the order asked.
+  refs: (tokens: string[]) => {
+    const q = new URLSearchParams()
+    for (const t of tokens) q.append('token', t)
+    return get<RefResolution[]>(`/api/ref?${q.toString()}`)
+  },
 }

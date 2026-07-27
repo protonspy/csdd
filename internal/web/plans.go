@@ -21,13 +21,17 @@ type planSummary struct {
 // webFeat is one feat row in the per-plan view, merging the plan's static feat
 // metadata with its derived status.
 type webFeat struct {
-	Slug         string   `json:"slug"`
-	Num          string   `json:"num"`
-	Objective    string   `json:"objective"`
-	Milestone    string   `json:"milestone"`
-	Depends      []string `json:"depends"`
-	Parallel     bool     `json:"parallel"`
-	State        string   `json:"state"`
+	Slug      string   `json:"slug"`
+	Num       string   `json:"num"`
+	Objective string   `json:"objective"`
+	Milestone string   `json:"milestone"`
+	Depends   []string `json:"depends"`
+	Parallel  bool     `json:"parallel"`
+	State     string   `json:"state"`
+	// Refs is the feat's citation tokens, verbatim and in table order. The plan
+	// parser already tokenizes them; the UI resolves them through /api/ref rather
+	// than re-deriving what a token points at.
+	Refs         []string `json:"refs"`
 	TasksTotal   int      `json:"tasks_total"`
 	TasksChecked int      `json:"tasks_checked"`
 }
@@ -109,9 +113,13 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 	milestoneIndex := map[string]int{}
 	for _, f := range doc.Feats {
 		s := byState[f.Slug]
+		refs := f.Refs
+		if refs == nil {
+			refs = []string{} // marshal as [], never null — the UI maps over it
+		}
 		d.Feats = append(d.Feats, webFeat{
 			Slug: f.Slug, Num: f.Num, Objective: f.Objective, Milestone: f.Milestone,
-			Depends: f.Depends, Parallel: f.Parallel, State: s.State,
+			Depends: f.Depends, Parallel: f.Parallel, State: s.State, Refs: refs,
 			TasksTotal: s.TasksTotal, TasksChecked: s.TasksChecked,
 		})
 		mi, ok := milestoneIndex[f.Milestone]

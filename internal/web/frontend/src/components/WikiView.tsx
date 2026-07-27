@@ -2,92 +2,41 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import type { WikiOverview, WikiPage } from '../types'
 import { Markdown } from './Markdown'
+import { href } from '../router'
+import { rewriteRefTokens } from './Ref'
 
-// WikiView is the read-only Wiki tab: it renders docs/wiki/ as a browsable,
-// structured knowledge base. The left rail follows docs/wiki/index.md (the
-// catalog) — pages grouped by category, in the index's order — and the pane on
-// the right renders the selected page's markdown with clickable [[wikilinks]],
-// its provenance (sources), and its backlinks. Page content is loaded through the
-// hardened /api/file route, like PlansView's log.md.
-export function WikiView({ version }: { version: number }) {
+// WikiView renders one page of docs/wiki/ — its markdown with clickable
+// [[wikilinks]], its provenance (sources), and its backlinks. Page content is
+// loaded through the hardened /api/file route, like PlansView's log.md.
+//
+// The catalog itself (index.md's categories and order) is the app rail's job
+// now: the wiki no longer carries a second navigator inside the page.
+export function WikiView({ slug, version }: { slug: string | null; version: number }) {
   const [ov, setOv] = useState<WikiOverview | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [slug, setSlug] = useState<string | null>(null)
 
   useEffect(() => {
     setErr(null)
     api.wiki().then(setOv).catch((e) => setErr(String(e)))
   }, [version])
 
-  // Group pages by category in index order; pages absent from the index fall into
-  // a trailing "Not in index" group (the read model already sorts them last).
-  const groups = useMemo(() => {
-    if (!ov) return []
-    // `?? []` guards a server that marshals an empty category list as null.
-    const order = [...(ov.categories ?? []), '\0'] // sentinel bucket for the rest
-    const byCat = new Map<string, WikiPage[]>()
-    for (const p of ov.pages) {
-      const key = p.in_index && p.category ? p.category : '\0'
-      const list = byCat.get(key) ?? []
-      list.push(p)
-      byCat.set(key, list)
-    }
-    return order
-      .filter((c) => byCat.has(c))
-      .map((c) => ({ name: c === '\0' ? 'Not in index' : c, pages: byCat.get(c)! }))
-  }, [ov])
-
-  // Default to the first page once loaded.
-  useEffect(() => {
-    if (ov && slug === null && ov.pages.length > 0) setSlug(ov.pages[0].slug)
-  }, [ov, slug])
-
   if (err) return <div className="banner error">{err}</div>
   if (!ov) return <div className="empty">Loading…</div>
   if (!ov.present) return <NoWiki />
   if (ov.pages.length === 0) return <EmptyWiki hasIndex={ov.has_index} />
 
-  const current = ov.pages.find((p) => p.slug === slug) ?? ov.pages[0]
+  const current = (slug && ov.pages.find((p) => p.slug === slug)) || ov.pages[0]
 
   return (
     <div className="wiki-view">
-      <aside className="wiki-rail">
-        <div className="wiki-rail-head">Wiki</div>
-        {groups.map((g) => (
-          <div key={g.name} className="wiki-group">
-            <div className="wiki-group-title">{g.name}</div>
-            {g.pages.map((p) => (
-              <button
-                key={p.slug}
-                className={`wiki-rail-item ${p.slug === current.slug ? 'active' : ''}`}
-                onClick={() => setSlug(p.slug)}
-                title={p.title}
-              >
-                {p.title}
-                {!p.in_index && <span className="badge muted small">unlisted</span>}
-              </button>
-            ))}
-          </div>
-        ))}
-      </aside>
       <section className="wiki-page">
-        <WikiPagePane page={current} all={ov} version={version} onOpen={setSlug} />
+        <WikiPagePane page={current} all={ov} version={version} />
       </section>
     </div>
   )
 }
 
-function WikiPagePane({
-  page,
-  all,
-  version,
-  onOpen,
-}: {
-  page: WikiPage
-  all: WikiOverview
-  version: number
-  onOpen: (slug: string) => void
-}) {
+function WikiPagePane({ page, all, version }: { page: WikiPage; all: WikiOverview; version: number }) {
   const [text, setText] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -100,10 +49,9 @@ function WikiPagePane({
       .catch((e) => setErr(String(e)))
   }, [page.path, version])
 
-  // Rewrite [[wikilinks]] into `wiki:<slug>` links Markdown can route in-app,
-  // using the resolved targets from the read model (broken links get an empty
-  // slug, which Markdown renders as a dead link).
-  const rendered = useMemo(() => (text == null ? '' : rewriteWikiLinks(text, page)), [text, page])
+  // Citations in the body — [[wikilinks]] and adr:/stack: written in prose —
+  // become chips resolved by /api/ref.
+  const rendered = useMemo(() => (text == null ? '' : rewriteRefTokens(text)), [text])
 
   // Backlinks: pages whose resolved links point at this page.
   const backlinks = useMemo(
@@ -117,7 +65,7 @@ function WikiPagePane({
       <header className="wiki-page-head">
         <h1>{page.title}</h1>
         <div className="wiki-page-meta">
-          {!page.in_index && <span className="badge warn">not in index.md</span>}
+          {!page.in_index && <span className="badge attention">not in index.md</span>}
           {(page.tags ?? []).map((t) => (
             <span key={t} className="badge muted">
               {t}
@@ -138,7 +86,7 @@ function WikiPagePane({
         ) : text == null ? (
           <div className="empty">Loading…</div>
         ) : (
-          <Markdown text={rendered} onWikiLink={onOpen} />
+          <Markdown text={rendered} />
         )}
       </div>
 
@@ -157,9 +105,9 @@ function WikiPagePane({
           <div className="wiki-foot-block">
             <div className="wiki-foot-title">Backlinks</div>
             {backlinks.map((b) => (
-              <button key={b.slug} className="chip-link" onClick={() => onOpen(b.slug)}>
+              <a key={b.slug} className="chip-link" href={href('wiki', b.slug)}>
                 {b.title}
-              </button>
+              </a>
             ))}
           </div>
         )}
@@ -169,20 +117,6 @@ function WikiPagePane({
       </footer>
     </div>
   )
-}
-
-// rewriteWikiLinks replaces each [[text]] in the body with a markdown link that
-// Markdown routes in-app. It resolves via the page's own resolved links (text →
-// target), so a broken link becomes `wiki:` (empty slug) and renders as dead.
-function rewriteWikiLinks(text: string, page: WikiPage): string {
-  const byText = new Map(page.links.map((l) => [l.text, l]))
-  return text.replace(/\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g, (m, rawText: string) => {
-    const key = String(rawText).trim()
-    const link = byText.get(key)
-    if (!link) return m // unknown (e.g. a placeholder) — leave verbatim
-    const label = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key
-    return `[${label}](wiki:${link.target})`
-  })
 }
 
 function NoWiki() {

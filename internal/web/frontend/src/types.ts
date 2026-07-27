@@ -202,6 +202,8 @@ export interface PlanFeat {
   depends: string[]
   parallel: boolean
   state: string
+  /** Citation tokens from the feat's Refs cell, verbatim and in table order. */
+  refs: string[]
   tasks_total: number
   tasks_checked: number
 }
@@ -246,4 +248,74 @@ export interface WikiOverview {
   categories: string[]
   pages: WikiPage[]
   raw_sources: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Citations. One grammar — [[wiki-page]] · adr:<slug> · stack:<name> · and the
+// in-app kinds spec:/feat:/term: — resolved server-side by /api/ref so the UI
+// and `csdd plan validate` can never disagree about what a token points at.
+
+export type RefState = 'ok' | 'broken' | 'superseded' | 'ambiguous'
+export type RefKind = 'wiki' | 'adr' | 'stack' | 'spec' | 'feat' | 'term' | 'unknown'
+
+export interface RefResolution {
+  token: string
+  kind: RefKind
+  label: string
+  state: RefState
+  title?: string
+  body?: string
+  /** Provenance: the file the target lives in. */
+  meta?: string
+  /** Hash route for the target; absent when nothing resolves. */
+  route?: string
+  /** For a superseded record: the token to cite instead. */
+  successor?: string
+}
+
+export interface ADRRecord {
+  number: number
+  slug: string
+  title: string
+  body: string
+  status: string
+  superseded_by?: number
+  superseded_by_slug?: string
+  file: string
+  cited_by: string[]
+}
+
+export interface ADROverview {
+  present: boolean
+  records: ADRRecord[]
+}
+
+export interface StackRow {
+  name: string
+  domain: string
+  choice: string
+  version: string
+  why: string
+  refs: string[]
+  cited_by: string[]
+}
+
+export interface StackOverview {
+  present: boolean
+  rows: StackRow[]
+}
+
+export interface GlossaryTerm {
+  canonical: string
+  cluster?: string
+  definition: string
+  avoid?: string[]
+  line?: number
+  cited_by: string[]
+}
+
+export interface GlossaryOverview {
+  present: boolean
+  terms: GlossaryTerm[]
+  issues?: string[]
 }

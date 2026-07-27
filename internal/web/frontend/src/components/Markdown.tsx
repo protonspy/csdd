@@ -2,16 +2,17 @@ import type { ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Mermaid } from './Mermaid'
+import { Ref } from './Ref'
 
 // Renders spec/wiki markdown. Fenced ```mermaid blocks become live diagrams;
 // other fenced blocks become styled code; inline code stays inline. The default
 // <pre> wrapper is flattened so our custom code renderer owns block layout.
 //
-// When onWikiLink is set, links with a `wiki:<slug>` href (WikiView rewrites
-// [[wikilinks]] into these) are intercepted and routed in-app instead of
-// navigating; a `wiki:` href with no slug renders as a dead "broken" link. Passing
-// nothing leaves link handling at react-markdown's default (SpecView's behavior).
-export function Markdown({ text, onWikiLink }: { text: string; onWikiLink?: (slug: string) => void }) {
+// Links with a `ref:<token>` href become citation chips. A caller opts in by
+// running its source through `rewriteRefTokens` first — that is what turns a
+// citation written mid-sentence into a resolved, hoverable link without the
+// author writing any markup.
+export function Markdown({ text }: { text: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -34,39 +35,16 @@ export function Markdown({ text, onWikiLink }: { text: string; onWikiLink?: (slu
             }
             return <code className="inline-code">{children}</code>
           },
-          ...(onWikiLink
-            ? {
-                a({ href, children }: { href?: string; children?: ReactNode }) {
-                  if (href?.startsWith('wiki:')) {
-                    const slug = href.slice('wiki:'.length)
-                    if (!slug) {
-                      return (
-                        <span className="wikilink broken" title="no such page">
-                          {children}
-                        </span>
-                      )
-                    }
-                    return (
-                      <a
-                        className="wikilink"
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          onWikiLink(slug)
-                        }}
-                      >
-                        {children}
-                      </a>
-                    )
-                  }
-                  return (
-                    <a href={href} target="_blank" rel="noreferrer">
-                      {children}
-                    </a>
-                  )
-                },
-              }
-            : {}),
+          a({ href, children }: { href?: string; children?: ReactNode }) {
+            if (href?.startsWith('ref:')) {
+              return <Ref token={href.slice('ref:'.length)} />
+            }
+            return (
+              <a href={href} target="_blank" rel="noreferrer">
+                {children}
+              </a>
+            )
+          },
         }}
       >
         {text}
