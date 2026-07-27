@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Graph, { type VisEventParams, type VisNetwork } from 'react-graph-vis'
+import { DataSet } from 'vis-data'
+import { Network } from 'vis-network'
+import type { Edge, Node, Options } from 'vis-network'
 import { api } from '../api'
+import { cssVar } from '../theme'
+import { useTheme } from '../useTheme'
 
 // GraphView renders docs/graph/graph.json.gz — the csdd knowledge graph — served
 // gzip-compressed through the read-only /api/graph route (host guard + auth). The
@@ -32,14 +36,26 @@ interface NodeLink {
   links: GLink[]
 }
 
-const PALETTE: Record<string, string> = {
-  spec: '#6C8EBF', requirement: '#B85450', criterion: '#D79B00', design: '#9673A6',
-  interface: '#82B366', flow: '#3A9CA6', task: '#D6B656', steering: '#647687',
-  skill: '#4C8C5A', agent: '#B46EAB', mcp: '#8C6D46', code_ref: '#999999',
-  wiki_page: '#5A7DBE', raw_source: '#B0B0B0', tech: '#C97B2C', code: '#4E79A7',
-  plan: '#7E57C2', feat: '#26A69A', adr: '#A1887F', term: '#EC407A',
+// Node colours live in tokens.css as --g-<kind>, stepped per theme, and are read
+// back here as resolved values: vis paints on a canvas, which is outside the
+// cascade and cannot use var().
+//
+// Twenty kinds is far past what hue can separate, so this is a *recognition*
+// palette rather than a categorical one — the label under each node and the
+// legend carry identity, and the colour is a memory aid.
+type Palette = Record<string, string>
+
+const NODE_KINDS = [
+  'spec', 'requirement', 'criterion', 'design', 'interface', 'flow', 'task',
+  'steering', 'skill', 'agent', 'mcp', 'code_ref', 'wiki_page', 'raw_source',
+  'tech', 'code', 'plan', 'feat', 'adr', 'term',
+]
+
+function readPalette(): Palette {
+  const p: Palette = { fallback: cssVar('--g-fallback') }
+  for (const kind of NODE_KINDS) p[kind] = cssVar(`--g-${kind.replace(/_/g, '-')}`, p.fallback)
+  return p
 }
-const colorFor = (t: string) => PALETTE[t] ?? '#888'
 
 // Importance = type weight × √(1 + weighted degree). Raw degree alone ranks a
 // source file that `contains` 200 symbols above every spec, so structural edges
@@ -145,10 +161,7 @@ function seedNodes(index: Index, n: number): Set<string> {
 // vis-network assigns a string `title` into the popup with innerHTML. Graph
 // labels and descriptions are repo-authored text, so build the tooltip as a
 // detached element with textContent instead of handing vis markup to parse.
-//
-// The element is cached per node: react-graph-vis diffs node items with lodash
-// `isEqual`, which never reports two distinct DOM elements as equal, so a fresh
-// element per render would mark every visible node as changed on every render.
+// One element per node, cached, so re-rendering never rebuilds the DOM.
 function tooltip(n: GNode, score: number): HTMLElement {
   const el = document.createElement('div')
   el.className = 'graph-tip'
@@ -166,24 +179,98 @@ function tooltip(n: GNode, score: number): HTMLElement {
   return el
 }
 
-// Everything vis-network needs that react-graph-vis does not already hardcode.
-// NOTE: react-graph-vis merges with lodash `defaultsDeep(itsDefaults, props.options)`,
-// so its own defaults WIN over anything set here — `edges.color: '#000000'`
-// (black edges on a dark canvas), `autoResize: false` and `physics.stabilization`
-// are unreachable through the prop. They are re-applied via `setOptions` on the
-// network handle below, which does override. Keep both in sync.
-const OPTIONS: Record<string, unknown> = {
-  autoResize: false, // ignored by the prop; we drive resize with a ResizeObserver
+// The two DataSet item shapes. vis types `id` as optional; ours never is.
+type VisNodeItem = Node & { id: string }
+type VisEdgeItem = Edge & { id: string; from: string; to: string }
+
+// The mutable half of a node item — label (it carries the +N hidden count),
+// selection ring, and the dashed border that means "more behind me". Comparing
+// this is what keeps a re-render from rewriting nodes that did not change.
+function signatureOf(n: VisNodeItem): string {
+  const dashes = (n.shapeProperties as { borderDashes?: unknown } | undefined)?.borderDashes
+  const border = (n.color as { border?: string } | undefined)?.border
+  const bg = (n.color as { background?: string } | undefined)?.background
+  return `${n.label}|${n.borderWidth}|${JSON.stringify(dashes)}|${border ?? ''}|${bg ?? ''}`
+}
+
+// Deterministic 0..1 from an id (FNV-1a), so replaying the same expansion puts
+// a node in the same place — a reset must not reshuffle the picture.
+function hash01(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return ((h >>> 0) % 10000) / 10000
+}
+
+// Place a node about to enter the canvas beside whatever pulled it in. Without
+// this vis drops it at a random point in a range that grows with node count, and
+// the springs that yank it back are the energy that keeps the layout swirling.
+function born(net: Network, origins: Map<string, string>, item: VisNodeItem): VisNodeItem {
+  const from = origins.get(item.id)
+  origins.delete(item.id)
+  if (!from) return item
+  let at: { x: number; y: number } | undefined
+  try {
+    at = net.getPositions([from])[from]
+  } catch {
+    return item // the parent is gone from the network — let vis place it
+  }
+  if (!at) return item
+  const angle = hash01(item.id) * Math.PI * 2
+  const radius = SPAWN_MIN_R + hash01(`${item.id}r`) * (SPAWN_MAX_R - SPAWN_MIN_R)
+  return { ...item, x: Math.round(at.x + Math.cos(angle) * radius), y: Math.round(at.y + Math.sin(angle) * radius) }
+}
+
+// How long the layout is allowed to move after a change before it is frozen.
+// This is a ceiling, not a schedule: a settled layout stops on its own (the
+// `stabilized` event) long before this fires. It exists because a force layout
+// is not guaranteed to converge — with `avoidOverlap` on and a few hundred
+// nodes, one node jittering above `minVelocity` is enough to keep the whole
+// simulation running, and the picture drifts and rotates forever.
+const SETTLE_CEILING_MS = 4000
+
+// Where a newly expanded node is born, relative to the node that pulled it in.
+const SPAWN_MIN_R = 70
+const SPAWN_MAX_R = 150
+
+/** Full options for construction: the static half plus the themed colours. */
+function mergedOptions(): Options {
+  const t = themedOptions()
+  return {
+    ...OPTIONS,
+    nodes: { ...OPTIONS.nodes, font: { ...(OPTIONS.nodes?.font as object), ...(t.nodes?.font as object) } },
+    edges: { ...OPTIONS.edges, ...t.edges },
+  }
+}
+
+/** The parts of the options that carry colour, resolved from the active theme. */
+function themedOptions(): Options {
+  return {
+    nodes: { font: { color: cssVar('--ink', '#e6ecf5') } },
+    edges: {
+      color: {
+        color: cssVar('--g-edge', '#394456'),
+        highlight: cssVar('--accent', '#f0a23b'),
+        hover: cssVar('--accent-hi', '#ffce8a'),
+        opacity: 0.6,
+      },
+    },
+  }
+}
+
+const OPTIONS: Options = {
+  autoResize: false, // we drive resize from a ResizeObserver on the stage
   height: '100%',
   width: '100%',
   nodes: {
     shape: 'dot',
     borderWidth: 1,
     scaling: { min: 7, max: 32, label: { enabled: true, min: 11, max: 17, drawThreshold: 5 } },
-    font: { color: '#d7dee8', size: 12, face: 'system-ui', strokeWidth: 0 },
+    font: { size: 12, face: 'system-ui', strokeWidth: 0 },
   },
   edges: {
-    color: { color: '#394456', highlight: '#f0a23b', hover: '#ffce8a', opacity: 0.6 },
     width: 1,
     smooth: false,
     arrows: { to: { enabled: true, scaleFactor: 0.4 } },
@@ -195,7 +282,9 @@ const OPTIONS: Record<string, unknown> = {
     solver: 'forceAtlas2Based',
     forceAtlas2Based: {
       gravitationalConstant: -60,
-      centralGravity: 0.008,
+      // Low central gravity lets a repulsion-dominated cloud expand and orbit
+      // instead of settling. It has to be strong enough to bound the layout.
+      centralGravity: 0.02,
       springLength: 110,
       springConstant: 0.09,
       damping: 0.5,
@@ -203,6 +292,7 @@ const OPTIONS: Record<string, unknown> = {
     },
     // vis stops the simulation once every node drops below minVelocity, so the
     // tab does not burn a core in the background after the layout settles.
+    // That condition is not guaranteed to be reached — see SETTLE_CEILING_MS.
     maxVelocity: 40,
     minVelocity: 0.9,
     timestep: 0.5,
@@ -220,6 +310,14 @@ const OPTIONS: Record<string, unknown> = {
 }
 
 export function GraphView({ version }: { version: number }) {
+  // Everything painted on the canvas is resolved from tokens, so a theme change
+  // has to re-read them: the palette feeds the node items, and the chrome
+  // (edges, label ink) is pushed straight at the network.
+  const theme = useTheme()
+  const palette = useMemo(() => readPalette(), [theme])
+  const accent = useMemo(() => cssVar('--accent', '#f0a23b'), [theme])
+  const accentHi = useMemo(() => cssVar('--accent-hi', '#ffce8a'), [theme])
+
   const [graph, setGraph] = useState<NodeLink | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [seedSize, setSeedSize] = useState(SEED_DEFAULT)
@@ -229,9 +327,58 @@ export function GraphView({ version }: { version: number }) {
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
 
-  const netRef = useRef<VisNetwork | null>(null)
-  const wrapRef = useRef<HTMLDivElement | null>(null)
+  const netRef = useRef<Network | null>(null)
+  const nodesRef = useRef<DataSet<VisNodeItem> | null>(null)
+  const edgesRef = useRef<DataSet<VisEdgeItem> | null>(null)
+  const stageRef = useRef<HTMLDivElement | null>(null)
   const fitPendingRef = useRef(true)
+  // id → the already-visible node that pulled it in. Consumed once, when the
+  // node is born, to place it beside its parent instead of at a random point.
+  const originRef = useRef(new Map<string, string>())
+  // id → signature of the item last pushed, so a re-render updates only the
+  // nodes that actually changed rather than rewriting the whole DataSet.
+  const sigRef = useRef(new Map<string, string>())
+  const settleRef = useRef<number | undefined>(undefined)
+  // Freezing has to be idempotent: disabling physics calls vis's own
+  // stopSimulation, which re-emits `stabilized` — straight back into the handler
+  // that froze it. Without this the two would trade timers forever.
+  const frozenRef = useRef(false)
+
+  // The layout moves while it has somewhere to go, then it is frozen.
+  //
+  // Freezing is what makes an expansion terminate. A force layout is not
+  // guaranteed to converge: vis stops only when EVERY node is below
+  // `minVelocity`, and with `avoidOverlap` on a few hundred nodes there is
+  // almost always one that is not — so the simulation keeps running and the
+  // whole picture slowly drifts and rotates. The `stabilized` event handles the
+  // happy path; the timer is the ceiling for when it never arrives.
+  const freeze = useCallback(() => {
+    if (settleRef.current !== undefined) {
+      window.clearTimeout(settleRef.current)
+      settleRef.current = undefined
+    }
+    if (frozenRef.current) return
+    frozenRef.current = true
+    netRef.current?.setOptions({ physics: { enabled: false } })
+  }, [])
+
+  const reheat = useCallback(() => {
+    const net = netRef.current
+    if (!net) return
+    frozenRef.current = false
+    net.setOptions({ physics: { enabled: true } })
+    net.startSimulation()
+    if (settleRef.current !== undefined) window.clearTimeout(settleRef.current)
+    settleRef.current = window.setTimeout(freeze, SETTLE_CEILING_MS)
+  }, [freeze])
+
+  // Network event handlers are bound once, so they read live state through this
+  // rather than closing over a stale render.
+  const live = useRef<{ expand: (id: string, limit: number) => void; expandK: number; freeze: () => void }>({
+    expand: () => {},
+    expandK: EXPAND_DEFAULT,
+    freeze: () => {},
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -266,20 +413,70 @@ export function GraphView({ version }: { version: number }) {
     fitPendingRef.current = true
   }, [seed])
 
-  useEffect(() => () => netRef.current?.destroy(), [])
-
-  // react-graph-vis pins autoResize to false, so the canvas never follows its
-  // container. Drive it from the wrapper instead.
+  // One network for the life of the view. It is created once the graph has
+  // loaded (before that the stage is not mounted) and destroyed on the way out —
+  // vis holds a canvas, a render loop and DOM listeners that nothing else frees.
+  // Mirrors exactly when the stage is rendered below: a load error replaces the
+  // whole view, so the network must be torn down rather than left holding a
+  // container that is no longer in the document.
+  const ready = !!index && !error
   useEffect(() => {
-    const wrap = wrapRef.current
-    if (!wrap || typeof ResizeObserver === 'undefined') return
+    const el = stageRef.current
+    if (!ready || !el) return
+
+    const nodes = new DataSet<VisNodeItem>()
+    const edges = new DataSet<VisEdgeItem>()
+    const net = new Network(el, { nodes, edges }, mergedOptions())
+    netRef.current = net
+    nodesRef.current = nodes
+    edgesRef.current = edges
+
+    net.on('selectNode', (p: { nodes: (string | number)[] }) => {
+      const id = p.nodes[0]
+      if (id === undefined) return
+      setSelectedId(String(id))
+      live.current.expand(String(id), live.current.expandK)
+    })
+    net.on('deselectNode', () => setSelectedId(null))
+    net.on('doubleClick', (p: { nodes: (string | number)[] }) => {
+      const id = p.nodes[0]
+      if (id !== undefined) live.current.expand(String(id), EXPAND_ALL_CAP)
+    })
+    // `stabilized` is emitted from inside a physics tick; changing options there
+    // re-enters the solver, so hop out of the tick first.
+    net.on('stabilized', () => {
+      window.setTimeout(() => {
+        live.current.freeze()
+        if (!fitPendingRef.current) return
+        fitPendingRef.current = false
+        netRef.current?.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } })
+      }, 0)
+    })
+
+    return () => {
+      if (settleRef.current !== undefined) window.clearTimeout(settleRef.current)
+      settleRef.current = undefined
+      frozenRef.current = false
+      net.destroy()
+      netRef.current = null
+      nodesRef.current = null
+      edgesRef.current = null
+      sigRef.current.clear()
+      originRef.current.clear()
+    }
+  }, [ready])
+
+  // autoResize is off (it polls); the canvas follows its container from here.
+  useEffect(() => {
+    const el = stageRef.current
+    if (!ready || !el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
       netRef.current?.setSize('100%', '100%')
       netRef.current?.redraw()
     })
-    ro.observe(wrap)
+    ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [ready])
 
   // Mirror `visible` so event handlers and the expand/collapse callbacks can read
   // the current set without re-subscribing. Never mutated, only reassigned.
@@ -316,6 +513,10 @@ export function GraphView({ version }: { version: number }) {
           ? `Added the ${take.length} most important of ${fresh.length} neighbours.`
           : null,
       )
+      // Remember what pulled each one in. A node born at a random point across
+      // the canvas is what injects the energy that keeps the layout swirling;
+      // born beside its parent, the expansion settles in well under a second.
+      for (const x of take) originRef.current.set(x, id)
       fitPendingRef.current = false
       setVisible(new Set([...prev, ...take]))
     },
@@ -372,44 +573,19 @@ export function GraphView({ version }: { version: number }) {
     focusNow(id)
   }, [visible, focusNow])
 
-  // Handlers are registered once by react-graph-vis (its shouldComponentUpdate
-  // only re-binds when the `events` object identity changes), so read live state
-  // through a ref rather than closing over it.
-  const live = useRef({ expand, expandK })
-  live.current = { expand, expandK }
+  live.current = { expand, expandK, freeze }
 
-  const events = useMemo(
-    () => ({
-      selectNode: ({ nodes }: VisEventParams) => {
-        const id = nodes[0]
-        if (!id) return
-        setSelectedId(id)
-        live.current.expand(id, live.current.expandK)
-      },
-      deselectNode: () => setSelectedId(null),
-      doubleClick: ({ nodes }: VisEventParams) => {
-        if (nodes[0]) live.current.expand(nodes[0], EXPAND_ALL_CAP)
-      },
-      stabilized: () => {
-        if (!fitPendingRef.current) return
-        fitPendingRef.current = false
-        netRef.current?.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } })
-      },
-    }),
-    [],
-  )
-
-  // Rebuilt whenever the graph reloads; entries are reused across renders so the
-  // node diff stays stable (see tooltip()).
+  // Rebuilt whenever the graph reloads; entries are reused across renders so a
+  // node's tooltip element is built once (see tooltip()).
   const tips = useMemo(() => new Map<string, HTMLElement>(), [index])
 
-  const visGraph = useMemo(() => {
+  const visGraph = useMemo<{ nodes: VisNodeItem[]; edges: VisEdgeItem[] }>(() => {
     if (!index) return { nodes: [], edges: [] }
     const nodes = [...visible].map((id) => {
       const n = index.byId.get(id)!
       const s = index.score.get(id) ?? 1
       const hidden = hiddenCount(id, visible)
-      const c = colorFor(n.file_type)
+      const c = palette[n.file_type] ?? palette.fallback
       const label = n.label.length > 26 ? n.label.slice(0, 25) + '…' : n.label
       let tip = tips.get(id)
       if (!tip) tips.set(id, (tip = tooltip(n, s)))
@@ -423,9 +599,9 @@ export function GraphView({ version }: { version: number }) {
         shapeProperties: { borderDashes: hidden > 0 ? [4, 3] : false },
         color: {
           background: c,
-          border: id === selectedId ? '#f0a23b' : c,
-          highlight: { background: c, border: '#f0a23b' },
-          hover: { background: c, border: '#ffce8a' },
+          border: id === selectedId ? accent : c,
+          highlight: { background: c, border: accent },
+          hover: { background: c, border: accentHi },
         },
       }
     })
@@ -433,7 +609,59 @@ export function GraphView({ version }: { version: number }) {
       .filter((l) => visible.has(l.source) && visible.has(l.target))
       .map((l) => ({ id: l.key, from: l.source, to: l.target, title: l.relation }))
     return { nodes, edges }
-  }, [index, visible, selectedId, hiddenCount, tips])
+  }, [index, visible, selectedId, hiddenCount, tips, palette, accent, accentHi])
+
+  // Canvas chrome follows the theme. Node fills ride along through visGraph:
+  // their signature includes the background, so every node is updated once.
+  useEffect(() => {
+    netRef.current?.setOptions(themedOptions())
+  }, [theme])
+
+  // Reconcile the computed view into vis's DataSets.
+  //
+  // Order matters, because vis resolves edges to node objects as the data
+  // changes: an edge whose endpoint is leaving must go before the node, and a
+  // node must arrive before the edges that reference it. Either inversion leaves
+  // vis holding a reference to something that is not there.
+  //
+  // Only what actually changed is written. Rewriting the whole DataSet on every
+  // render would restart the solver on every click.
+  useEffect(() => {
+    const net = netRef.current
+    const nodesDs = nodesRef.current
+    const edgesDs = edgesRef.current
+    if (!net || !nodesDs || !edgesDs) return
+
+    const sigs = sigRef.current
+    const wantNodeIds = new Set(visGraph.nodes.map((n) => n.id))
+    const haveNodeIds = new Set(nodesDs.getIds().map(String))
+    const wantEdgeIds = new Set(visGraph.edges.map((e) => e.id))
+    const haveEdgeIds = new Set(edgesDs.getIds().map(String))
+
+    const edgesGone = [...haveEdgeIds].filter((id) => !wantEdgeIds.has(id))
+    const nodesGone = [...haveNodeIds].filter((id) => !wantNodeIds.has(id))
+    const nodesNew = visGraph.nodes.filter((n) => !haveNodeIds.has(n.id))
+    const edgesNew = visGraph.edges.filter((e) => !haveEdgeIds.has(e.id))
+    const nodesChanged = visGraph.nodes.filter((n) => haveNodeIds.has(n.id) && sigs.get(n.id) !== signatureOf(n))
+
+    if (edgesGone.length) edgesDs.remove(edgesGone)
+    if (nodesGone.length) {
+      nodesDs.remove(nodesGone)
+      for (const id of nodesGone) sigs.delete(id)
+    }
+    if (nodesNew.length) nodesDs.add(nodesNew.map((n) => born(net, originRef.current, n)))
+    if (edgesNew.length) edgesDs.add(edgesNew)
+    // Carries no x/y, so an update never yanks a node back to where it started.
+    if (nodesChanged.length) nodesDs.update(nodesChanged)
+
+    for (const n of visGraph.nodes) sigs.set(n.id, signatureOf(n))
+
+    // Only a change in shape needs the solver. A selection ring does not, and
+    // with physics already frozen vis will not restart it on its own.
+    if (nodesNew.length || nodesGone.length || edgesNew.length || edgesGone.length) reheat()
+    // `ready` is a dependency because a rebuilt network starts with empty
+    // DataSets: without it a recovered load error would leave a blank canvas.
+  }, [visGraph, reheat, ready])
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -514,7 +742,7 @@ export function GraphView({ version }: { version: number }) {
                         setQuery('')
                       }}
                     >
-                      <span className="graph-dot" style={{ background: colorFor(m.file_type) }} />
+                      <span className="graph-dot" style={{ background: palette[m.file_type] ?? palette.fallback }} />
                       {m.label}
                       <span className="muted"> · {m.file_type}</span>
                     </button>
@@ -571,29 +799,20 @@ export function GraphView({ version }: { version: number }) {
 
         {/* The stage is what vis sizes against, so the toolbar above must not
             overlay it — otherwise `fit()` centres nodes underneath the controls. */}
-        <div className="graph-stage" ref={wrapRef}>
-          {notice && <div className="graph-notice">{notice}</div>}
+        <div className="graph-stage">
+          {/* vis empties whatever container it is handed, so it gets one of its
+              own: the notice and the legend are siblings, not children. The
+              container is absolutely filled rather than height:100% — a
+              percentage height inside a flex item with no definite height
+              resolves to auto, which is a zero-height canvas. */}
+          <div className="graph-net" ref={stageRef} />
 
-          <Graph
-            graph={visGraph}
-            options={OPTIONS}
-            events={events}
-            // Without it the component mints a uuid for the container id, dragging
-            // in react-graph-vis's ancient uuid@2 dependency at runtime.
-            identifier="csdd-graph"
-            style={{ width: '100%', height: '100%' }}
-            getNetwork={(net) => {
-              netRef.current = net
-              // Defeat react-graph-vis's defaultsDeep (see OPTIONS): setOptions is
-              // the only path that actually overrides its hardcoded defaults.
-              net.setOptions(OPTIONS)
-            }}
-          />
+          {notice && <div className="graph-notice">{notice}</div>}
 
           <div className="graph-legend">
             {legend.map(([t, n]) => (
               <span key={t}>
-                <span className="graph-dot" style={{ background: colorFor(t) }} />
+                <span className="graph-dot" style={{ background: palette[t] ?? palette.fallback }} />
                 {t} <b>{n}</b>
               </span>
             ))}
