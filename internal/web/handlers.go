@@ -124,6 +124,35 @@ func newMux(root string, h *hub, a *auth, allowedHosts ...string) http.Handler {
 		writeJSON(w, http.StatusOK, loadWikiOverview(root))
 	}))
 
+	// The knowledge-base surfaces that had no route. Each reuses the CLI's own
+	// parser, so the dashboard cannot disagree with the gates about what the
+	// workspace says.
+	mux.HandleFunc("GET /api/adr", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		writeJSON(w, http.StatusOK, loadADRs(root, loadCitations(root)))
+	}))
+
+	mux.HandleFunc("GET /api/stack", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		writeJSON(w, http.StatusOK, loadStack(root, loadCitations(root)))
+	}))
+
+	mux.HandleFunc("GET /api/glossary", a.protect(func(w http.ResponseWriter, _ *http.Request) {
+		setWriteDeadline(w)
+		writeJSON(w, http.StatusOK, loadGlossary(root))
+	}))
+
+	// Citation resolution. Batched (`?token=a&token=b`) because the UI resolves a
+	// whole Refs column at once, and answered in request order.
+	mux.HandleFunc("GET /api/ref", a.protect(func(w http.ResponseWriter, r *http.Request) {
+		setWriteDeadline(w)
+		tokens := r.URL.Query()["token"]
+		if len(tokens) > maxRefTokens {
+			tokens = tokens[:maxRefTokens]
+		}
+		writeJSON(w, http.StatusOK, resolveRefs(root, tokens))
+	}))
+
 	mux.HandleFunc("GET /api/plan/{slug}", a.protect(func(w http.ResponseWriter, r *http.Request) {
 		slug := r.PathValue("slug")
 		d, err := loadPlanDetail(root, slug)

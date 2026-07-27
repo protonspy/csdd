@@ -1,24 +1,30 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { PlanSummary, PlanDetail, PlanFeat, MilestoneProgress } from '../types'
-import { ProgressBar } from './bits'
+import { ProgressBar, Stat } from './bits'
+import { href, useRoute } from '../router'
+import { RefList } from './Ref'
+import { slugifyAnchor, useFlashTarget } from '../useFlashTarget'
 
-// PlansView is the read-only Plans tab: a list of plans with approval/drift
+// PlansView is the read-only Plans area: a list of plans with approval/drift
 // badges, and a per-plan view rendering the feat table with derived status,
 // milestone progress, blocked flags, and the run journal (log.md).
-export function PlansView({ version }: { version: number }) {
+//
+// Which plan is open comes from the route, not from local state, so a plan is a
+// URL that survives a reload and can be pasted into a review.
+export function PlansView({ slug, version }: { slug: string | null; version: number }) {
   const [plans, setPlans] = useState<PlanSummary[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
+  const feat = useRoute().query.feat ?? null
 
   useEffect(() => {
     setErr(null)
     api.plans().then(setPlans).catch((e) => setErr(String(e)))
   }, [version])
 
+  if (slug) return <PlanDetailView slug={slug} version={version} feat={feat} />
   if (err) return <div className="banner error">{err}</div>
   if (!plans) return <div className="empty">Loading…</div>
-  if (open) return <PlanDetailView slug={open} version={version} onBack={() => setOpen(null)} />
   if (plans.length === 0) return <NoPlans />
 
   return (
@@ -28,27 +34,29 @@ export function PlansView({ version }: { version: number }) {
       </div>
       <div className="cards">
         {plans.map((p) => (
-          <button key={p.slug} className="card plan-card" onClick={() => setOpen(p.slug)}>
+          <a key={p.slug} className="card plan-card" href={href('plans', p.slug)}>
             <div className="card-title">
-              {p.name || p.slug} <ApprovalBadge approved={p.approved} drift={p.drift} />
+              {p.name || p.slug} <PlanStateBadge approved={p.approved} drift={p.drift} complete={p.complete} />
             </div>
             <div className="muted small">{p.slug}</div>
             <div className="stat-grid">
               <Stat label="feats" value={p.feats} />
-              <Stat label="done" value={p.done} tone="ok" />
+              <Stat label="done" value={p.done} unit={`/${p.feats}`} />
             </div>
             <ProgressBar pct={p.feats > 0 ? Math.round((p.done * 100) / p.feats) : 0} />
-          </button>
+          </a>
         ))}
       </div>
     </div>
   )
 }
 
-function PlanDetailView({ slug, version, onBack }: { slug: string; version: number; onBack: () => void }) {
+function PlanDetailView({ slug, version, feat }: { slug: string; version: number; feat: string | null }) {
   const [d, setD] = useState<PlanDetail | null>(null)
   const [journal, setJournal] = useState<string>('')
   const [err, setErr] = useState<string | null>(null)
+  // A feat:<slug> citation lands here; flash the row it meant.
+  useFlashTarget(feat, [d])
 
   useEffect(() => {
     setErr(null)
@@ -67,11 +75,11 @@ function PlanDetailView({ slug, version, onBack }: { slug: string; version: numb
   return (
     <div className="plan-detail">
       <div className="spec-header">
-        <button className="link-btn" onClick={onBack}>
+        <a className="link-btn" href="#/plans">
           ← Plans
-        </button>
+        </a>
         <h1>
-          {d.name || d.slug} <ApprovalBadge approved={d.approved} drift={d.drift} />
+          {d.name || d.slug} <PlanStateBadge approved={d.approved} drift={d.drift} complete={d.complete} />
         </h1>
       </div>
 
@@ -107,7 +115,7 @@ function PlanDetailView({ slug, version, onBack }: { slug: string; version: numb
 
 function FeatRow({ f }: { f: PlanFeat }) {
   return (
-    <div className="feat-row" title={f.objective}>
+    <div className="feat-row" id={`t-${slugifyAnchor(f.slug)}`} title={f.objective}>
       <span className="feat-num muted">{f.num}</span>
       <span className="feat-slug">
         {f.slug}
@@ -117,6 +125,10 @@ function FeatRow({ f }: { f: PlanFeat }) {
       <StateBadge state={f.state} />
       <span className="feat-progress muted small">
         {f.tasks_total > 0 ? `${f.tasks_checked}/${f.tasks_total} tasks` : ''}
+      </span>
+      {/* The citation column: what this feat says it depends on, resolved. */}
+      <span className="feat-refs">
+        <RefList tokens={f.refs} empty="" />
       </span>
     </div>
   )
@@ -135,8 +147,23 @@ function MilestoneRow({ m }: { m: MilestoneProgress }) {
   )
 }
 
-function ApprovalBadge({ approved, drift }: { approved: boolean; drift: boolean }) {
+/**
+ * One badge for the plan's state, in priority order: drift first because it is
+ * a problem, then complete because it is the terminal state and says more than
+ * "approved", then approval. Showing complete *and* approved together would be
+ * two badges saying one thing.
+ */
+export function PlanStateBadge({
+  approved,
+  drift,
+  complete,
+}: {
+  approved: boolean
+  drift: boolean
+  complete?: boolean
+}) {
   if (drift) return <span className="badge warn">drift</span>
+  if (complete) return <span className="badge ok">complete</span>
   if (approved) return <span className="badge ready">approved</span>
   return <span className="badge muted">draft</span>
 }
@@ -145,18 +172,6 @@ function StateBadge({ state }: { state: string }) {
   const tone =
     state === 'done' ? 'ready' : state === 'implementing' || state === 'ready' ? 'info' : 'muted'
   return <span className={`badge ${tone}`}>{state}</span>
-}
-
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'ok' | 'bad' }) {
-  const color = tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--bad)' : undefined
-  return (
-    <div className="stat">
-      <div className="stat-val" style={color ? { color } : undefined}>
-        {value}
-      </div>
-      <div className="stat-label">{label}</div>
-    </div>
-  )
 }
 
 function NoPlans() {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Coverage, TestReport, TestSummary } from '../types'
-import { ProgressBar, covColor } from './bits'
+import { ProgressBar, Stat, covColor } from './bits'
 
 export function TestsView({ version }: { version: number }) {
   const [rep, setRep] = useState<TestReport | null>(null)
@@ -46,8 +46,8 @@ function TestsCard({ t }: { t: TestSummary }) {
       </div>
       <div className="stat-grid">
         <Stat label="total" value={t.total} />
-        <Stat label="passed" value={t.passed} tone="ok" />
-        <Stat label="failed" value={t.failed} tone={t.failed > 0 ? 'bad' : undefined} />
+        <Stat label="passed" value={t.passed} />
+        <Stat label="failed" value={t.failed} />
         <Stat label="skipped" value={t.skipped} />
       </div>
       <div className="cov-bar-row">
@@ -124,17 +124,6 @@ function Failures({ failures }: { failures: { suite: string; name: string; messa
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: 'ok' | 'bad' }) {
-  const color = tone === 'ok' ? 'var(--ok)' : tone === 'bad' ? 'var(--bad)' : undefined
-  return (
-    <div className="stat">
-      <div className="stat-val" style={color ? { color } : undefined}>
-        {value}
-      </div>
-      <div className="stat-label">{label}</div>
-    </div>
-  )
-}
 
 function NoReports() {
   return (

@@ -1,25 +1,6 @@
-:root {
-  --bg: #0e1117;
-  --bg-2: #151a23;
-  --bg-3: #1b212c;
-  --panel: #11161e;
-  --border: #232b38;
-  --border-2: #2d3645;
-  --text: #d7dee8;
-  --text-dim: #8a96a6;
-  --text-faint: #5c6675;
-  --accent: #f0a23b;
-  --accent-2: #ffce8a;
-  --ok: #54c08a;
-  --mid: #e6b84d;
-  --bad: #e3685f;
-  --info: #5aa6e6;
-  --red: #e3685f;
-  --green: #54c08a;
-  --radius: 8px;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
+/* Colour, geometry and type live in tokens.css, which both themes fill in.
+   Nothing in this file may name a colour directly. */
+@import './tokens.css';
 
 * {
   box-sizing: border-box;
@@ -33,8 +14,8 @@ body,
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
+  background: var(--plane);
+  color: var(--ink);
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
@@ -45,6 +26,14 @@ button {
   font-family: inherit;
   color: inherit;
   cursor: pointer;
+}
+
+/* Most anchors in this app are navigation surfaces — a rail row, a spec card, a
+   tab — not prose links, so they inherit their surroundings by default. Prose
+   links opt back in below (.markdown a, .link-btn, .wikilink). */
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 code {
@@ -65,7 +54,7 @@ code {
   gap: 14px;
   height: 48px;
   padding: 0 16px;
-  background: linear-gradient(180deg, var(--bg-2), var(--panel));
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
@@ -82,7 +71,7 @@ code {
   font-family: var(--mono);
 }
 .brand-sub {
-  color: var(--text-faint);
+  color: var(--ink-3);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
@@ -93,7 +82,7 @@ code {
 .root-path {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--ink-2);
   max-width: 46vw;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -106,35 +95,35 @@ code {
   font-size: 12px;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid var(--border-2);
-  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-3);
 }
 .live .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--text-faint);
+  background: var(--ink-3);
 }
 .live.on {
-  color: var(--ok);
+  color: var(--good);
 }
 .live.on .dot {
-  background: var(--ok);
-  box-shadow: 0 0 0 0 rgba(84, 192, 138, 0.6);
+  background: var(--good);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 60%, transparent);
   animation: pulse 2s infinite;
 }
 .live.off {
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(84, 192, 138, 0.5);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 50%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(84, 192, 138, 0);
+    box-shadow: 0 0 0 6px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(84, 192, 138, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -150,49 +139,25 @@ code {
   width: 320px;
   flex: 0 0 320px;
   border-right: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-1);
   overflow-y: auto;
   padding: 12px 10px 32px;
 }
 
 /* Chips footer (mcp/hooks/commands counts). */
-.ws-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 16px 4px 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
 .chip {
   font-size: 11px;
-  color: var(--text-dim);
-  background: var(--bg-3);
+  color: var(--ink-2);
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 2px 8px;
 }
 .chip b {
-  color: var(--text);
+  color: var(--ink);
 }
 
 /* ---- Sidebar nav, groups & collapsible sections ---------------------- */
-.side-nav {
-  margin-bottom: 14px;
-}
-.side-group {
-  margin-bottom: 16px;
-}
-.side-group-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 0 6px 6px;
-  margin-bottom: 6px;
-  border-bottom: 1px solid var(--border);
-}
 
 .side-section {
   margin-bottom: 2px;
@@ -206,7 +171,7 @@ code {
   font-weight: 700;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--ink-2);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -216,12 +181,12 @@ code {
   transition: background 0.12s, color 0.12s;
 }
 .side-heading:hover {
-  background: var(--bg-2);
-  color: var(--text);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 .side-caret {
   font-size: 9px;
-  color: var(--text-faint);
+  color: var(--ink-3);
   transition: transform 0.12s;
   display: inline-block;
 }
@@ -232,12 +197,12 @@ code {
   flex: 1;
 }
 .side-heading .count {
-  background: var(--bg-3);
+  background: var(--surface-3);
   border-radius: 999px;
   padding: 0 7px;
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .side-body {
   padding: 5px 2px 7px;
@@ -250,7 +215,7 @@ code {
 }
 .spec-row {
   text-align: left;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 9px 10px;
@@ -268,7 +233,7 @@ code {
 }
 .resource-row {
   text-align: left;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 7px 9px;
@@ -278,11 +243,11 @@ code {
   transition: border-color 0.12s, background 0.12s;
 }
 .resource-row:hover {
-  border-color: var(--border-2);
+  border-color: var(--border-strong);
 }
 .resource-row.active {
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(240, 162, 59, 0.08), var(--bg-2));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), var(--surface-2));
 }
 .resource-row-head {
   display: flex;
@@ -300,7 +265,7 @@ code {
 }
 .resource-desc {
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -331,7 +296,7 @@ code {
 }
 .resource-view-desc {
   margin: 8px 0 0;
-  color: var(--text);
+  color: var(--ink);
   font-size: 13px;
 }
 .resource-view-meta {
@@ -342,21 +307,21 @@ code {
 }
 .meta-tag {
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 .meta-tag b {
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--mono);
 }
 .resource-view-body {
   padding: 4px 20px 24px;
 }
 .spec-row:hover {
-  border-color: var(--border-2);
+  border-color: var(--border-strong);
 }
 .spec-row.active {
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(240, 162, 59, 0.08), var(--bg-2));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), var(--surface-2));
 }
 .spec-row-head {
   display: flex;
@@ -395,24 +360,24 @@ code {
   border-radius: 5px;
   padding: 3px 6px;
   font-size: 13px;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .tree-row:hover {
-  background: var(--bg-2);
-  color: var(--text);
+  background: var(--surface-2);
+  color: var(--ink);
 }
 .tree-row.file.active {
-  background: rgba(240, 162, 59, 0.12);
-  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-hi);
 }
 .tree-row.dir {
-  color: var(--text);
+  color: var(--ink);
 }
 .caret {
   display: inline-block;
   width: 10px;
   transition: transform 0.12s;
-  color: var(--text-faint);
+  color: var(--ink-3);
   font-size: 10px;
 }
 .caret.open {
@@ -422,7 +387,7 @@ code {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--text-faint);
+  background: var(--ink-3);
   margin-left: 5px;
   flex: 0 0 auto;
 }
@@ -451,31 +416,45 @@ code {
 .empty {
   margin: auto;
   text-align: center;
-  color: var(--text-dim);
+  color: var(--ink-2);
   max-width: 440px;
 }
 .empty h2 {
-  color: var(--text);
+  color: var(--ink);
 }
 .empty code {
-  background: var(--bg-3);
+  background: var(--surface-3);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
 .banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 14px;
   border-radius: var(--radius);
   margin-bottom: 14px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.banner::before {
+  font-size: 10px;
+  line-height: 1.6;
+  flex: 0 0 auto;
 }
 .banner.error {
-  background: rgba(227, 104, 95, 0.12);
-  border: 1px solid rgba(227, 104, 95, 0.4);
-  color: #f2a59f;
+  background: var(--critical-soft);
+  border-color: transparent;
+}
+.banner.error::before {
+  content: '✕';
+  color: var(--critical);
 }
 
 .muted {
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .small {
   font-size: 12px;
@@ -483,32 +462,69 @@ code {
 
 /* ---- Badges & pills --------------------------------------------------- */
 
+/* A badge is a glyph plus a word. The colour is a third channel, never the only
+   one: status hues are not all legible as text (on the light surface `warning`
+   sits at 1.8:1), so the label wears ink and the glyph carries the hue. */
 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
-  font-weight: 700;
-  padding: 1px 7px;
-  border-radius: 999px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
   line-height: 1.6;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--surface-3);
 }
-.badge.ready {
-  background: rgba(84, 192, 138, 0.16);
-  color: var(--ok);
+.badge::before {
+  font-size: 9px;
+  line-height: 1;
+}
+.badge.ready,
+.badge.ok {
+  background: var(--good-soft);
+}
+.badge.ready::before,
+.badge.ok::before {
+  content: '●';
+  color: var(--good);
 }
 .badge.warn {
-  background: rgba(227, 104, 95, 0.16);
-  color: var(--bad);
+  background: var(--critical-soft);
 }
-.badge.muted {
-  background: var(--bg-3);
-  color: var(--text-dim);
+.badge.warn::before {
+  content: '✕';
+  color: var(--critical);
 }
-.badge.ok {
-  background: rgba(84, 192, 138, 0.16);
-  color: var(--ok);
+.badge.attention {
+  background: var(--warning-soft);
+}
+.badge.attention::before {
+  content: '▲';
+  color: var(--warning);
 }
 .badge.info {
-  background: rgba(90, 166, 230, 0.16);
+  background: var(--info-soft);
+}
+.badge.info::before {
+  content: '●';
   color: var(--info);
+}
+.badge.accent {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.badge.accent::before {
+  content: '▸';
+  color: var(--accent);
+}
+/* Neutral: no status colour at all, so no glyph to explain one. */
+.badge.muted {
+  background: var(--surface-3);
+  color: var(--ink-2);
+  font-weight: 500;
 }
 
 /* ---- Plans tab ------------------------------------------------------- */
@@ -517,6 +533,7 @@ code {
   cursor: pointer;
 }
 .link-btn {
+  display: inline-block;
   background: none;
   border: none;
   color: var(--info);
@@ -536,7 +553,7 @@ code {
   align-items: center;
   gap: 10px;
   padding: 4px 2px;
-  border-top: 1px solid var(--bg-3);
+  border-top: 1px solid var(--surface-3);
 }
 .feat-row:first-child {
   border-top: none;
@@ -561,7 +578,7 @@ code {
   display: flex;
   gap: 2px;
   margin-left: 18px;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 3px;
@@ -569,19 +586,21 @@ code {
 .top-tab {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--ink-2);
   background: transparent;
   border: 0;
   cursor: pointer;
   padding: 5px 12px;
   border-radius: 6px;
-  transition: background 0.12s, color 0.12s;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 .top-tab:hover {
-  color: var(--text);
+  color: var(--ink);
 }
 .top-tab.active {
-  color: var(--bg);
+  color: var(--ink-on-fill);
   background: var(--accent);
 }
 
@@ -605,7 +624,7 @@ code {
 .filter-pills {
   display: flex;
   gap: 4px;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 3px;
@@ -613,7 +632,7 @@ code {
 .filter-pill {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--ink-2);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -625,16 +644,16 @@ code {
   transition: background 0.12s, color 0.12s;
 }
 .filter-pill:hover {
-  color: var(--text);
+  color: var(--ink);
 }
 .filter-pill.active {
-  color: var(--text);
-  background: var(--bg-3);
+  color: var(--ink);
+  background: var(--surface-3);
 }
 .filter-pill-n {
   font-size: 10px;
-  color: var(--text-faint);
-  background: var(--bg);
+  color: var(--ink-3);
+  background: var(--plane);
   border-radius: 999px;
   padding: 0 6px;
 }
@@ -645,15 +664,15 @@ code {
   margin-left: auto;
   min-width: 180px;
   font-size: 13px;
-  color: var(--text);
-  background: var(--bg-2);
+  color: var(--ink);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 10px;
   outline: none;
 }
 .specs-search:focus {
-  border-color: var(--border-2);
+  border-color: var(--border-strong);
 }
 .specs-grid {
   display: grid;
@@ -662,7 +681,7 @@ code {
 }
 .spec-card {
   text-align: left;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -673,7 +692,7 @@ code {
   transition: border-color 0.12s, transform 0.08s;
 }
 .spec-card:hover {
-  border-color: var(--border-2);
+  border-color: var(--border-strong);
   transform: translateY(-1px);
 }
 .spec-card-head {
@@ -707,7 +726,7 @@ code {
 }
 .pager-range {
   font-size: 12px;
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 .pager-btns {
   display: flex;
@@ -716,20 +735,20 @@ code {
 }
 .pager-page {
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--ink-2);
   font-family: var(--mono);
 }
 .pager-btn {
   font-size: 12px;
-  color: var(--text);
-  background: var(--bg-2);
+  color: var(--ink);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 10px;
   cursor: pointer;
 }
 .pager-btn:hover:not(:disabled) {
-  border-color: var(--border-2);
+  border-color: var(--border-strong);
 }
 .pager-btn:disabled {
   opacity: 0.4;
@@ -739,7 +758,7 @@ code {
 /* ---- Back link (spec detail → list) ---------------------------------- */
 .back-link {
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--ink-2);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -750,41 +769,74 @@ code {
   color: var(--accent);
 }
 
+/* Same rule as the badge: the dot carries the state, the text stays readable. */
 .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--mono);
   font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--border-2);
-  color: var(--text-dim);
-  background: var(--bg-3);
+  padding: 1px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  color: var(--ink-2);
+  background: var(--surface-3);
+}
+.pill.ok::before,
+.pill.mid::before,
+.pill.bad::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
 }
 .pill.ok {
-  color: var(--ok);
-  border-color: rgba(84, 192, 138, 0.35);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--good) 35%, transparent);
+}
+.pill.ok::before {
+  background: var(--good);
 }
 .pill.mid {
-  color: var(--mid);
-  border-color: rgba(230, 184, 77, 0.35);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+}
+.pill.mid::before {
+  background: var(--warning);
 }
 .pill.bad {
-  color: var(--bad);
-  border-color: rgba(227, 104, 95, 0.35);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--critical) 35%, transparent);
+}
+.pill.bad::before {
+  background: var(--critical);
 }
 
 /* ---- Progress --------------------------------------------------------- */
 
+/* Meter: the track is a step of the fill's own ramp, so the whole bar reads as
+   one scale rather than a coloured bar sitting on unrelated grey. */
 .progress {
-  height: 5px;
-  background: var(--bg-3);
-  border-radius: 999px;
+  height: 6px;
+  background: var(--track);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  border-radius: 999px;
-  transition: width 0.3s ease;
+  background: var(--seq-400);
+  border-radius: var(--radius-pill);
+  transition: width 0.3s var(--ease);
+}
+.progress.good .progress-fill {
+  background: var(--good);
+}
+.progress.warn .progress-fill {
+  background: var(--warning);
+}
+.progress.bad .progress-fill {
+  background: var(--critical);
 }
 
 /* ---- Spec view -------------------------------------------------------- */
@@ -818,15 +870,15 @@ code {
   border: 0;
   border-bottom: 2px solid transparent;
   padding: 8px 14px;
-  color: var(--text-dim);
+  color: var(--ink-2);
   font-size: 13px;
   font-weight: 600;
 }
 .tab:hover:not(:disabled) {
-  color: var(--text);
+  color: var(--ink);
 }
 .tab.active {
-  color: var(--accent-2);
+  color: var(--accent-hi);
   border-bottom-color: var(--accent);
 }
 .tab:disabled {
@@ -850,7 +902,7 @@ code {
   gap: 14px;
 }
 .card {
-  background: var(--panel);
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
@@ -860,7 +912,7 @@ code {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: var(--text-faint);
+  color: var(--ink-3);
   margin-bottom: 12px;
   display: flex;
   align-items: center;
@@ -880,17 +932,17 @@ code {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--text-faint);
+  background: var(--ink-3);
 }
 .adot.approved {
-  background: var(--ok);
+  background: var(--good);
 }
 .adot.generated {
-  background: var(--mid);
+  background: var(--warning);
 }
 .adot.missing {
-  background: var(--bg-3);
-  border: 1px solid var(--border-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
 }
 .aname {
   font-family: var(--mono);
@@ -899,31 +951,56 @@ code {
 }
 .astate {
   font-size: 12px;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 
-.stat-grid {
+/* ---- Stat tiles ------------------------------------------------------- */
+
+.stat-grid,
+.kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 .stat {
-  text-align: center;
-  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 4px;
+  border-radius: var(--radius);
+  padding: 10px 14px 12px;
 }
-.stat-val {
-  font-size: 20px;
-  font-weight: 700;
-  font-family: var(--mono);
+.stat-link {
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--fast) var(--ease);
+}
+.stat-link:hover {
+  border-color: var(--border-strong);
 }
 .stat-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-faint);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.stat-value {
+  /* Proportional figures on purpose: tabular-nums widens every digit to a zero,
+     which reads loose at this size. Columns get tabular, headline numbers don't. */
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.stat-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-left: 2px;
+}
+.stat-foot {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
 }
 
 .issues {
@@ -935,11 +1012,11 @@ code {
 }
 .issues li {
   font-size: 13px;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .issues code {
-  color: var(--bad);
-  background: rgba(227, 104, 95, 0.1);
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 10%, transparent);
   padding: 0 5px;
   border-radius: 4px;
 }
@@ -955,7 +1032,7 @@ code {
 }
 .board-col {
   flex: 0 0 280px;
-  background: var(--panel);
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px;
@@ -978,9 +1055,9 @@ code {
   gap: 8px;
 }
 .task-card {
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--border-2);
+  border-left: 3px solid var(--border-strong);
   border-radius: 6px;
   padding: 9px 10px;
 }
@@ -988,12 +1065,12 @@ code {
   margin-left: 12px;
 }
 .task-card.done {
-  border-left-color: var(--ok);
+  border-left-color: var(--good);
   opacity: 0.72;
 }
 .task-card.done .task-title {
   text-decoration: line-through;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .task-top {
   display: flex;
@@ -1005,22 +1082,22 @@ code {
   width: 15px;
   height: 15px;
   border-radius: 4px;
-  border: 1px solid var(--border-2);
+  border: 1px solid var(--border-strong);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
-  color: var(--bg);
+  color: var(--plane);
 }
 .check.on {
-  background: var(--ok);
-  border-color: var(--ok);
+  background: var(--good);
+  border-color: var(--good);
 }
 .task-id {
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 700;
-  color: var(--accent-2);
+  color: var(--accent-hi);
 }
 .task-title {
   font-size: 13px;
@@ -1033,18 +1110,18 @@ code {
   border-radius: 999px;
 }
 .tdd.red {
-  background: rgba(227, 104, 95, 0.18);
-  color: var(--red);
+  background: color-mix(in srgb, var(--critical) 18%, transparent);
+  color: var(--critical);
 }
 .tdd.green {
-  background: rgba(84, 192, 138, 0.18);
-  color: var(--green);
+  background: color-mix(in srgb, var(--good) 18%, transparent);
+  color: var(--good);
 }
 .chip-p {
   font-size: 10px;
   font-weight: 700;
   color: var(--info);
-  border: 1px solid rgba(90, 166, 230, 0.4);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
   border-radius: 4px;
   padding: 0 5px;
   margin-left: auto;
@@ -1060,12 +1137,12 @@ code {
   font-family: var(--mono);
   padding: 1px 6px;
   border-radius: 4px;
-  background: var(--bg-3);
-  color: var(--text-dim);
+  background: var(--surface-3);
+  color: var(--ink-2);
 }
 .tag.boundary {
-  color: var(--accent-2);
-  background: rgba(240, 162, 59, 0.1);
+  color: var(--accent-hi);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .tag.dep {
   color: var(--info);
@@ -1096,6 +1173,8 @@ code {
 }
 .markdown a {
   color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .markdown table {
   border-collapse: collapse;
@@ -1110,22 +1189,22 @@ code {
   text-align: left;
 }
 .markdown th {
-  background: var(--bg-2);
+  background: var(--surface-2);
 }
 .markdown blockquote {
   border-left: 3px solid var(--accent);
   margin: 12px 0;
   padding: 2px 14px;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .inline-code {
-  background: var(--bg-3);
+  background: var(--surface-3);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 0.9em;
 }
 .codeblock {
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
@@ -1134,7 +1213,7 @@ code {
   line-height: 1.6;
 }
 .mermaid-diagram {
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
@@ -1161,13 +1240,13 @@ code {
   gap: 12px;
   padding: 9px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-1);
   flex: 0 0 auto;
 }
 .file-path {
   font-family: var(--mono);
   font-size: 13px;
-  color: var(--text);
+  color: var(--ink);
 }
 .editor-wrap {
   flex: 1;
@@ -1191,8 +1270,8 @@ code {
 .menu-btn {
   display: none; /* desktop: hidden; shown on mobile */
   background: transparent;
-  border: 1px solid var(--border-2);
-  color: var(--text);
+  border: 1px solid var(--border-strong);
+  color: var(--ink);
   border-radius: 6px;
   width: 32px;
   height: 32px;
@@ -1243,7 +1322,7 @@ code {
     z-index: 30;
     transform: translateX(-100%);
     transition: transform 0.2s ease;
-    box-shadow: 2px 0 18px rgba(0, 0, 0, 0.45);
+    box-shadow: var(--shadow-2);
   }
   .sidebar.open {
     transform: translateX(0);
@@ -1252,7 +1331,7 @@ code {
     display: block;
     position: fixed;
     inset: 48px 0 0 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--overlay);
     z-index: 20;
   }
   .spec-list {
@@ -1306,32 +1385,14 @@ code {
   gap: 8px;
   width: 100%;
   text-align: left;
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 9px 12px;
   margin-bottom: 14px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text);
-}
-.nav-row:hover {
-  border-color: var(--border-2);
-}
-.nav-row.active {
-  border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(240, 162, 59, 0.08), var(--bg-2));
-}
-.nav-icon {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  background: rgba(84, 192, 138, 0.16);
-  color: var(--ok);
-  font-size: 11px;
+  color: var(--ink);
 }
 
 /* ---- Tests & coverage view -------------------------------------------- */
@@ -1382,11 +1443,11 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .cov-mini {
   height: 6px;
-  background: var(--bg-3);
+  background: var(--surface-3);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1409,7 +1470,7 @@ code {
   gap: 10px;
 }
 .fail-list li {
-  border-left: 3px solid var(--bad);
+  border-left: 3px solid var(--critical);
   padding-left: 10px;
 }
 .fail-name {
@@ -1419,8 +1480,8 @@ code {
 .fail-msg {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--bad);
-  background: rgba(227, 104, 95, 0.08);
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, transparent);
   border-radius: 4px;
   padding: 6px 8px;
   margin-top: 4px;
@@ -1442,7 +1503,7 @@ code {
   margin-bottom: 8px;
 }
 .metric-block {
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
@@ -1452,7 +1513,7 @@ code {
   align-items: center;
   justify-content: space-between;
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--ink-3);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 6px;
@@ -1472,8 +1533,8 @@ code {
 }
 .attention {
   font-size: 12px;
-  color: var(--text-faint);
-  border-left: 2px solid var(--warn, #d6a23e);
+  color: var(--ink-3);
+  border-left: 2px solid var(--warning);
   padding: 2px 0 2px 8px;
 }
 .evidence {
@@ -1497,7 +1558,7 @@ code {
 .auth-card {
   width: 100%;
   max-width: 340px;
-  background: var(--panel);
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 28px 24px;
@@ -1517,11 +1578,11 @@ code {
 }
 .auth-input {
   width: 100%;
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 10px 12px;
-  color: var(--text);
+  color: var(--ink);
   font-family: var(--mono);
   font-size: 14px;
 }
@@ -1530,12 +1591,12 @@ code {
   border-color: var(--accent);
 }
 .auth-err {
-  color: var(--bad);
+  color: var(--critical);
   font-size: 13px;
 }
 .auth-btn {
-  background: linear-gradient(180deg, var(--accent), #d98e2a);
-  color: #1a1205;
+  background: var(--accent);
+  color: var(--ink-on-fill);
   border: 0;
   border-radius: 6px;
   padding: 10px;
@@ -1552,14 +1613,14 @@ code {
 
 .pill.info {
   color: var(--info);
-  border-color: rgba(90, 166, 230, 0.35);
+  border-color: color-mix(in srgb, var(--info) 35%, transparent);
 }
 
 .add {
-  color: var(--ok);
+  color: var(--good);
 }
 .del {
-  color: var(--bad);
+  color: var(--critical);
 }
 
 /* ---- Wiki tab --------------------------------------------------------- */
@@ -1574,56 +1635,6 @@ code {
   height: 100%;
   min-height: 0;
   width: 100%;
-}
-
-.wiki-rail {
-  width: 244px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-  padding: 14px 10px 24px;
-}
-.wiki-rail-head {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: 0 8px 8px;
-}
-.wiki-group {
-  margin-bottom: 12px;
-}
-.wiki-group-title {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-dim);
-  padding: 6px 8px 4px;
-}
-.wiki-rail-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.wiki-rail-item:hover {
-  background: var(--panel);
-}
-.wiki-rail-item.active {
-  background: var(--panel);
-  color: var(--accent);
-  font-weight: 600;
 }
 
 .wiki-page {
@@ -1646,9 +1657,12 @@ code {
   margin-bottom: 14px;
 }
 .banner.warn {
-  background: rgba(230, 184, 77, 0.12);
-  border: 1px solid rgba(230, 184, 77, 0.4);
-  color: var(--mid);
+  background: var(--warning-soft);
+  border-color: transparent;
+}
+.banner.warn::before {
+  content: '▲';
+  color: var(--warning);
 }
 .wiki-body {
   min-height: 60px;
@@ -1656,15 +1670,15 @@ code {
 .wikilink {
   color: var(--accent);
   text-decoration: none;
-  border-bottom: 1px solid rgba(240, 162, 59, 0.4);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   cursor: pointer;
 }
 .wikilink:hover {
   border-bottom-color: var(--accent);
 }
 .wikilink.broken {
-  color: var(--bad);
-  border-bottom: 1px dashed rgba(227, 104, 95, 0.6);
+  color: var(--critical);
+  border-bottom: 1px dashed color-mix(in srgb, var(--critical) 60%, transparent);
   cursor: help;
 }
 .wiki-page-foot {
@@ -1686,13 +1700,13 @@ code {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--ink-3);
   margin-right: 4px;
 }
 .chip-link {
-  background: var(--panel);
+  background: var(--surface-1);
   border: 1px solid var(--border);
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
   padding: 3px 10px;
@@ -1721,6 +1735,13 @@ code {
   flex: 1;
   min-height: 0;
 }
+/* The vis-network container. Absolutely filled rather than sized in percent:
+   vis measures its container, and a percentage height inside a flex item with no
+   definite height resolves to auto — a canvas of zero height. */
+.graph-net {
+  position: absolute;
+  inset: 0;
+}
 .graph-toolbar {
   /* Stacks above .graph-stage so the search dropdown is not swallowed by the
      vis canvas, which sits in the next sibling and would otherwise paint over
@@ -1733,7 +1754,7 @@ code {
   flex-wrap: wrap;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-1);
 }
 .graph-search {
   position: relative;
@@ -1741,10 +1762,10 @@ code {
 }
 .graph-search input {
   width: 100%;
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 13px;
   padding: 6px 10px;
@@ -1762,12 +1783,12 @@ code {
   margin: 0;
   padding: 4px;
   list-style: none;
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   max-height: 260px;
   overflow: auto;
-  box-shadow: 0 8px 24px #0008;
+  box-shadow: var(--shadow-2);
 }
 .graph-matches button {
   display: flex;
@@ -1776,7 +1797,7 @@ code {
   width: 100%;
   background: none;
   border: 0;
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
   text-align: left;
@@ -1785,15 +1806,15 @@ code {
   cursor: pointer;
 }
 .graph-matches button:hover {
-  background: var(--bg-3);
+  background: var(--surface-3);
 }
 .graph-ctl {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--text-dim);
-  background: var(--bg-2);
+  color: var(--ink-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 4px 10px;
@@ -1803,14 +1824,14 @@ code {
   accent-color: var(--accent);
 }
 .graph-ctl b {
-  color: var(--text);
+  color: var(--ink);
   min-width: 18px;
   text-align: right;
 }
 .graph-btn {
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
-  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
   padding: 5px 12px;
@@ -1830,11 +1851,11 @@ code {
   top: 10px;
   left: 10px;
   z-index: 3;
-  background: var(--bg-2);
-  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius);
-  color: var(--text-dim);
+  color: var(--ink-2);
   font-size: 12px;
   padding: 6px 10px;
 }
@@ -1848,7 +1869,7 @@ code {
   gap: 4px 12px;
   max-width: 70%;
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--ink-2);
   pointer-events: none;
 }
 .graph-legend span {
@@ -1857,7 +1878,7 @@ code {
   gap: 4px;
 }
 .graph-legend b {
-  color: var(--text-faint);
+  color: var(--ink-3);
   font-weight: 500;
 }
 .graph-dot {
@@ -1872,7 +1893,7 @@ code {
   overflow: auto;
   padding: 12px 14px;
   border-left: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--surface-1);
   font-size: 13px;
 }
 .graph-panel h3 {
@@ -1883,7 +1904,7 @@ code {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 .graph-actions {
   display: flex;
@@ -1904,7 +1925,7 @@ code {
   width: 100%;
   background: none;
   border: 0;
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-size: 12px;
   text-align: left;
@@ -1916,12 +1937,12 @@ code {
   white-space: nowrap;
 }
 .graph-conns button:hover {
-  background: var(--bg-3);
+  background: var(--surface-3);
 }
 .graph-arrow {
   display: inline-block;
   width: 14px;
-  color: var(--text-faint);
+  color: var(--ink-3);
 }
 .graph-arrow.on {
   color: var(--accent);
@@ -1934,20 +1955,20 @@ code {
   font-family: var(--sans);
   font-size: 12px;
   line-height: 1.4;
-  color: var(--text);
+  color: var(--ink);
 }
 .graph-tip div:first-child {
   font-weight: 600;
 }
 .graph-tip div + div {
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 div.vis-tooltip {
-  background: var(--bg-2) !important;
-  border: 1px solid var(--border-2) !important;
+  background: var(--surface-2) !important;
+  border: 1px solid var(--border-strong) !important;
   border-radius: var(--radius) !important;
-  color: var(--text) !important;
-  box-shadow: 0 8px 24px #0008 !important;
+  color: var(--ink) !important;
+  box-shadow: var(--shadow-2) !important;
   padding: 8px 10px !important;
   font-family: var(--sans) !important;
 }
@@ -1969,14 +1990,14 @@ div.vis-tooltip {
   gap: 10px;
   font-size: 12.5px;
   padding: 4px 0;
-  border-bottom: 1px solid var(--border-soft, var(--bg-3));
+  border-bottom: 1px solid var(--border-soft, var(--surface-3));
 }
 .task-ev-row:last-child {
   border-bottom: 0;
 }
 .task-ev-id {
   font-family: var(--mono);
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .task-ev-cov {
   font-family: var(--mono);
@@ -1998,4 +2019,586 @@ div.vis-tooltip {
   .task-ev-when {
     display: none;
   }
+}
+
+/* ======================================================================
+   Shell v2 — area navigation, contextual rail, panels, overview
+   ====================================================================== */
+
+/* ---- Theme toggle ----------------------------------------------------- */
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1;
+}
+.icon-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--ink);
+}
+
+/* ---- Rail: the area's own navigation, above its contextual content ---- */
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 4px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.rail-link {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+.rail-link:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.rail-link.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--ink);
+}
+.rail-link-desc {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A rail row that navigates (spec, plan, wiki page). Anchor, not button, so it
+   can be middle-clicked, copied, and bookmarked like any other link. */
+.rail-row {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ---- Panel ------------------------------------------------------------ */
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.panel + .panel {
+  margin-top: 16px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.panel-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--ink-2);
+}
+.panel-head-spacer {
+  flex: 1;
+}
+.panel-body {
+  padding: 14px;
+}
+.panel-body.flush {
+  padding: 0;
+}
+
+/* ---- Overview --------------------------------------------------------- */
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.overview-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.overview-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-family: var(--mono);
+}
+.page-sub {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  max-width: 78ch;
+}
+.hero-card {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.hero {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+.hero-value {
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.hero-side {
+  padding-bottom: 4px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.hero-meters {
+  flex: 1;
+  min-width: 240px;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.meter-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+}
+.meter-row .progress {
+  grid-column: 1 / -1;
+}
+.meter-row-label {
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meter-row-value {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.overview-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.overview-cols .panel + .panel {
+  margin-top: 0;
+}
+.mini-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.mini-row:last-child {
+  border-bottom: 0;
+}
+.mini-row-name {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-row-spacer {
+  flex: 1;
+}
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--ink-3);
+}
+.state-dot.done {
+  background: var(--good);
+}
+.state-dot.running,
+.state-dot.implementing {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.state-dot.ready {
+  background: var(--info);
+}
+.state-dot.blocked {
+  background: var(--critical);
+}
+
+/* ======================================================================
+   Citations — one chip everywhere a reference appears
+   ====================================================================== */
+
+/*
+  Anatomy is fixed:   [dot]  kind:  label  [state]
+
+  The dot carries the identity hue and the text stays in ink. Only three kinds
+  get a hue — [[wiki]], adr:, stack: — because those are the ones that appear
+  side by side inside one Refs cell, and three is how many measured clear of the
+  colourblind and normal-vision floors when every pair can co-occur.
+*/
+.ref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  max-width: 100%;
+  padding: 1px 8px 1px 7px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--ref-neutral-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--ink);
+  vertical-align: baseline;
+  transition: border-color var(--fast) var(--ease);
+}
+a.ref:hover {
+  border-color: var(--border-strong);
+}
+.ref::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  align-self: center;
+  background: var(--ref-neutral);
+}
+.ref-kind {
+  color: var(--ink-3);
+}
+.ref-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ref-wiki {
+  background: var(--ref-wiki-soft);
+}
+.ref-wiki::before {
+  background: var(--ref-wiki);
+}
+.ref-adr {
+  background: var(--ref-adr-soft);
+}
+.ref-adr::before {
+  background: var(--ref-adr);
+}
+.ref-stack {
+  background: var(--ref-stack-soft);
+}
+.ref-stack::before {
+  background: var(--ref-stack);
+}
+
+/* Resolution states are never colour-only: broken strikes the label and adds a
+   glyph, superseded dashes its edge and says the word. */
+.ref-broken {
+  background: var(--critical-soft);
+  border-color: transparent;
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+.ref-broken::before {
+  background: var(--critical);
+}
+.ref-broken .ref-label {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.ref-superseded {
+  border-style: dashed;
+  border-color: var(--warning);
+}
+.ref-state {
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+/* Unresolved yet: the chip is already the right size, so nothing reflows when
+   the answer lands. */
+.ref-pending {
+  opacity: 0.55;
+}
+
+.ref-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The preview: a citation resolved without leaving the page. */
+.ref-preview {
+  position: fixed;
+  z-index: 60;
+  max-width: calc(100vw - 24px);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  padding: 12px;
+  font-size: 12.5px;
+  pointer-events: none;
+}
+.ref-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.ref-preview-spacer {
+  flex: 1;
+}
+.ref-preview-kind {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.ref-preview-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+.ref-preview-body {
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.ref-preview-foot {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The feat table gains a citation column. */
+.feat-refs {
+  grid-column: 1 / -1;
+  padding-left: 26px;
+}
+.feat-refs:empty {
+  display: none;
+}
+
+/* ======================================================================
+   Knowledge pages — decisions, contract, glossary
+   ====================================================================== */
+
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-family: var(--mono);
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+.crumbs a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.stack-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.xs {
+  font-size: 11px;
+}
+.faint {
+  color: var(--ink-3);
+}
+.mono {
+  font-family: var(--mono);
+}
+.path {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.markdown-host .markdown {
+  margin: 0;
+}
+
+.adr-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.adr-item:first-child {
+  padding-top: 0;
+}
+.adr-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.adr-num {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  width: 42px;
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+.adr-body {
+  flex: 1;
+  min-width: 0;
+}
+.adr-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--ink);
+  font-weight: 600;
+}
+.adr-title a:hover {
+  text-decoration: underline;
+}
+.adr-text {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin: 4px 0 8px;
+}
+
+.term {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.term:first-child {
+  padding-top: 0;
+}
+.term:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.term-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+.term-def {
+  color: var(--ink-2);
+  font-size: 13px;
+  margin: 3px 0 8px;
+}
+.avoid {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--critical-soft);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.avoid .strike {
+  text-decoration: line-through;
+}
+
+/* Data table (the Decided contract). */
+.table-wrap {
+  overflow-x: auto;
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+table.data th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--ink-3);
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.data td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+table.data tbody tr:last-child td {
+  border-bottom: 0;
+}
+table.data td.tight {
+  white-space: nowrap;
+}
+.cell-title {
+  color: var(--ink);
+  font-weight: 500;
+}
+.cell-sub {
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+/* A followed citation says where it landed. */
+@keyframes flash-in {
+  from {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-line);
+  }
+  to {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+.flash {
+  animation: flash-in 1.8s var(--ease);
+  border-radius: var(--radius-sm);
 }

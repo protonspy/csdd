@@ -3,7 +3,7 @@ import { api } from '../api'
 import type { SpecDetail, SpecReport } from '../types'
 import { Markdown } from './Markdown'
 import { TaskBoard } from './TaskBoard'
-import { ProgressBar, PhasePill, covColor } from './bits'
+import { ProgressBar, PhasePill, Stat, covColor } from './bits'
 
 type Tab = 'overview' | 'requirements' | 'design' | 'tasks'
 
@@ -167,14 +167,6 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
   )
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="stat">
-      <div className="stat-val">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  )
-}
 
 function MetricsCard({ report, red, green }: { report: SpecReport; red: number; green: number }) {
   const t = report.tests

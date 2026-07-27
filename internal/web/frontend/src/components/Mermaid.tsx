@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
+import { useTheme } from '../useTheme'
 
 // suppressErrorRendering makes render() throw on a parse error instead of
 // drawing Mermaid's "Syntax error in text" graphic, so our raw-source fallback
 // takes over.
-mermaid.initialize({
+//
+// Mermaid's theme is global and applied at render time, not per diagram, so it
+// is (re-)initialised inside the effect below and every mounted diagram redraws
+// when the theme changes.
+const BASE_CONFIG = {
   startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'strict',
+  securityLevel: 'strict' as const,
   suppressErrorRendering: true,
-})
+}
 
 let counter = 0
 
@@ -20,11 +24,13 @@ export function Mermaid({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('')
   const [error, setError] = useState(false)
   const idRef = useRef(`mmd-${counter++}`)
+  const theme = useTheme()
 
   useEffect(() => {
     let cancelled = false
     const run = async () => {
       try {
+        mermaid.initialize({ ...BASE_CONFIG, theme: theme === 'dark' ? 'dark' : 'default' })
         // parse with suppressErrors returns false (no throw) on invalid input.
         const ok = await mermaid.parse(chart, { suppressErrors: true })
         if (ok === false) {
@@ -44,7 +50,7 @@ export function Mermaid({ chart }: { chart: string }) {
     return () => {
       cancelled = true
     }
-  }, [chart])
+  }, [chart, theme])
 
   if (error) {
     return (

@@ -16,18 +16,31 @@ type planSummary struct {
 	Drift    bool   `json:"drift"`
 	Feats    int    `json:"feats"`
 	Done     int    `json:"done"`
+	// Complete: every feat delivered. Derived here rather than by each caller
+	// comparing done against feats, so the three places that show plan state
+	// cannot drift apart on what "finished" means.
+	Complete bool `json:"complete"`
 }
+
+// isComplete reports whether a plan has feats and every one of them is done. A
+// plan with no feats is not complete — it is unstarted, and saying otherwise
+// would call an empty table finished.
+func isComplete(done, total int) bool { return total > 0 && done >= total }
 
 // webFeat is one feat row in the per-plan view, merging the plan's static feat
 // metadata with its derived status.
 type webFeat struct {
-	Slug         string   `json:"slug"`
-	Num          string   `json:"num"`
-	Objective    string   `json:"objective"`
-	Milestone    string   `json:"milestone"`
-	Depends      []string `json:"depends"`
-	Parallel     bool     `json:"parallel"`
-	State        string   `json:"state"`
+	Slug      string   `json:"slug"`
+	Num       string   `json:"num"`
+	Objective string   `json:"objective"`
+	Milestone string   `json:"milestone"`
+	Depends   []string `json:"depends"`
+	Parallel  bool     `json:"parallel"`
+	State     string   `json:"state"`
+	// Refs is the feat's citation tokens, verbatim and in table order. The plan
+	// parser already tokenizes them; the UI resolves them through /api/ref rather
+	// than re-deriving what a token points at.
+	Refs         []string `json:"refs"`
 	TasksTotal   int      `json:"tasks_total"`
 	TasksChecked int      `json:"tasks_checked"`
 }
@@ -47,6 +60,7 @@ type planDetail struct {
 	Name       string              `json:"name"`
 	Approved   bool                `json:"approved"`
 	Drift      bool                `json:"drift"`
+	Complete   bool                `json:"complete"`
 	Feats      []webFeat           `json:"feats"`
 	Milestones []milestoneProgress `json:"milestones"`
 }
@@ -78,6 +92,7 @@ func loadPlansList(root string) []planSummary {
 				s.Done++
 			}
 		}
+		s.Complete = isComplete(s.Done, len(st.Feats))
 		out = append(out, s)
 	}
 	return out
@@ -107,11 +122,16 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 		Drift: st.Drift,
 	}
 	milestoneIndex := map[string]int{}
+	done := 0
 	for _, f := range doc.Feats {
 		s := byState[f.Slug]
+		refs := f.Refs
+		if refs == nil {
+			refs = []string{} // marshal as [], never null — the UI maps over it
+		}
 		d.Feats = append(d.Feats, webFeat{
 			Slug: f.Slug, Num: f.Num, Objective: f.Objective, Milestone: f.Milestone,
-			Depends: f.Depends, Parallel: f.Parallel, State: s.State,
+			Depends: f.Depends, Parallel: f.Parallel, State: s.State, Refs: refs,
 			TasksTotal: s.TasksTotal, TasksChecked: s.TasksChecked,
 		})
 		mi, ok := milestoneIndex[f.Milestone]
@@ -123,8 +143,10 @@ func loadPlanDetail(root, slug string) (planDetail, error) {
 		d.Milestones[mi].Total++
 		if s.State == plan.StateDone {
 			d.Milestones[mi].Done++
+			done++
 		}
 	}
+	d.Complete = isComplete(done, len(d.Feats))
 	return d, nil
 }
 
