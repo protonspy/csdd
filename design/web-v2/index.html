@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>csdd web — design draft</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <button class="icon-btn only-narrow" id="railToggle" aria-label="Toggle navigation">☰</button>
+
+        <a class="brand" href="#/overview">
+          <span class="brand-mark">csdd</span>
+          <span class="brand-sub">web</span>
+        </a>
+
+        <nav class="top-nav" id="topNav" aria-label="Primary"></nav>
+
+        <div class="topbar-spacer"></div>
+
+        <button class="omni" id="omniBtn" title="Jump to anything — specs, feats, ADRs, terms, pages">
+          <span class="omni-icon">⌕</span>
+          <span class="omni-label">Jump to…</span>
+          <kbd>Ctrl</kbd><kbd>K</kbd>
+        </button>
+
+        <div class="root-path" title="/home/dev/photo-sharing">~/photo-sharing</div>
+
+        <div class="live on" title="live updates connected">
+          <span class="live-dot"></span><span class="live-text">live</span>
+        </div>
+
+        <button class="icon-btn" id="themeBtn" title="Toggle light / dark">◐</button>
+      </header>
+
+      <div class="layout">
+        <aside class="rail" id="rail" aria-label="Section navigation"></aside>
+        <div class="rail-backdrop" id="railBackdrop"></div>
+        <main class="content" id="content" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <!-- Reference hover-preview: one node reused by every ref chip on the page. -->
+    <div class="ref-preview" id="refPreview" role="tooltip" hidden></div>
+
+    <!-- Jump-to palette -->
+    <div class="omni-overlay" id="omniOverlay" hidden>
+      <div class="omni-panel" role="dialog" aria-modal="true" aria-label="Jump to">
+        <input
+          class="omni-input"
+          id="omniInput"
+          type="text"
+          placeholder="Jump to a spec, feat, ADR, stack row, term, wiki page…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="omni-results" id="omniResults"></div>
+        <div class="omni-foot">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> open</span>
+          <span><kbd>esc</kbd> close</span>
+          <span class="omni-foot-hint">tokens work here too: <code>adr:</code> <code>stack:</code> <code>[[</code></span>
+        </div>
+      </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="refs.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

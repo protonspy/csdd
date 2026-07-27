@@ -1,0 +1,164 @@
+/* =============================================================================
+   csdd web — design tokens
+   -----------------------------------------------------------------------------
+   Two themes from one set of roles. Dark is the default (a dev tool lives in a
+   dark terminal), and light is *selected*, not an automatic inversion: every
+   coloured value has its own step for its own surface.
+
+   The three identity hues (--ref-wiki / --ref-adr / --ref-stack) are a validated
+   categorical palette, not a taste call. Checked with the dataviz validator on
+   the real surfaces of this draft, all-pairs, in both modes:
+
+     dark  (#11151d): CVD ΔE 9.4 · normal-vision ΔE 20.9 · contrast ≥ 3:1 — PASS
+     light (#ffffff): CVD ΔE 9.2 · normal-vision ΔE 24.0 — PASS
+                      aqua sits at 2.82:1 on white → the relief rule applies, and
+                      it is satisfied structurally: a ref chip ALWAYS carries a
+                      visible text label, never a bare swatch.
+
+   Identity is capped at three hues on purpose. Those are exactly the three
+   citation tokens that appear side by side in one `Refs` cell ([[wiki]], adr:,
+   stack:). A fourth and fifth hue measured 9.8 and 12.9 normal-vision ΔE — under
+   the hard floor of 15 — so the other reference kinds (spec, feat, term, source
+   line) carry a neutral chip plus their own prefix instead of a new colour.
+   ============================================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* -- planes & surfaces --------------------------------------------------- */
+  --plane: #0b0e14; /* the page behind everything */
+  --surface-1: #11151d; /* cards, panels — the validated chart surface */
+  --surface-2: #171c26; /* raised: hover, table head, active rail row */
+  --surface-3: #1e2531; /* inset: inputs, meter tracks, code blocks */
+  --overlay: rgba(6, 8, 12, 0.72);
+
+  /* -- borders ------------------------------------------------------------- */
+  --border: #212a37; /* hairline, recessive */
+  --border-strong: #2f3a4b; /* interactive edges, focus rings' base */
+  --border-ghost: rgba(255, 255, 255, 0.06);
+
+  /* -- ink ----------------------------------------------------------------- */
+  --ink: #e6ecf5; /* 15.4:1 */
+  --ink-2: #9aa7ba; /*  7.5:1 */
+  --ink-3: #6f7c90; /*  4.3:1 — the floor for real text */
+  --ink-on-fill: #0b0e14; /* text set inside a saturated fill */
+
+  /* -- brand --------------------------------------------------------------- */
+  --accent: #f0a23b; /* 8.7:1 — csdd amber, reserved for brand + selection */
+  --accent-soft: rgba(240, 162, 59, 0.14);
+  --accent-line: rgba(240, 162, 59, 0.42);
+
+  /* -- status (reserved; never reused as an identity hue) ------------------ */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-soft: rgba(12, 163, 12, 0.13);
+  --warning-soft: rgba(250, 178, 25, 0.13);
+  --serious-soft: rgba(236, 131, 90, 0.13);
+  --critical-soft: rgba(208, 59, 59, 0.15);
+
+  /* -- reference identity (validated categorical, 3 slots) ----------------- */
+  --ref-wiki: #3987e5; /* slot 1 — blue    → [[wiki-page]] */
+  --ref-adr: #d95926; /* slot 2 — orange  → adr:<slug>    */
+  --ref-stack: #199e70; /* slot 3 — aqua    → stack:<name>  */
+  --ref-wiki-soft: rgba(57, 135, 229, 0.14);
+  --ref-adr-soft: rgba(217, 89, 38, 0.14);
+  --ref-stack-soft: rgba(25, 158, 112, 0.14);
+  --ref-neutral: #7d8899; /* spec:, feat:, term:, src: — prefix carries it */
+  --ref-neutral-soft: rgba(125, 136, 153, 0.14);
+
+  /* -- sequential ramp (magnitude: meters, heat, coverage) ----------------- */
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-400: #3987e5;
+  --seq-550: #1c5cab;
+  --seq-700: #0d366b;
+  --track: rgba(57, 135, 229, 0.16); /* meter track: a step of the fill's ramp */
+
+  /* -- geometry ------------------------------------------------------------ */
+  --r-sm: 5px;
+  --r: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* -- elevation ----------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px -8px rgba(0, 0, 0, 0.65);
+  --shadow-3: 0 18px 48px -12px rgba(0, 0, 0, 0.75);
+
+  /* -- type ---------------------------------------------------------------- */
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+  --t-hero: 44px;
+  --t-xl: 22px;
+  --t-lg: 17px;
+  --t-md: 14px;
+  --t-sm: 12.5px;
+  --t-xs: 11.5px;
+
+  /* -- rhythm -------------------------------------------------------------- */
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 24px;
+  --gap-6: 32px;
+
+  /* -- motion (one duration, one curve) ------------------------------------ */
+  --ease: cubic-bezier(0.2, 0.6, 0.3, 1);
+  --fast: 120ms;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --plane: #f5f6f8;
+  --surface-1: #ffffff;
+  --surface-2: #f2f4f7;
+  --surface-3: #eceff3;
+  --overlay: rgba(18, 22, 29, 0.42);
+
+  --border: #e2e6ec;
+  --border-strong: #cbd2dc;
+  --border-ghost: rgba(18, 22, 29, 0.06);
+
+  --ink: #12161d; /* 18.1:1 */
+  --ink-2: #535d6d; /*  6.7:1 */
+  --ink-3: #6f7a8a; /*  4.4:1 */
+  --ink-on-fill: #ffffff;
+
+  --accent: #8a5200; /* 6.4:1 — amber re-stepped for a white surface */
+  --accent-soft: rgba(240, 162, 59, 0.16);
+  --accent-line: rgba(138, 82, 0, 0.34);
+
+  /* Status steps are fixed, never themed. warning (1.8:1) and serious (2.6:1)
+     are sub-3:1 on white by design — every badge therefore ships an icon AND a
+     word, so the colour never carries the meaning alone. */
+  --good-soft: rgba(12, 163, 12, 0.12);
+  --warning-soft: rgba(250, 178, 25, 0.18);
+  --serious-soft: rgba(236, 131, 90, 0.16);
+  --critical-soft: rgba(208, 59, 59, 0.12);
+
+  --ref-wiki: #2a78d6;
+  --ref-adr: #eb6834;
+  --ref-stack: #1baf7a;
+  --ref-wiki-soft: rgba(42, 120, 214, 0.12);
+  --ref-adr-soft: rgba(235, 104, 52, 0.13);
+  --ref-stack-soft: rgba(27, 175, 122, 0.14);
+  --ref-neutral: #5b6676;
+  --ref-neutral-soft: rgba(91, 102, 118, 0.12);
+
+  --seq-400: #2a78d6;
+  --track: rgba(42, 120, 214, 0.16);
+
+  --shadow-1: 0 1px 2px rgba(18, 22, 29, 0.08);
+  --shadow-2: 0 8px 24px -10px rgba(18, 22, 29, 0.22);
+  --shadow-3: 0 18px 48px -14px rgba(18, 22, 29, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 0ms;
+  }
+}
