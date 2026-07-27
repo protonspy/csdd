@@ -201,7 +201,8 @@ func TestBlockedVerdictParksWithoutSpendingAnAttempt(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	calls := 0
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		calls++
 		if feat.Slug == "a" && calls == 1 {
 			return SessionOutcome{Verdict: Verdict{
@@ -282,7 +283,8 @@ func TestBlockedRefusalBecomesContinue(t *testing.T) {
 	var briefs []string
 	calls := 0
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, brief string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat, brief := req.Feat, req.Brief
 		calls++
 		briefs = append(briefs, brief)
 		if feat.Slug == "a" && calls == 1 {

@@ -185,6 +185,38 @@ func gateHandoff(feat Feat, findings []gateFinding, summary string) string {
 	return b.String()
 }
 
+// mergeConflictHandoff is the brief for a session picking up a feat that is finished
+// but no longer applies to the run's base.
+//
+// It is deliberately not phrased as a failure. The work is done and committed on the
+// feat's own branch; what changed is the base underneath it, because a peer feat
+// landed while this one was in flight. So the instruction is to rebase and re-declare
+// — not to redo the feat, which is the mistake a session told only "merge failed"
+// would reasonably make.
+func mergeConflictHandoff(feat Feat, conflict *MergeConflictError, summary string) string {
+	var b strings.Builder
+	b.WriteString("The previous session finished this feat and its `done` passed the loop's\n")
+	b.WriteString("on-disk checks. The work could NOT be landed on the run's base branch: another\n")
+	b.WriteString("feat merged while this one was in flight and the two touch the same lines.\n\n")
+	fmt.Fprintf(&b, "Your work is safe and committed on `%s`. Nothing was rolled back or lost.\n\n", conflict.Branch)
+	if len(conflict.Files) > 0 {
+		b.WriteString("### Files that conflict\n\n")
+		for _, f := range conflict.Files {
+			fmt.Fprintf(&b, "- %s\n", f)
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("### What to do\n\n")
+	b.WriteString("Rebase this feat's branch onto the updated base, resolve each conflict above\n")
+	b.WriteString("keeping BOTH feats' behavior, re-run the plan's Quality Gates, and return\n")
+	b.WriteString("`done` again. Do NOT re-implement the feat from scratch — it is already\n")
+	b.WriteString("written; this is an integration step, not a rewrite.\n")
+	if s := strings.TrimSpace(summary); s != "" {
+		b.WriteString("\n### What that session reported it had finished\n\n" + s + "\n")
+	}
+	return b.String()
+}
+
 // gateCheckNames lists the failed checks compactly, for one-line logs and the
 // journal.
 func gateCheckNames(findings []gateFinding) string {

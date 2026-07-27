@@ -40,8 +40,8 @@ func installRealHooks(h *Hooks, runModel, runEffort string, sess sessionEnv) {
 		h.Confirm = stdinConfirm
 	}
 	if h.Session == nil {
-		h.Session = func(feat Feat, brief string, budgetUSD float64) (SessionOutcome, error) {
-			return execClaudeSession(feat, brief, budgetUSD, runModel, runEffort, sess)
+		h.Session = func(req SessionRequest) (SessionOutcome, error) {
+			return execClaudeSession(req, runModel, runEffort, sess)
 		}
 	}
 	if h.Sleep == nil {
@@ -135,9 +135,14 @@ func sessionArgs(budgetUSD float64, model, effort string) []string {
 // silently, and that is the failure this addresses. The watchdog kills a session
 // only when it has produced neither output nor CPU for the idle budget, so long
 // honest work is never cut short — see watchdog.go.
-func execClaudeSession(feat Feat, brief string, budgetUSD float64, model, effort string, sess sessionEnv) (SessionOutcome, error) {
-	args := sessionArgs(budgetUSD, model, effort)
+func execClaudeSession(req SessionRequest, model, effort string, sess sessionEnv) (SessionOutcome, error) {
+	feat, brief := req.Feat, req.Brief
+	args := sessionArgs(req.BudgetUSD, model, effort)
 	cmd := exec.Command("claude", args...)
+	// The session runs in the feat's own worktree, which is what keeps a squad from
+	// being several agents sharing one index. Empty only in tests that drive the exec
+	// path directly, where inheriting the process working directory is the intent.
+	cmd.Dir = req.Dir
 	// The brief rides in on stdin, not argv: a large feat's brief exceeds Windows'
 	// 32,767-char command-line limit, and passing it as `-p <brief>` made the spawn
 	// itself fail (CreateProcess) so the session never opened. `claude -p` reads the

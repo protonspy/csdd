@@ -33,8 +33,11 @@ design → tasks → implementation. Columns (all required, matched by header na
   Depends    comma-separated feat slugs that must be `done` first (— for none;
              range shorthand like `1-3` is a validation error — list slugs)
   Milestone  grouping label (e.g. M1); feats run in milestone then table order
-  (P)        `P` if this feat MAY run in parallel with its milestone siblings
-             (v1 honors the marker for ordering only)
+  (P)        ordering intent only — `P` if this feat MAY run alongside its
+             milestone siblings. It does NOT gate concurrency: `csdd plan run
+             --squad-limit N` schedules off the Depends graph alone, and each
+             concurrent feat works in its own git worktree, so feats never share
+             a working tree whether or not they are marked
   Refs       whitespace-separated [[wiki-page]], stack:<name>, and adr:<slug>
              tokens; each stack:<name> must match a docs/stack.md Decided row,
              each [[wiki-page]] a page under docs/wiki/pages/, and each

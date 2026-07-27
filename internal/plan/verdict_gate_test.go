@@ -168,7 +168,8 @@ func TestRunnerGateConvertsFalseDone(t *testing.T) {
 	var briefs []string
 	calls := 0
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, brief string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat, brief := req.Feat, req.Brief
 		briefs = append(briefs, brief)
 		calls++
 		if calls == 1 {
@@ -220,7 +221,8 @@ func TestFeatAttemptBoundStopsAnUnconvergingFeat(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	worked := map[string]int{}
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		worked[feat.Slug]++
 		if feat.Slug == "a" {
 			return doneOutcome("done (it is not)"), nil // never delivers
@@ -274,7 +276,8 @@ func TestSessionRecordsEveryAttempt(t *testing.T) {
 		Models:      []string{"claude-opus-4-8"},
 	}
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		calls++
 		switch calls {
 		case 1:

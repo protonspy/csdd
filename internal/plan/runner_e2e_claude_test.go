@@ -32,7 +32,9 @@ func TestExecClaudeSessionAgainstRealCLI(t *testing.T) {
 	brief := "Reply with the verdict only. Do not use any tools. " +
 		"Report status \"done\" and a one-sentence summary."
 
-	v, err := execClaudeSession(Feat{Slug: "e2e"}, brief, 0, "", "", env)
+	// Dir is left empty: this drives the exec path directly, with no run and no
+	// worktree around it, so inheriting the test's working directory is the intent.
+	v, err := execClaudeSession(SessionRequest{Feat: Feat{Slug: "e2e"}, Brief: brief}, "", "", env)
 	if err != nil {
 		t.Fatalf("live session failed: %v", err)
 	}
@@ -66,8 +68,8 @@ func TestFleetViewAgainstRealDispatch(t *testing.T) {
 	brief := "Dispatch two sub-agents in parallel with the Task tool: one to print the " +
 		"working directory, one to print today's date. Then report status \"done\"."
 
-	v, err := execClaudeSession(Feat{Slug: "e2e-fleet"}, brief, 0, "", "",
-		sessionEnv{idle: 5 * time.Minute, out: &view, now: time.Now})
+	v, err := execClaudeSession(SessionRequest{Feat: Feat{Slug: "e2e-fleet"}, Brief: brief},
+		"", "", sessionEnv{idle: 5 * time.Minute, out: &view, now: time.Now})
 	if err != nil {
 		t.Fatalf("live session failed: %v", err)
 	}

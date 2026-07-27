@@ -70,7 +70,7 @@ func planRun(args []string) int {
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
 	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
 	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 8). Bounds a feat whose `done` the verdict gate keeps refusing.")
-	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once, each on its own feat (1..6, default 1). Feats only run together when the plan's Depends graph allows it AND both are marked (P). Concurrency is not implemented yet: any value currently behaves as 1.")
+	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once, each on its own feat in its own git worktree (1..6, default 1). Feats run together whenever the plan's Depends graph allows it; each delivered feat is merged into the run's base branch. Requires a clean git repository.")
 	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
 	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
 	positionals, err := parseFlags(fs, args)
@@ -92,9 +92,6 @@ func planRun(args []string) int {
 	if squadLimit < 0 || squadLimit > planSquadLimitMax {
 		render.Err(fmt.Sprintf("--squad-limit must be between 1 and %d (got %d)", planSquadLimitMax, squadLimit))
 		return 1
-	}
-	if squadLimit > 1 {
-		render.Warn(fmt.Sprintf("--squad-limit %d accepted, but concurrency is not implemented yet — this run executes one session at a time", squadLimit))
 	}
 	if autonomous {
 		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")

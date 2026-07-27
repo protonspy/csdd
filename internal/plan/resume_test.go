@@ -24,7 +24,8 @@ func TestSpawnFailureDoesNotConsumeAnAttempt(t *testing.T) {
 	var slept []time.Duration
 	h := baseHooks(t, root)
 	h.Sleep = func(d time.Duration) { slept = append(slept, d) }
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		calls++
 		// The first two spawns fail outright; the third runs and delivers.
 		if calls <= 2 {
@@ -83,7 +84,7 @@ func TestSpawnFailurePersistentEndsRun(t *testing.T) {
 	calls := 0
 	h := baseHooks(t, root)
 	h.Sleep = func(time.Duration) {}
-	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+	h.Session = func(SessionRequest) (SessionOutcome, error) {
 		calls++
 		return SessionOutcome{}, &SpawnError{Err: errString("fork/exec claude.exe: the filename or extension is too long")}
 	}
@@ -126,7 +127,8 @@ func TestSpawnFailureCounterResetsOnRealSession(t *testing.T) {
 	calls := 0
 	h := baseHooks(t, root)
 	h.Sleep = func(time.Duration) {}
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		calls++
 		// Fail, succeed, fail, succeed ... never maxSpawnRetries in a row.
 		if calls%2 == 1 {
@@ -318,7 +320,7 @@ func TestRunResumesAfterInterruption(t *testing.T) {
 
 	// Run one: two `continue`s on feat `a`, then the iteration cap cuts it off.
 	h := baseHooks(t, root)
-	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+	h.Session = func(SessionRequest) (SessionOutcome, error) {
 		return SessionOutcome{Verdict: Verdict{Status: VerdictContinue, Summary: "parser is in"}}, nil
 	}
 	if _, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 2, Out: &bytes.Buffer{}}); err != nil {
@@ -328,7 +330,8 @@ func TestRunResumesAfterInterruption(t *testing.T) {
 	// Run two: a fresh process. Nothing is in memory; everything comes from disk.
 	var briefs []string
 	h2 := baseHooks(t, root)
-	h2.Session = func(feat Feat, brief string, _ float64) (SessionOutcome, error) {
+	h2.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat, brief := req.Feat, req.Brief
 		briefs = append(briefs, brief)
 		deliverSpec(t, root, feat.Slug)
 		return SessionOutcome{Verdict: Verdict{Status: VerdictDone, Summary: "shipped"}}, nil
@@ -362,7 +365,7 @@ func TestRunResumeCarriesAttemptBudget(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	spend := func(iterations int) RunSummary {
 		h := baseHooks(t, root)
-		h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+		h.Session = func(SessionRequest) (SessionOutcome, error) {
 			return SessionOutcome{Verdict: Verdict{Status: VerdictContinue, Summary: "still going"}}, nil
 		}
 		sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: iterations, FeatAttempts: 4, Out: &bytes.Buffer{}})
@@ -392,7 +395,8 @@ func TestRunJournalsCrashedAttemptByName(t *testing.T) {
 	writeRecords(t, root, "p", rec("a", 1, 1, SessionStarted, ""))
 
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		deliverSpec(t, root, feat.Slug)
 		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}

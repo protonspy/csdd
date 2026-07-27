@@ -304,6 +304,12 @@ The session's verdict declares one of three intents: `done` (the whole feat is d
 
 Feats are handed out in **dependency order**, not table order: the `Depends` column the plan already declares is what schedules the run, so a feat is only dispatched once everything it builds on is delivered. If a feat is blocked, everything downstream of it is reported as unreachable with the root cause named, instead of being dispatched into a tree where its foundation does not exist.
 
+`--squad-limit N` (1..6, default 1) runs up to **N sessions at once, each on its own feat and each in its own git worktree**. Filesystem isolation is what makes it safe: every concurrent session gets a worktree under `.csdd/plan/<slug>/trees/<feat>` on branch `csdd/<slug>/<feat>`, so no two agents ever share an index, a build, or a half-written file. Scheduling is the `Depends` graph alone — the `(P)` column is **not** consulted, because it used to mean "consents to share a working tree" and feats no longer share one.
+
+Because a plan is a DAG, isolation alone is not enough: `c` depends on `a` and `b`, and a worktree cut from an untouched base would contain neither. So the runner **merges a feat into the run's base the moment its `done` clears the verdict gate**, and every later worktree is cut from that updated base. The branch survives the merge — it is what the PR is opened from — and the worktree is removed. A merge that conflicts is not a failure: the feat comes back as partial work with a handoff naming the conflicting files, and the next session rebases. The human PR gate still sits where it always did, after the run, over the base branch.
+
+This makes git a **precondition**: `plan run` refuses a workspace that is not the root of a git repository, is on a detached HEAD, or has uncommitted changes (the run merges into that tree). Only the sessions overlap — the ledger, the journal and the run's bookkeeping are still written by a single writer, in the order sessions finish — and a squad run switches the live view to append-only lines, each tagged `[<feat>]`, because an in-place redraw from several sessions paints over itself.
+
 The run ends five ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), the session **cannot be started at all** (5 consecutive spawn failures — a broken environment, not a broken plan), or a preflight refusal (unapproved or drifted plan).
 
 A run is **resumable**: re-running `csdd plan run <slug>` after a crash or a Ctrl-C picks up where it stopped. Delivered feats come from the ledger and the spec tree; how many attempts each unfinished feat has spent, the handoff its last session left, and which feats already exhausted their bound are rebuilt from the append-only session record (`.csdd/plan/<slug>/sessions.jsonl`) — so an interruption neither resets a feat's attempt budget nor throws away the handoff.
@@ -313,7 +319,7 @@ csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
-                        --squad-limit 3      # max concurrent sessions (1..6, default 1 — concurrency not yet implemented)
+                        --squad-limit 3      # run up to 3 sessions at once (1..6, default 1), one git worktree each
 ```
 
 #### When a run ends without completing

@@ -42,7 +42,7 @@ type Feat struct {
 	Objective string   // the Objective column
 	Depends   []string // explicit feat slugs (range shorthand is never expanded)
 	Milestone string   // the Milestone column
-	Parallel  bool     // the (P) column — honored for ordering only in v1
+	Parallel  bool     // the (P) column — ordering intent; the squad schedules off Depends
 	WikiRefs  []string // [[wiki-page]] targets, brackets/aliases stripped
 	StackRefs []string // stack:<name> technology names
 	ADRRefs   []string // adr:<slug> decision-record slugs (verbatim, incl. malformed)
