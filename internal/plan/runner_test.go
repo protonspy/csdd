@@ -61,8 +61,9 @@ func deliverSpec(t *testing.T, root, slug string) {
 // verdict. Sessions that skip that step now have their `done` refused, which is
 // the entire point of the gate — so a test that expects a feat to be delivered
 // has to produce the evidence, exactly as the real loop demands.
-func deliveringSession(t *testing.T, root string) func(Feat, string, float64) (SessionOutcome, error) {
-	return func(f Feat, _ string, _ float64) (SessionOutcome, error) {
+func deliveringSession(t *testing.T, root string) func(SessionRequest) (SessionOutcome, error) {
+	return func(req SessionRequest) (SessionOutcome, error) {
+		f := req.Feat
 		deliverSpec(t, root, f.Slug)
 		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
 	}
@@ -74,10 +75,46 @@ func doneOutcome(summary string) SessionOutcome {
 	return SessionOutcome{Verdict: Verdict{Status: VerdictDone, Summary: summary}}
 }
 
+// rootTrees is the loop tests' treeKeeper: every feat "works" in the workspace root
+// itself, and integration is a no-op.
+//
+// Injecting it is what keeps these tests about the LOOP — verdicts, the ledger, the
+// stall guard, the attempt bound — rather than about git. It also keeps them honest
+// about what they assert: a fixture that writes a spec to the root and a gate that
+// reads the root are describing the same tree, which is exactly the serial world
+// these tests were written for. Worktree isolation and the merge have their own
+// tests, against a real repository (tree_test.go).
+type rootTrees struct {
+	root string
+	// integrate, when set, decides what merging a feat returns. It is how a loop
+	// test drives the two integration outcomes — a conflict, uncommitted work —
+	// without a repository: what is under test there is what the LOOP does with the
+	// error, not whether git produced it.
+	integrate func(feat string) error
+	// discarded records the feats whose worktree was released, so a test can assert
+	// the tree is only given up once the work is actually on the base.
+	discarded []string
+}
+
+func (t *rootTrees) Ensure(string) (string, error) { return t.root, nil }
+
+func (t *rootTrees) Integrate(feat string) error {
+	if t.integrate != nil {
+		return t.integrate(feat)
+	}
+	return nil
+}
+
+func (t *rootTrees) Discard(feat string) error {
+	t.discarded = append(t.discarded, feat)
+	return nil
+}
+
 // baseHooks returns hooks whose session delivers each feat properly and declares
 // `done`, so a fresh plan runs to completion (one session per feat). The runner
-// spawns nothing but the Session hook — there is no csdd or git seam, because the
-// loop still owns only the ledger and the verdict gate's three file reads.
+// spawns nothing but the Session hook — there is no csdd seam, because the loop
+// owns only the ledger, the verdict gate's three file reads, and the worktree each
+// feat is handed.
 func baseHooks(t *testing.T, root string) Hooks {
 	return Hooks{
 		Session:         deliveringSession(t, root),
@@ -86,6 +123,7 @@ func baseHooks(t *testing.T, root string) Hooks {
 		ClaudeAvailable: func() bool { return true },
 		Now:             fixedNow,
 		Sleep:           func(time.Duration) {},
+		Trees:           &rootTrees{root: root},
 	}
 }
 
@@ -213,7 +251,8 @@ func TestRunnerContinueHandsOff(t *testing.T) {
 	var briefs []string
 	calls := 0
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, brief string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat, brief := req.Feat, req.Brief
 		briefs = append(briefs, brief)
 		calls++
 		if calls == 1 {
@@ -250,7 +289,7 @@ func TestRunnerContinueHandsOff(t *testing.T) {
 func TestRunnerSessionErrorStalls(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	h := baseHooks(t, root)
-	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+	h.Session = func(SessionRequest) (SessionOutcome, error) {
 		return SessionOutcome{}, errString("boom: compiler exploded")
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 20, Stall: 3, Out: &bytes.Buffer{}})
@@ -280,7 +319,7 @@ func TestRunnerSessionErrorStalls(t *testing.T) {
 func TestRunnerContinueRunsToCap(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	h := baseHooks(t, root)
-	h.Session = func(Feat, string, float64) (SessionOutcome, error) {
+	h.Session = func(SessionRequest) (SessionOutcome, error) {
 		return SessionOutcome{Verdict: Verdict{Status: VerdictContinue, Summary: "still going"}}, nil
 	}
 	sum, err := Run(RunOptions{Root: root, Slug: "p", Hooks: h, MaxIterations: 3, Stall: 2, Out: &bytes.Buffer{}})
@@ -306,7 +345,8 @@ func TestRunnerLedgerResumes(t *testing.T) {
 	}
 	var worked []string
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		worked = append(worked, feat.Slug)
 		deliverSpec(t, root, feat.Slug)
 		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
@@ -335,7 +375,8 @@ func TestRunnerReconcilesDiskDelivered(t *testing.T) {
 
 	var worked []string
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		worked = append(worked, feat.Slug)
 		deliverSpec(t, root, feat.Slug)
 		return SessionOutcome{Verdict: Verdict{Status: VerdictDone}}, nil
@@ -368,7 +409,8 @@ func TestRunnerReconcilesDiskDelivered(t *testing.T) {
 func TestRunnerJournalFormat(t *testing.T) {
 	root := approvedRunnerWorkspace(t)
 	h := baseHooks(t, root)
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		deliverSpec(t, root, feat.Slug)
 		return doneOutcome("shipped the thing"), nil
 	}
@@ -437,7 +479,8 @@ func TestRunnerLimitSleepsAndResumes(t *testing.T) {
 	calls := 0
 	h := baseHooks(t, root)
 	h.Sleep = func(d time.Duration) { slept = append(slept, d) }
-	h.Session = func(feat Feat, _ string, _ float64) (SessionOutcome, error) {
+	h.Session = func(req SessionRequest) (SessionOutcome, error) {
+		feat := req.Feat
 		calls++
 		// Feat a hits the limit twice, then delivers; feat b delivers directly.
 		if feat.Slug == "a" && calls <= 2 {

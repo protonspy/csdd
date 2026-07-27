@@ -30,6 +30,15 @@ status: draft
 - verify: make check
 `
 
+// rootTrees stubs the runner's worktree keeper so a feat "works" in the workspace
+// root. It satisfies the unexported treeKeeper interface structurally, which is all
+// an assignment to the exported Hooks.Trees field needs.
+type rootTrees struct{ root string }
+
+func (t *rootTrees) Ensure(string) (string, error) { return t.root, nil }
+func (t *rootTrees) Integrate(string) error        { return nil }
+func (t *rootTrees) Discard(string) error          { return nil }
+
 // mustWrite writes content under an ensured parent directory.
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
@@ -75,14 +84,22 @@ func TestPlanRunE2EGoldenPath(t *testing.T) {
 			`"tasks":{"generated":true,"approved":true}}}`)
 	mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [ ] 1. Implement upload\n")
 
-	// 4. Run the plan with a stub runner (no real claude/git): the session authors
-	//    the change, checks its task box, RECORDS ITS TEST EVIDENCE, and declares
-	//    done. The loop trusts the verdict's judgment but verifies those artifacts
-	//    before accepting it, then records the feat in the ledger and advances. The
-	//    runner never touches git — commit/branch/PR are the session's dev-cycle.
+	// 4. Run the plan with a stub runner (no real claude, no real worktrees): the
+	//    session authors the change, checks its task box, RECORDS ITS TEST EVIDENCE,
+	//    and declares done. The loop trusts the verdict's judgment but verifies those
+	//    artifacts before accepting it, then records the feat in the ledger and
+	//    advances. Commit/branch/PR remain the session's own dev-cycle.
+	//
+	//    Trees is stubbed to the workspace root so this stays an end-to-end check of
+	//    the three READ SURFACES agreeing — CLI status, graph, web read-model — which
+	//    all read that root. A real run gives each feat its own git worktree and
+	//    merges it back; that half is covered against a real repository in
+	//    internal/plan, not here, where it would only add a git fixture between this
+	//    test and what it is actually asserting.
 	now := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
 	hooks := plan.Hooks{
-		Session: func(plan.Feat, string, float64) (plan.SessionOutcome, error) {
+		Trees: &rootTrees{root: dir},
+		Session: func(plan.SessionRequest) (plan.SessionOutcome, error) {
 			mustWrite(t, filepath.Join(specDir, "tasks.md"), "- [x] 1. Implement upload\n")
 			mustWrite(t, filepath.Join(specDir, "test-report.json"),
 				`{"feature":"upload","updatedAt":"2026-07-07T00:00:00Z","command":"go test ./...",`+

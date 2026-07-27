@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/protonspy/csdd/internal/render"
@@ -213,7 +214,7 @@ func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
 	rest := args
 	for len(rest) > 0 {
 		if err := fs.Parse(rest); err != nil {
-			return nil, err
+			return nil, suggestFlag(fs, err)
 		}
 		remaining := fs.Args()
 		if len(remaining) == 0 {
@@ -223,6 +224,76 @@ func parseFlags(fs *flag.FlagSet, args []string) ([]string, error) {
 		rest = remaining[1:]
 	}
 	return positionals, nil
+}
+
+// reUndefinedFlag matches the flag package's own wording for a name it does not
+// know. The stdlib formats that message into a plain error with no type and no
+// field carrying the name, so reading it back out of the string is the only way to
+// reach what the user actually typed.
+var reUndefinedFlag = regexp.MustCompile(`^flag provided but not defined: -+(.+)$`)
+
+// suggestFlag names the closest defined flag when an unknown one is a near miss.
+//
+// `--squard-limit` for `--squad-limit` is a real report, and the stock message —
+// "flag provided but not defined" — reads as "that option does not exist", which is
+// how a transposed pair of letters gets mistaken for a missing feature. Naming the
+// neighbour turns the same error into the fix.
+//
+// Only a single candidate within two edits is offered: an ambiguous "did you mean"
+// list is noise, and a distant match would be a guess rather than a correction.
+func suggestFlag(fs *flag.FlagSet, err error) error {
+	m := reUndefinedFlag.FindStringSubmatch(strings.TrimSpace(err.Error()))
+	if m == nil {
+		return err
+	}
+	typed := m[1]
+	const maxEdits = 2
+	best, bestDist, ties := "", maxEdits+1, 0
+	fs.VisitAll(func(f *flag.Flag) {
+		switch d := editDistance(typed, f.Name); {
+		case d < bestDist:
+			best, bestDist, ties = f.Name, d, 1
+		case d == bestDist:
+			ties++
+		}
+	})
+	if best == "" || bestDist > maxEdits || ties > 1 {
+		return err
+	}
+	return fmt.Errorf("%v — did you mean --%s?", err, best)
+}
+
+// editDistance is the Levenshtein distance between a and b, over bytes: flag names
+// are ASCII, so a rune-aware version would cost more and measure the same thing.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		curr[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
+}
+
+func min3(a, b, c int) int {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	return m
 }
 
 // stringSliceFlag implements flag.Value to support repeatable flags like

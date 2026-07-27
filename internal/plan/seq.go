@@ -13,8 +13,8 @@ package plan
 // Every consumer used it except the one that schedules.
 //
 // readyFeats uses it. Taking the head of the ready set is a strict refinement of
-// table order — never a regression — and the same function is what a concurrent
-// squad will draw from without re-deriving anything.
+// table order — never a regression — and it is also what the concurrent squad draws
+// from (admitFeat), so serial and parallel runs schedule off one derivation.
 
 // Sequencer outcomes, mapped to distinct CLI exit codes (R6.3) so an agent can
 // branch on $? without parsing.
@@ -80,6 +80,52 @@ func nextFeat(doc *PlanDoc, done, unavailable map[string]bool, extraDeps map[str
 		return Feat{}, false
 	}
 	return ready[0], true
+}
+
+// admitFeat picks the next feat that may START right now, given what is already in
+// flight: the head of the ready set, minus the feats a session is already driving.
+//
+// The dependency graph is the whole rule. It is what makes concurrency safe — two
+// feats that are ready at the same moment cannot depend on each other — and once
+// every feat works in its own git worktree, there is nothing left for a second rule
+// to protect. The (P) column is NOT consulted: it used to be the author's consent to
+// share a working tree, and feats no longer share one. It survives as ordering
+// intent, which is what the plan template always described it as.
+//
+// With an empty squad this returns exactly what nextFeat returns, so a serial run
+// schedules identically to before.
+func admitFeat(doc *PlanDoc, done, unavailable map[string]bool, inflight map[string]Feat, extraDeps map[string][]string) (Feat, bool) {
+	busy := unavailable
+	if len(inflight) > 0 {
+		busy = map[string]bool{}
+		for k, v := range unavailable {
+			busy[k] = v
+		}
+		// One feat, one session: handing out a feat another session is already
+		// driving would put two agents on one branch and make the attempt bound and
+		// the ledger meaningless.
+		for slug := range inflight {
+			busy[slug] = true
+		}
+	}
+	ready := readyFeats(doc, done, busy, extraDeps)
+	if len(ready) == 0 {
+		return Feat{}, false
+	}
+	return ready[0], true
+}
+
+// undelivered lists the plan's feats the ledger does not mark done, in table order.
+// It is the direct answer to "is this plan finished", which the scheduler having
+// nothing to offer only implies.
+func undelivered(doc *PlanDoc, done map[string]bool) []string {
+	var out []string
+	for _, f := range doc.Feats {
+		if !done[f.Slug] {
+			out = append(out, f.Slug)
+		}
+	}
+	return out
 }
 
 // stranded returns the feats that are neither delivered nor workable because

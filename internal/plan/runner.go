@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -30,16 +31,23 @@ const (
 // Hooks are the runner's seams onto the outside world. Every field has a real
 // default (installed by Run); tests inject stubs so the whole loop — verdict
 // handling, ledger, journal — runs with no `claude` or subprocess at all. The
-// runner never touches git or the workspace's specs: authoring, gates, branch,
-// commit, and the PR all happen inside the session. The runner only spawns the
-// session, records what it declared, and carries context to the next one.
+// runner never touches the workspace's specs: authoring, gates, branch, commit, and
+// the PR all happen inside the session. Its only git responsibility is the isolation
+// the squad needs — it gives each feat a worktree to work in and merges the branch
+// back into the run's base once a `done` clears the verdict gate (tree.go). Beyond
+// that it spawns the session, records what it declared, and carries context to the
+// next one.
 type Hooks struct {
 	// Session runs one claude session for a feat and returns what it produced:
 	// the verdict it declared plus the metrics its `result` event reported. The
 	// outcome is returned even alongside an error, so a failed attempt's cost is
 	// still recorded (R9.2). Every session runs bypass-mode
-	// (--dangerously-skip-permissions).
-	Session func(feat Feat, brief string, budgetUSD float64) (SessionOutcome, error)
+	// (--dangerously-skip-permissions), in the feat's own worktree.
+	Session func(SessionRequest) (SessionOutcome, error)
+	// Trees owns the isolated worktree each feat's sessions run in. Filled by
+	// installRealHooks with the git-backed keeper once preflight has resolved the
+	// run's base branch.
+	Trees treeKeeper
 	// Doctor proves sandbox isolation before the bypass-mode loop starts.
 	Doctor func() SandboxReport
 	// Confirm asks the human a yes/no question (the unverified-sandbox alert)
@@ -54,6 +62,17 @@ type Hooks struct {
 	// sleeps until the session window reopens; tests inject a stub that records the
 	// duration and returns immediately.
 	Sleep func(d time.Duration)
+}
+
+// SessionRequest is everything one dispatch hands the Session hook. It is a struct
+// rather than a parameter list because Dir arrived late and matters most: a session
+// that runs anywhere but its feat's own worktree is a session sharing an index with
+// its peers, which is the failure the squad exists to avoid.
+type SessionRequest struct {
+	Feat      Feat
+	Brief     string  // the mission brief plus the rolling context
+	BudgetUSD float64 // per-session --max-budget-usd; 0 = the account's own limits
+	Dir       string  // the feat's worktree — the session's working directory
 }
 
 // RunOptions configures a `csdd plan run` invocation. The loop is deliberately
@@ -94,12 +113,17 @@ type RunOptions struct {
 	// the runner kills it as hung. It is NOT a time limit on a session: honest work
 	// of any duration keeps resetting it. Default 15 minutes (--session-idle).
 	SessionIdle time.Duration
-	// SquadLimit is how many claude sessions may run at once. Bounded 1..6 by the
-	// CLI: the ceiling is the widest topological wave a real plan admitted, and a
-	// plan cannot use more concurrency than its own dependency graph allows.
+	// SquadLimit is how many claude sessions may run at once, each on its own feat.
+	// Bounded 1..6 by the CLI: the ceiling is the widest topological wave a real
+	// plan admitted, and a plan cannot use more concurrency than its own dependency
+	// graph allows. Default 1 — a serial run, which is what every plan gets unless
+	// it asks for more.
 	//
-	// Concurrency is NOT implemented yet, so any value behaves as 1. The field
-	// exists now so the contract is fixed before the capability lands (R7).
+	// Feats run together whenever the graph allows it; each works in its own git
+	// worktree, so they never share a working tree (tree.go). Everything the loop
+	// does with what a session returns still happens on one goroutine, so the
+	// ledger, the journal and the run's bookkeeping are written in exactly the order
+	// they were before — only the sessions themselves overlap.
 	SquadLimit int
 	Out        io.Writer
 	Hooks      Hooks
@@ -159,6 +183,25 @@ func Run(opts RunOptions) (RunSummary, error) {
 	if !h.ClaudeAvailable() {
 		return RunSummary{}, fmt.Errorf("the `claude` CLI is not available on PATH; the runner needs it to spawn sessions")
 	}
+	// Every feat now works in its own git worktree, so a repository is no longer
+	// incidental to a run — it is the isolation mechanism. Resolve the base the run
+	// integrates into and refuse anything that would make merging feats back
+	// ambiguous. Skipped when a treeKeeper was injected: the loop's own tests drive
+	// the whole run against plain directories and no git at all.
+	if opts.Hooks.Trees == nil {
+		base, err := preflightGit(opts.Root)
+		if err != nil {
+			return RunSummary{}, err
+		}
+		opts.Hooks.Trees = gitTrees{root: opts.Root, slug: opts.Slug, base: base}
+		h = opts.Hooks
+		logf("worktrees: one per feat, branched from and merged back into %s", base)
+		if specsAreIgnored(opts.Root) {
+			logf("⚠ specs/ is gitignored: each feat's spec will stay in the worktree that authored it and be")
+			logf("  discarded with it. The code lands on %s; the artifacts justifying it will not, so", base)
+			logf("  `csdd plan status` and the graph will disagree with the ledger after this run.")
+		}
+	}
 	// Every session runs bypass-mode (--dangerously-skip-permissions), so a
 	// verified sandbox is the expected home (principle 7). When doctor fails, the
 	// run only proceeds on an explicit human accept — declining closes the run.
@@ -204,40 +247,39 @@ func Run(opts RunOptions) (RunSummary, error) {
 		// watching leaves no trace of why a feat's budget was already partly spent.
 		journal(opts, "-", "resumed", s)
 	}
+	if opts.SquadLimit > 1 {
+		logf("squad: up to %d sessions at once — a feat runs alone unless it and every peer in flight is marked (P)", opts.SquadLimit)
+	}
+
 	var sum RunSummary
 	stall := 0
-
-	for iter := 1; iter <= opts.MaxIterations; iter++ {
-		// The done set drives readiness; `unavailable` is what must not be handed out.
-		// A blocked feat exhausted its attempt bound, so re-handing it would burn the
-		// remaining iterations on the one feat that has already proven it cannot
-		// converge. A parked feat is waiting on a peer and is not workable yet.
-		done := ledger.doneSet()
-		feat, ok := nextFeat(doc, done, unionSets(st.blocked, st.parked), st.extraDeps)
-		if !ok {
-			// Nothing is ready. That is completion only if nothing is left; otherwise
-			// what remains is stranded behind something that will not finish, and the
-			// run must name the root cause rather than report a quiet early exit.
-			strand := stranded(doc, done, unionSets(st.blocked, st.parked), st.extraDeps)
-			sum.Completed = len(sum.Blocked) == 0 && len(strand) == 0
-			switch {
-			case sum.Completed:
-				sum.Outcome = OutcomeComplete
-				sum.Reason = "plan complete: every feat is delivered"
-			case len(sum.Blocked) > 0:
-				sum.Outcome = OutcomeBlocked
-				sum.Reason = fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s%s",
-					len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "), strandedSuffix(strand))
-			default:
-				sum.Outcome = OutcomeBlocked
-				sum.Reason = "stopped: nothing is workable" + strandedSuffix(strand)
-			}
-			logf(sum.Reason)
-			return summarize(out, sum), nil
+	// iter counts sessions dispatched, not loop turns: with a squad in flight
+	// several are open at once, and --max-iterations bounds how many the run may
+	// spend in total.
+	iter := 0
+	inflight := map[string]Feat{}
+	results := make(chan *dispatch, opts.SquadLimit)
+	// stopping means the run's closing verdict is decided and no further feat is
+	// dispatched. The loop keeps draining what is already in flight, because a
+	// session that is mid-flight has already been paid for — abandoning its verdict
+	// would lose the feat it may have just delivered.
+	stopping := false
+	stop := func(outcome int, reason string) {
+		if stopping {
+			return
 		}
+		stopping = true
+		sum.Outcome, sum.Reason = outcome, reason
+		logf("%s", reason)
+		if len(inflight) > 0 {
+			logf("  … waiting for %d session(s) still in flight", len(inflight))
+		}
+	}
 
-		logf("→ %s (session %d/%d)", feat.Slug, iter, opts.MaxIterations)
-		res := executeFeat(opts, doc, feat, ledger, st, &sum, iter)
+	// note folds one iteration's outcome into the run's bookkeeping. Both paths that
+	// produce one — a dispatch that never reached a session, and a settled session —
+	// go through it, so the stall guard and the attempt bound have a single policy.
+	note := func(feat Feat, res iterResult) {
 		switch res {
 		case iterAdvanced, iterContinue:
 			stall = 0 // a delivered feat or honest partial work is forward motion
@@ -251,11 +293,9 @@ func Run(opts RunOptions) (RunSummary, error) {
 		case iterSpawnAborted:
 			// Not a feat failure and not a stall: `claude` itself will not start, so
 			// every remaining feat would fail identically. End loudly (R1.4).
-			sum.Outcome = OutcomeSpawnFailed
-			sum.Reason = fmt.Sprintf("could not start the claude session %d times in a row — the environment is broken, not the plan; "+
-				"check that `claude` runs from this shell, then `csdd plan run %s` resumes from here", maxSpawnRetries, opts.Slug)
-			logf(sum.Reason)
-			return summarize(out, sum), nil
+			stop(OutcomeSpawnFailed, fmt.Sprintf("could not start the claude session %d times in a row — the environment is broken, not the plan; "+
+				"check that `claude` runs from this shell, then `csdd plan run %s` resumes from here", maxSpawnRetries, opts.Slug))
+			return
 		}
 		// R10.5: an unfinished feat that has spent its whole attempt budget is
 		// surfaced, not retried forever. This is checked outside the stall guard on
@@ -269,16 +309,94 @@ func Run(opts RunOptions) (RunSummary, error) {
 			logf("  ⛔ %s %s — moving on; it needs a human or a revised plan", feat.Slug, reason)
 		}
 		if stall >= opts.Stall {
-			sum.Outcome = OutcomeStalled
-			sum.Reason = fmt.Sprintf("stalled: %d consecutive sessions failed without progress — the failure log says where", stall)
-			logf(sum.Reason)
-			return summarize(out, sum), nil
+			stop(OutcomeStalled, fmt.Sprintf("stalled: %d consecutive sessions failed without progress — the failure log says where", stall))
 		}
 	}
 
-	sum.Outcome = OutcomeCapped
-	sum.Reason = fmt.Sprintf("reached the iteration cap (%d) — `csdd plan run %s` resumes from here", opts.MaxIterations, opts.Slug)
-	logf(sum.Reason)
+	for {
+		// Fill the squad: dispatch every feat that may start right now, up to the
+		// limit. With SquadLimit 1 this admits exactly one feat per turn and the loop
+		// below waits for it, which is the serial run unchanged.
+		for !stopping && len(inflight) < opts.SquadLimit {
+			if iter >= opts.MaxIterations {
+				if len(inflight) == 0 {
+					stop(OutcomeCapped, fmt.Sprintf("reached the iteration cap (%d) — `csdd plan run %s` resumes from here", opts.MaxIterations, opts.Slug))
+				}
+				break
+			}
+			// The done set drives readiness; `unavailable` is what must not be handed
+			// out — only the feats that exhausted their attempt bound, since re-handing
+			// one would burn the remaining iterations on a feat that has already proven
+			// it cannot converge. The feats in flight are excluded by admitFeat itself.
+			//
+			// A PARKED feat is deliberately NOT excluded here. It is held back by the
+			// dependency it discovered, which lives in extraDeps and gates readiness
+			// through depsSatisfied — so it comes back on its own the moment that peer
+			// lands. Listing it as unavailable as well made the exclusion permanent:
+			// nothing ever cleared it, so a parked feat was never re-dispatched and the
+			// run went on to report itself complete without it.
+			done := ledger.doneSet()
+			feat, ok := admitFeat(doc, done, st.blocked, inflight, st.extraDeps)
+			if !ok {
+				// Nothing can start. With sessions still in flight that is ordinary —
+				// what they deliver may open the next wave — so only an empty squad
+				// ends the run. Then it is completion if nothing is left; otherwise
+				// what remains is stranded behind something that will not finish, and
+				// the run must name the root cause rather than report a quiet exit.
+				if len(inflight) > 0 {
+					break
+				}
+				strand := stranded(doc, done, st.blocked, st.extraDeps)
+				// Completion is asserted against the LEDGER, not inferred from the
+				// scheduler having nothing to offer. Those two agreeing is the normal
+				// case; when they disagree the scheduler is wrong, and "plan complete"
+				// over an undelivered feat is the one report that must never be
+				// possible — it is what the parked bug produced.
+				left := undelivered(doc, done)
+				sum.Completed = len(sum.Blocked) == 0 && len(strand) == 0 && len(left) == 0
+				switch {
+				case sum.Completed:
+					stop(OutcomeComplete, "plan complete: every feat is delivered")
+				case len(sum.Blocked) > 0:
+					stop(OutcomeBlocked, fmt.Sprintf("stopped with %d feat(s) blocked after %d attempts each: %s%s",
+						len(sum.Blocked), opts.FeatAttempts, strings.Join(sum.Blocked, ", "), strandedSuffix(strand)))
+				case len(strand) > 0:
+					stop(OutcomeBlocked, "stopped: nothing is workable"+strandedSuffix(strand))
+				default:
+					// Nothing is blocked, nothing is stranded, and yet feats remain
+					// undelivered: the scheduler declined to offer a workable feat.
+					// Name it as the defect it is rather than dressing it as an outcome.
+					stop(OutcomeBlocked, fmt.Sprintf("stopped: %d feat(s) are neither delivered, blocked nor stranded, "+
+						"and the scheduler offered none of them — this is a scheduling defect, please report it: %s",
+						len(left), strings.Join(left, ", ")))
+				}
+				break
+			}
+
+			iter++
+			logf("→ %s (session %d/%d)", feat.Slug, iter, opts.MaxIterations)
+			d := openDispatch(opts, doc, feat, st, iter)
+			if d == nil {
+				// The session never opened (the brief would not assemble), so there is
+				// nothing to wait for: settle it here and let the loop try again.
+				note(feat, iterFailed)
+				continue
+			}
+			inflight[feat.Slug] = feat
+			go func(d *dispatch) {
+				d.outcome, d.err = sessionOrWait(opts, d.request(opts.SessionBudget), st)
+				results <- d
+			}(d)
+		}
+
+		if len(inflight) == 0 {
+			break
+		}
+		d := <-results
+		delete(inflight, d.feat.Slug)
+		note(d.feat, settleDispatch(opts, doc, d, ledger, st, &sum))
+	}
+
 	return summarize(out, sum), nil
 }
 
@@ -293,46 +411,100 @@ const (
 	iterSpawnAborted                   // `claude` would not start; the run must end (R1.4)
 )
 
-// executeFeat runs exactly one session for the feat and records what it declared.
-// The loop still trusts the session's JUDGMENT — it does not review the code, run
-// the suite, or second-guess the reasoning — but it no longer trusts unchecked
-// CLAIMS about files it can read in milliseconds: a `done` verdict passes through
-// the verdict gate first (R10, §5.5). A gate rejection becomes a `continue`
-// carrying a handoff that names each failed check, so the next session self-heals.
-// A `continue` stores its handoff for the successor; a session error lands on the
-// feat's rolling history, which the next iteration's brief carries.
+// dispatch is one feat handed to one session: everything the runner decided before
+// spawning, and what the session came back with. It exists because the two halves
+// no longer run on the same goroutine — the session runs concurrently with its
+// peers, while opening and settling it stay on the loop's own goroutine, where the
+// ledger and the run state live.
+type dispatch struct {
+	feat    Feat
+	iter    int    // the run's session counter, assigned at dispatch
+	attempt int    // this feat's attempt number (R10.4)
+	brief   string // the mission brief plus the rolling context, frozen at dispatch
+	dir     string // the feat's worktree: where the session runs and what the gate reads
+
+	outcome SessionOutcome // written by the session goroutine
+	err     error          // written by the session goroutine
+}
+
+// request is what the Session hook is handed. Assembled from the dispatch so the
+// worktree the runner prepared and the directory the session runs in cannot drift
+// apart.
+func (d *dispatch) request(budgetUSD float64) SessionRequest {
+	return SessionRequest{Feat: d.feat, Brief: d.brief, BudgetUSD: budgetUSD, Dir: d.dir}
+}
+
+// openDispatch prepares one session for a feat and charges the attempt: it
+// assembles the brief with the rolling context its predecessors left, and opens the
+// attempt on disk BEFORE the session is spawned. If the host dies mid-session that
+// `started` row is the only evidence the attempt ever happened, and restoreRunState
+// counts it (R2.1, R2.2).
 //
-// Every path records one session attempt with its cost (R9.2) before returning.
-func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *runState, sum *RunSummary, iter int) iterResult {
-	h := opts.Hooks
+// It returns nil when the brief will not assemble, since no session can be spawned
+// from it. That failure costs no attempt — assembling the brief is the runner's job,
+// not the feat's — and the caller counts it as an ordinary iterFailed.
+func openDispatch(opts RunOptions, doc *PlanDoc, feat Feat, st *runState, iter int) *dispatch {
 	logf := runLogf(opts)
 	key := feat.Slug
-	hist := st.hist(key)
 
 	base, err := FeatBrief(opts.Root, doc, feat)
 	if err != nil {
-		hist.add("brief assembly failed", err.Error())
+		st.hist(key).add("brief assembly failed", err.Error())
 		journal(opts, feat.Slug, "failed", "brief assembly: "+firstLine(err.Error()))
 		logf("  ✗ brief error: %v", err)
-		return iterFailed
+		return nil
+	}
+	// The worktree is prepared before the attempt is charged, for the same reason
+	// the brief is: a feat that could not be given a tree to work in has not been
+	// tried, and spending one of its bounded attempts on the runner's own failure
+	// would surface it as unable to converge (R1.2, R10.4).
+	dir, err := opts.Hooks.Trees.Ensure(feat.Slug)
+	if err != nil {
+		st.hist(key).add("worktree setup failed", err.Error())
+		journal(opts, feat.Slug, "failed", "worktree setup: "+firstLine(err.Error()))
+		logf("  ✗ could not prepare an isolated worktree for %s: %v", feat.Slug, err)
+		return nil
 	}
 
-	attempt := st.nextAttempt(key)
-	var outcome SessionOutcome
-	record := func(status, detail string, gated bool) {
-		rec := newSessionRecord(feat.Slug, iter, attempt, status, detail, outcome.Metrics, h.Now())
-		rec.Gated = gated
-		if err := AppendSessionRecord(opts.Root, opts.Slug, rec); err != nil {
-			// Instrumentation must never end a run: note it and carry on.
-			logf("  ⚠ could not record this session's metrics: %v", err)
-		}
-	}
-	// Open the attempt on disk BEFORE spawning. If the host dies mid-session this
-	// row is the only evidence the attempt ever happened, and restoreRunState
-	// counts it (R2.1, R2.2).
-	record(SessionStarted, "", false)
+	d := &dispatch{feat: feat, iter: iter, attempt: st.nextAttempt(key), brief: base + runContext(st, key), dir: dir}
+	recordSession(opts, d, SessionStarted, "", false)
+	return d
+}
 
-	outcome, err = sessionOrWait(opts, feat, base+runContext(st, key), st)
+// recordSession persists one row of a dispatch's attempt with whatever the session
+// has cost so far (R9.2). Instrumentation must never end a run, so a write failure
+// is reported and swallowed.
+func recordSession(opts RunOptions, d *dispatch, status, detail string, gated bool) {
+	rec := newSessionRecord(d.feat.Slug, d.iter, d.attempt, status, detail, d.outcome.Metrics, opts.Hooks.Now())
+	rec.Gated = gated
+	if err := AppendSessionRecord(opts.Root, opts.Slug, rec); err != nil {
+		runLogf(opts)("  ⚠ could not record this session's metrics: %v", err)
+	}
+}
+
+// settleDispatch records what a finished session declared. The loop still trusts the
+// session's JUDGMENT — it does not review the code, run the suite, or second-guess
+// the reasoning — but it no longer trusts unchecked CLAIMS about files it can read
+// in milliseconds: a `done` verdict passes through the verdict gate first (R10,
+// §5.5). A gate rejection becomes a `continue` carrying a handoff that names each
+// failed check, so the next session self-heals. A `continue` stores its handoff for
+// the successor; a session error lands on the feat's rolling history, which the next
+// iteration's brief carries.
+//
+// It runs on the run loop's own goroutine, never a session's, so the ledger, the
+// run state and the journal are still written by exactly one writer no matter how
+// many sessions were in flight.
+//
+// Every path records the attempt with its cost (R9.2) before returning.
+func settleDispatch(opts RunOptions, doc *PlanDoc, d *dispatch, ledger *Ledger, st *runState, sum *RunSummary) iterResult {
+	h := opts.Hooks
+	logf := runLogf(opts)
+	feat := d.feat
+	key := feat.Slug
+	hist := st.hist(key)
+	attempt := d.attempt
+	outcome, err := d.outcome, d.err
+	record := func(status, detail string, gated bool) { recordSession(opts, d, status, detail, gated) }
 
 	// A spawn failure that survived every retry is the environment, not the feat.
 	// Give the attempt back (the session never ran), settle the `started` row so a
@@ -379,7 +551,6 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		// waiting, not failing, and charging it would spend the budget of a feat that
 		// has not been allowed to try.
 		st.undoAttempt(key)
-		st.parked[key] = true
 		merged, err := RecordDiscoveredDeps(opts.Root, opts.Slug, feat.Slug, deps)
 		st.extraDeps = merged
 		if err != nil {
@@ -397,8 +568,11 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 		logf("  … progress — handing off to the next session")
 		return iterContinue
 	case VerdictDone:
-		// R10.1: the three on-disk checks, before the ledger records anything.
-		if findings := gateDone(opts.Root, feat); len(findings) > 0 {
+		// R10.1: the three on-disk checks, before the ledger records anything. They
+		// read the feat's WORKTREE, not the workspace root: that is where the session
+		// just wrote the spec, the checked tasks and the test evidence, and the root
+		// will not see any of it until the merge below lands.
+		if findings := gateDone(d.dir, feat); len(findings) > 0 {
 			sum.Gated++
 			names := gateCheckNames(findings)
 			record(SessionContinue, "verdict gate refused `done`: "+names, true)
@@ -411,6 +585,45 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 			}
 			return iterContinue
 		}
+		// The feat is finished in its own tree; now it has to land on the run's base,
+		// because that is what every feat dispatched after it will be cut from. This
+		// runs BEFORE the ledger records anything: a feat marked delivered on a merge
+		// that did not happen is a lie the rest of the run would build on.
+		if err := opts.Hooks.Trees.Integrate(feat.Slug); err != nil {
+			var uncommitted *UncommittedWorkError
+			if errors.As(err, &uncommitted) {
+				// Finished on disk, absent from git. Handed back like a gate rejection,
+				// because that is what it is: an artifact the session contracted to
+				// produce — a commit — that is not there.
+				sum.Gated++
+				record(SessionContinue, "uncommitted work: "+oneLine(uncommitted.Error()), true)
+				st.handoffs[key] = uncommittedHandoff(feat, uncommitted, verdict.Summary)
+				journal(opts, feat.Slug, "progress", "uncommitted work: "+oneLine(uncommitted.Error()))
+				logf("  ⚠ %s claimed done but left %d path(s) uncommitted — only committed work reaches the base",
+					feat.Slug, len(uncommitted.Paths))
+				return iterContinue
+			}
+			var conflict *MergeConflictError
+			if errors.As(err, &conflict) {
+				// Finished work that no longer applies to a base that moved under it.
+				// Same shape as a gate rejection: hand it back naming the conflict so
+				// the next session rebases, rather than failing a feat that is done.
+				sum.Gated++
+				record(SessionContinue, "merge conflict: "+oneLine(conflict.Error()), true)
+				st.handoffs[key] = mergeConflictHandoff(feat, conflict, verdict.Summary)
+				hist.add("merge conflict", conflict.Detail)
+				st.logs[key] = writeFailureLog(opts, feat, hist)
+				journal(opts, feat.Slug, "progress", "merge conflict: "+oneLine(conflict.Error()))
+				logf("  ⚠ %s is finished but conflicts with the run base (%s) — handing back to rebase",
+					feat.Slug, strings.Join(conflict.Files, ", "))
+				return iterContinue
+			}
+			record(SessionFailed, "merge failed: "+firstLine(err.Error()), false)
+			hist.add("merge failed", err.Error())
+			journal(opts, feat.Slug, "failed", "merge: "+firstLine(err.Error()))
+			logf("  ✗ could not land %s on the run base: %v", feat.Slug, err)
+			return iterFailed
+		}
 		ledger.MarkDone(feat.Slug, oneLine(verdict.Summary), h.Now())
 		if err := ledger.Save(opts.Root, opts.Slug); err != nil {
 			record(SessionFailed, "ledger save: "+firstLine(err.Error()), false)
@@ -418,6 +631,12 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 			journal(opts, feat.Slug, "failed", "ledger save: "+firstLine(err.Error()))
 			logf("  ✗ could not record %s as delivered: %v", feat.Slug, err)
 			return iterFailed
+		}
+		// The work is on the base and in the ledger, so the tree has nothing left to
+		// hold. The branch stays — it is what the PR is opened from. A tree that will
+		// not go away is untidy, never wrong, so it must not fail a delivered feat.
+		if err := opts.Hooks.Trees.Discard(feat.Slug); err != nil {
+			logf("  ⚠ %s is delivered but its worktree could not be removed: %v", feat.Slug, err)
 		}
 		record(SessionDone, oneLine(verdict.Summary), false)
 		journalDone(opts, feat.Slug, oneLine(verdict.Summary))
@@ -448,28 +667,31 @@ func executeFeat(opts RunOptions, doc *PlanDoc, feat Feat, ledger *Ledger, st *r
 // From executeFeat's view both are invisible while they are being absorbed: they
 // never count as a failure, burn the stall guard, or pollute the failure log, and
 // the iteration is not consumed since the caller only advances once this returns.
-func sessionOrWait(opts RunOptions, feat Feat, brief string, st *runState) (SessionOutcome, error) {
+// It runs on the session's own goroutine, so it touches nothing on the run state
+// but the spawn counter, through the methods that guard it.
+func sessionOrWait(opts RunOptions, req SessionRequest, st *runState) (SessionOutcome, error) {
 	h := opts.Hooks
+	feat := req.Feat
 	for {
-		out, err := h.Session(feat, brief, opts.SessionBudget)
+		out, err := h.Session(req)
 		var lim *LimitError
 		if errors.As(err, &lim) {
-			st.spawnFailures = 0 // the child ran; only the account said no
+			st.sessionRan() // the child ran; only the account said no
 			waitForLimit(opts, feat, lim)
 			continue
 		}
 		var spawn *SpawnError
 		if errors.As(err, &spawn) {
-			st.spawnFailures++
-			if st.spawnFailures >= maxSpawnRetries {
+			consecutive := st.spawnFailed()
+			if consecutive >= maxSpawnRetries {
 				return out, err
 			}
-			waitForSpawn(opts, feat, spawn, st.spawnFailures)
+			waitForSpawn(opts, feat, spawn, consecutive)
 			continue
 		}
 		// Any session that actually ran — success or failure — proves the exec path
 		// works, so a later spawn failure starts its own count.
-		st.spawnFailures = 0
+		st.sessionRan()
 		return out, err
 	}
 }
@@ -615,18 +837,26 @@ type runState struct {
 	// blocked is the set of feats that exhausted the bound. The sequencer skips
 	// them so the rest of the plan can still run (R10.5).
 	blocked map[string]bool
+	// mu guards spawnFailures, the one field a session goroutine touches. Every
+	// other field is read and written only by the run loop, which settles one
+	// dispatch at a time — the squad overlaps sessions, not bookkeeping.
+	mu sync.Mutex
 	// spawnFailures counts CONSECUTIVE failed execs of `claude`. Any session that
 	// actually ran resets it, so this measures "the exec path is broken right now",
 	// not "the run has had trouble". It lives here rather than in sessionOrWait so
-	// the count survives across feats: five failures spread over five feats is the
-	// same broken environment as five on one.
+	// the count survives across feats — five failures spread over five feats is the
+	// same broken environment as five on one — and, with a squad, across the
+	// sessions running side by side.
 	spawnFailures int
-	// parked holds feats that reported themselves blocked on a peer. Unlike
-	// `blocked` this is not a verdict on the feat — it is waiting, not failing — so
-	// it costs no attempt and clears as soon as its dependency is delivered. The
-	// scheduler simply stops offering it, and depsSatisfied lets it back in.
-	parked map[string]bool
-	// extraDeps are the dependency edges sessions discovered at run time, unioned
+	// A feat that reported itself blocked on a peer is NOT tracked here. It used to
+	// be, in a `parked` set the scheduler treated as unavailable — and nothing ever
+	// removed it, so the feat was never offered again and the run reported itself
+	// complete without it. What actually holds a parked feat back is the edge it
+	// discovered: it goes into extraDeps, depsSatisfied gates on it, and the feat
+	// becomes ready again by itself the moment that peer is delivered. One mechanism,
+	// which clears on its own, instead of two, one of which did not.
+	//
+	// extraDeps are those edges: discovered at run time, unioned
 	// with the plan's own by the scheduler and persisted to the sidecar so a later
 	// run does not have to rediscover them.
 	extraDeps map[string][]string
@@ -644,7 +874,6 @@ func newRunState() *runState {
 		logs:      map[string]string{},
 		attempts:  map[string]int{},
 		blocked:   map[string]bool{},
-		parked:    map[string]bool{},
 		extraDeps: map[string][]string{},
 	}
 }
@@ -691,27 +920,31 @@ func (s *runState) undoAttempt(key string) {
 	}
 }
 
+// spawnFailed counts one more consecutive failed exec of `claude` and returns the
+// new total. Guarded: with a squad in flight, several sessions can fail to spawn at
+// the same instant, and the whole point of the counter is that those failures are
+// one environment problem rather than one per feat.
+func (s *runState) spawnFailed() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.spawnFailures++
+	return s.spawnFailures
+}
+
+// sessionRan resets the spawn counter: a child that actually started proves the exec
+// path works, whatever it then went on to do.
+func (s *runState) sessionRan() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.spawnFailures = 0
+}
+
 // clearFeat forgets a feat's trail once it is delivered.
 func (s *runState) clearFeat(key string) {
 	delete(s.hists, key)
 	delete(s.handoffs, key)
 	delete(s.logs, key)
 	delete(s.attempts, key)
-	delete(s.parked, key)
-}
-
-// unionSets merges membership sets without mutating either input — the ledger's
-// done set is reused across iterations, so the blocked set must not leak into it.
-func unionSets(sets ...map[string]bool) map[string]bool {
-	out := map[string]bool{}
-	for _, s := range sets {
-		for k, v := range s {
-			if v {
-				out[k] = true
-			}
-		}
-	}
-	return out
 }
 
 // maxContextAttempts bounds how many failed attempts the rolling context replays.
@@ -881,14 +1114,39 @@ func fillRunDefaults(opts *RunOptions) {
 	if opts.SquadLimit <= 0 {
 		opts.SquadLimit = 1
 	}
+	// A squad puts several sessions on one stream, which changes what that stream
+	// can be. The in-place live view assumes it is the only writer — two sessions
+	// redrawing over each other paint garbage — so a squad gets the append-only
+	// renderer even in a terminal, where every line already carries its feat tag.
+	// Whole writes are serialized for the same reason: a line from one session must
+	// never land inside another's.
+	tty := isTerminal(opts.Out) && opts.SquadLimit == 1
+	if opts.SquadLimit > 1 {
+		opts.Out = &syncWriter{w: opts.Out}
+	}
 	// Hooks.Now may still be nil here; the reporter resolves that itself, and
 	// installRealHooks fills the hook right after.
 	installRealHooks(&opts.Hooks, opts.Model, opts.Effort, sessionEnv{
 		idle: opts.SessionIdle,
 		out:  opts.Out,
-		tty:  isTerminal(opts.Out),
+		tty:  tty,
 		now:  opts.Hooks.Now,
 	})
+}
+
+// syncWriter serializes writes to one destination so concurrent sessions cannot
+// interleave inside a single line. It wraps opts.Out only for a squad run: a serial
+// run has exactly one writer and needs no lock, and the wrapper would also hide the
+// *os.File the live view checks for.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }
 
 func summarize(out io.Writer, sum RunSummary) RunSummary {
