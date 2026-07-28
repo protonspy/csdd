@@ -11,9 +11,9 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// FeatBrief assembles the mission pack for one whole feat (R7): what this feat is,
-// what governs it, what it is likely to touch, and what verifies it. It does NOT
-// carry the development process — how a session authors and approves its spec
+// FeatBrief assembles the mission pack for one whole feat (R7): who is reading it,
+// what this feat is, what governs it, what it is likely to touch, and what verifies
+// it. It does NOT carry the development process — how a session authors and approves its spec
 // phases, what it may delegate, what git it owns and what makes a `done` acceptable
 // live in the plan-session CLAUDE.md the runner writes into every worktree and in
 // the `plan-dev` skill, both of which the session already reads every turn. Stating
@@ -39,6 +39,17 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	}
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
+
+	// 0. Who is reading this. The brief is fed to `claude -p` on stdin as the entire
+	// prompt, so its opening lines are the only place the session's role is set —
+	// without them the first thing the model sees is a feat row, and it has to infer
+	// from context what it is supposed to be. It stays four lines on purpose: the
+	// process this engineer follows is NOT here (see the pointer at the end), and a
+	// preamble that grows is re-read on every turn of every session.
+	w("You are a senior software engineer. You deliver ONE feat of an approved plan to\n")
+	w("completion on your own, in an autonomous session with no human at the gate.\n")
+	w("Everything below is the mission: what this feat is, what governs it, where it\n")
+	w("lives in this repository, and what verifies it.\n\n")
 
 	// 1. The feat itself.
 	w("# Feat: %s — plan %s\n\n", feat.Slug, doc.Slug)
