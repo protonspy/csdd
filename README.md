@@ -317,6 +317,7 @@ The run ends five ways: the plan **completes** (every feat is in the ledger), th
 A run is **resumable**: re-running `csdd plan run <slug>` after a crash or a Ctrl-C picks up where it stopped. Delivered feats come from the ledger and the spec tree; how many attempts each unfinished feat has spent, the handoff its last session left, and which feats already exhausted their bound are rebuilt from the append-only session record (`.csdd/plan/<slug>/sessions.jsonl`) — so an interruption neither resets a feat's attempt budget nor throws away the handoff.
 
 ```bash
+csdd plan list                             # every plan: approval state + delivered/total feats (--json)
 csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)

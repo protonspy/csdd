@@ -16,8 +16,8 @@ type planSummary struct {
 	Drift    bool   `json:"drift"`
 	Feats    int    `json:"feats"`
 	Done     int    `json:"done"`
-	// Complete: every feat delivered. Derived here rather than by each caller
-	// comparing done against feats, so the three places that show plan state
+	// Complete: every feat delivered. Derived by plan.Summarize rather than by
+	// each caller comparing done against feats, so the places that show plan state
 	// cannot drift apart on what "finished" means.
 	Complete bool `json:"complete"`
 }
@@ -26,6 +26,16 @@ type planSummary struct {
 // plan with no feats is not complete — it is unstarted, and saying otherwise
 // would call an empty table finished.
 func isComplete(done, total int) bool { return total > 0 && done >= total }
+
+// summaryRow projects a plan.Summary onto this API's row shape. The derivation
+// lives in the plan package (shared with `csdd plan list`); only the JSON key
+// names are the web's own.
+func summaryRow(s plan.Summary) planSummary {
+	return planSummary{
+		Slug: s.Slug, Name: s.Name, Approved: s.Approved, Drift: s.Drift,
+		Feats: s.Feats, Done: s.Done, Complete: s.Complete,
+	}
+}
 
 // webFeat is one feat row in the per-plan view, merging the plan's static feat
 // metadata with its derived status.
@@ -69,31 +79,13 @@ type planDetail struct {
 // fails to load is skipped (the list stays useful) rather than failing the whole
 // request.
 func loadPlansList(root string) []planSummary {
-	slugs, err := plan.List(root)
+	sums, err := plan.Summaries(root)
 	if err != nil {
 		return []planSummary{}
 	}
-	out := make([]planSummary, 0, len(slugs))
-	for _, slug := range slugs {
-		doc, err := plan.Load(root, slug)
-		if err != nil {
-			continue
-		}
-		st, err := plan.DeriveStatus(root, doc)
-		if err != nil {
-			continue
-		}
-		s := planSummary{
-			Slug: slug, Name: st.Name, Approved: st.Approved,
-			Drift: st.Drift, Feats: len(st.Feats),
-		}
-		for _, f := range st.Feats {
-			if f.State == plan.StateDone {
-				s.Done++
-			}
-		}
-		s.Complete = isComplete(s.Done, len(st.Feats))
-		out = append(out, s)
+	out := make([]planSummary, 0, len(sums))
+	for _, s := range sums {
+		out = append(out, summaryRow(s))
 	}
 	return out
 }
