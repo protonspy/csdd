@@ -301,10 +301,16 @@ func TestSpecAuthorAgentShipped(t *testing.T) {
 	}
 	// Least-privilege tools: it writes spec artifacts, so Edit/Write/Bash are in,
 	// but it must not approve or implement.
+	// effort is high (not medium): spec authoring is the SDD contract — EARS,
+	// the design boundary map, traceability — a judgment task, and the repo runs
+	// every judgment sub-agent at high (code-reviewer, implementer,
+	// security-reviewer). A shallow first draft pushes the real authoring back
+	// onto the opus reviewer via fix-lists, defeating the cost split.
 	for _, want := range []string{
 		"name: spec-author",
 		"tools: Read, Grep, Glob, Edit, Write, Bash",
 		"model: sonnet",
+		"effort: high",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("spec-author.md frontmatter missing %q", want)
