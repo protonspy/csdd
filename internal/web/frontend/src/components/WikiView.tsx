@@ -25,14 +25,109 @@ export function WikiView({ slug, version }: { slug: string | null; version: numb
   if (!ov.present) return <NoWiki />
   if (ov.pages.length === 0) return <EmptyWiki hasIndex={ov.has_index} />
 
-  const current = (slug && ov.pages.find((p) => p.slug === slug)) || ov.pages[0]
+  // A route with no slug — or a slug that no longer exists — lands on the wiki's
+  // own front door: docs/wiki/index.md. The catalog is authored, so it is the
+  // page that says what this knowledge base is; opening whichever page happened
+  // to sort first never did.
+  const current = slug ? ov.pages.find((p) => p.slug === slug) : undefined
 
   return (
     <div className="wiki-view">
       <section className="wiki-page">
-        <WikiPagePane page={current} all={ov} version={version} />
+        {current ? (
+          <WikiPagePane page={current} all={ov} version={version} />
+        ) : ov.has_index ? (
+          <WikiIndexPane all={ov} version={version} />
+        ) : (
+          <WikiPagePane page={ov.pages[0]} all={ov} version={version} />
+        )}
       </section>
     </div>
+  )
+}
+
+const WIKI_INDEX_PATH = 'docs/wiki/index.md'
+
+// WikiIndexPane renders docs/wiki/index.md as the wiki's home page: the author's
+// own prose and categories, not a landing page synthesised from the read model.
+// Its entries point at files on disk, so they are rewritten into app routes
+// before rendering — the catalog has to navigate.
+function WikiIndexPane({ all, version }: { all: WikiOverview; version: number }) {
+  const [text, setText] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    setText(null)
+    setErr(null)
+    api
+      .file(WIKI_INDEX_PATH)
+      .then((f) => setText(f.text ?? ''))
+      .catch((e) => setErr(String(e)))
+  }, [version])
+
+  const known = useMemo(() => new Set(all.pages.map((p) => p.slug)), [all])
+  const { title, body } = useMemo(() => splitLeadingHeading(text ?? ''), [text])
+  const rendered = useMemo(() => rewriteIndexEntries(rewriteRefTokens(body), known), [body, known])
+  const unlisted = all.pages.filter((p) => !p.in_index)
+
+  return (
+    <div className="wiki-page-inner">
+      <header className="wiki-page-head">
+        <h1>{title || 'Wiki'}</h1>
+        <div className="wiki-page-meta">
+          <span className="badge muted">
+            {all.pages.length} page{all.pages.length === 1 ? '' : 's'}
+          </span>
+          {unlisted.length > 0 && <span className="badge attention">{unlisted.length} not in index.md</span>}
+        </div>
+      </header>
+
+      <div className="wiki-body">
+        {err ? (
+          <div className="banner error">{err}</div>
+        ) : text == null ? (
+          <div className="empty">Loading…</div>
+        ) : (
+          <Markdown text={rendered} />
+        )}
+      </div>
+
+      <footer className="wiki-page-foot">
+        {unlisted.length > 0 && (
+          <div className="wiki-foot-block">
+            <div className="wiki-foot-title">Not in the index</div>
+            {unlisted.map((p) => (
+              <a key={p.slug} className="chip-link" href={href('wiki', p.slug)}>
+                {p.title}
+              </a>
+            ))}
+          </div>
+        )}
+        <div className="wiki-foot-block">
+          <span className="muted small">{WIKI_INDEX_PATH}</span>
+        </div>
+      </footer>
+    </div>
+  )
+}
+
+// The pane header carries the title, so a leading `# Heading` is lifted out of
+// the body rather than rendered a second time under it.
+function splitLeadingHeading(text: string): { title: string; body: string } {
+  const m = /^\s*#\s+(.+?)[ \t]*(?:\n|$)/.exec(text)
+  if (!m) return { title: '', body: text }
+  return { title: m[1], body: text.slice(m[0].length) }
+}
+
+// index.md links a page as `[Title](pages/<slug>.md)` because it is a real file
+// beside them. In the dashboard those have to be routes: a slug that exists
+// becomes an in-app link; one that does not becomes a citation token, so a stale
+// entry renders as the broken reference it is instead of a dead file link.
+const INDEX_ENTRY_RE = /\]\(\s*(?:\.\/)?(?:[^)\s]*\/)?pages\/([^)\s/]+)\.md\s*\)/g
+
+function rewriteIndexEntries(markdown: string, known: Set<string>): string {
+  return markdown.replace(INDEX_ENTRY_RE, (_m, slug: string) =>
+    known.has(slug) ? `](${href('wiki', slug)})` : `](ref:[[${slug}]])`,
   )
 }
 

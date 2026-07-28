@@ -146,17 +146,17 @@ function PlansRail({ version, current }: { version: number; current: string | nu
 function WikiRail({ version, current }: { version: number; current: string | null }) {
   const [pages, setPages] = useState<WikiPage[]>([])
   const [categories, setCategories] = useState<string[]>([])
+  const [hasIndex, setHasIndex] = useState(false)
   useEffect(() => {
     api
       .wiki()
       .then((w) => {
         setPages(w?.pages ?? [])
         setCategories(w?.categories ?? [])
+        setHasIndex(!!w?.has_index)
       })
       .catch(() => setPages([]))
   }, [version])
-
-  if (pages.length === 0) return <div className="side-body muted small">no pages yet</div>
 
   // Grouped by the index.md catalog, in the order the catalog lists them; pages
   // absent from it fall into a trailing group (the read model sorts them last).
@@ -167,6 +167,24 @@ function WikiRail({ version, current }: { version: number; current: string | nul
 
   return (
     <>
+      {/* The index is the wiki's home page, so it is a row of its own above the
+          catalog it produced — `#/wiki` with no slug lands there. */}
+      {hasIndex && (
+        <div className="side-body">
+          <div className="resource-list">
+            <a
+              className={`rail-row resource-row ${pages.some((p) => p.slug === current) ? '' : 'active'}`}
+              href={href('wiki')}
+              title="docs/wiki/index.md"
+            >
+              <div className="resource-row-head">
+                <span className="resource-name">Index</span>
+              </div>
+            </a>
+          </div>
+        </div>
+      )}
+      {pages.length === 0 && <div className="side-body muted small">no pages yet</div>}
       {groups
         .filter((g) => g.pages.length > 0)
         .map((g) => (
