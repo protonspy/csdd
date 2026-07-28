@@ -87,8 +87,9 @@ func TestADRValidateE2E(t *testing.T) {
 	}
 
 	// The brief lists the governing ADR as a short ref and directs fetching the
-	// body via the graph; it must NOT inline the ADR title or body.
-	code, out, _ := run(t, "plan", "brief", "photos", "--feat", "upload", "--root", dir)
+	// body via the graph; it must NOT inline the ADR title or body. The context pass
+	// is off so the test never spawns a `claude` — it now runs by default.
+	code, out, _ := run(t, "plan", "brief", "photos", "--feat", "upload", "--root", dir, "--enrich-model", "none")
 	if code != 0 {
 		t.Fatalf("plan brief failed: %d", code)
 	}
