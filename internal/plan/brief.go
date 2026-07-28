@@ -11,37 +11,28 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// missionSteps is the whole-feat contract every brief carries: the session owns
-// the entire spec lifecycle and the implementation, drives its own git, and returns
-// a verdict. The runner runs no gates of its own — it checks only the artifacts a
-// `done` verdict implies (R10) — so the
-// checks the runner used to enforce become checks the session runs itself before
-// declaring the feat done — see the "Before you declare `done`" block the brief
-// writes, which splits them into the state checks the session reads itself and
-// the command gate it delegates to the `quality-gate` sub-agent.
-var missionSteps = []string{
-	"Author the spec if it does not exist yet: `csdd spec init <feat> [--flow unit|tdd|tdd-e2e]`, then for each phase DELEGATE the authoring to the `spec-author` sub-agent (sonnet): dispatch it with the feat, the phase, and any governing refs (ADRs/stack/wiki); it scaffolds (`csdd spec generate <feat> --artifact requirements|design|tasks`), consults the graph, authors the body, and runs `csdd spec validate <feat>`. REVIEW its artifact and run `csdd spec validate <feat>` yourself, then `csdd spec approve <feat> --phase requirements|design|tasks`. If the review or the validate finds gaps, RE-DISPATCH spec-author with a fix-list rather than hand-editing inline. Authoring runs on the cheap model; the JUDGMENT — review, validate, approve — stays on your (orchestrator) model. CHOOSE THE FLOW DELIBERATELY: `unit` (the default) for surfaces whose behaviors are render/CRUD states, which halves the verification round-trips per behavior; `tdd` REQUIRED for money, auth, tenancy, and anything irreversible. The flow you pick decides the shape of tasks.md, and `csdd spec validate` enforces that shape.",
-	"Implement the tasks by DELEGATING each one to the `implementer` sub-agent (Agent/Task tool) — one leaf task per sub-agent. You orchestrate and decide; the implementer executes the already-made decision on its own (fast) model under the spec's `development_flow`, so do NOT hand-write task code inline. HAND IT THE TASK, NOT THE SPEC: the dispatch carries the task text with its `_Requirements:_`/`_Boundary:_`/`_Depends:_`, the acceptance criteria those IDs name, and the `### <Component>` section of design.md that owns the boundary — you already read the spec to author it, and making every implementer re-read all of it pays that cost again per sub-agent. Dispatch `(P)` tasks in DIFFERENT `_Boundary:_` groups concurrently (worktree isolation); honor every `_Depends:_` and keep same-boundary tasks sequential. Check each task's box `[x]` in specs/<feat>/tasks.md as its implementer lands it green. (If the `implementer` sub-agent is not installed in this workspace, fall back to running the cycle skill that matches the flow yourself — `tdd-cycle` under tdd/tdd-e2e, `unit-cycle` under unit — one task at a time.)",
-	"COMMIT YOUR WORK, and commit it where you already are. You are running inside a git worktree the runner created for this feat, already checked out on this feat's own branch — do NOT create a branch, do NOT switch branches, do NOT push, and do NOT open a PR. Commit via /csdd-commit (the pre-push gate runs there) as you land each task, and make sure NOTHING is left uncommitted before you declare `done`: the runner merges your BRANCH into the run's base, so work you left in the working tree does not exist as far as the plan is concerned. The runner refuses a `done` whose worktree is dirty and hands the feat straight back. One PR covers the whole run and a human opens it after the run ends.",
-	"Record any technology or hard-to-reverse trade-off the contract does not already cover — a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line. Prefer the option that deviates least from the decided stack.",
-}
-
-// forbiddenActions is the short list the session must not touch: the approved plan
-// is the contract, and .csdd/ is the loop's operational state.
-var forbiddenActions = []string{
-	"Do NOT edit plan.md or plan.json — the approved plan is the contract. Leave .csdd/ (the loop's operational state, including progress.json) alone.",
-}
-
-// FeatBrief assembles the deterministic mission pack for one whole feat (R7). It
-// draws only on explicit content — the feat row, its seeds, the governing ADR/stack
+// FeatBrief assembles the mission pack for one whole feat (R7): what this feat is,
+// what governs it, what it is likely to touch, and what verifies it. It does NOT
+// carry the development process — how a session authors and approves its spec
+// phases, what it may delegate, what git it owns and what makes a `done` acceptable
+// live in the plan-session CLAUDE.md the runner writes into every worktree and in
+// the `plan-dev` skill, both of which the session already reads every turn. Stating
+// them a second time here cost more than the duplication: the two copies had begun
+// to disagree about the feat-exit checks, and a brief that argues against CLAUDE.md's
+// interactive STOP rules is arguing against a document the worktree no longer has.
+//
+// It draws on explicit content — the feat row, its seeds, the governing ADR/stack
 // refs (slugs/names/paths only — never ADR bodies, stack row details, or wiki
-// descriptions), the Executor Notes, and the feat's own quality gates — so the same
-// plan and feat always produce a byte-identical brief (R7.3). Compliance with the
-// governors is enforced mechanically — designConformance requires design.md to cite
-// each governing ADR, `plan validate` rejects tech outside the Decided stack, and
-// the code-reviewer gate rejects it in code — not by inlining their bodies in the
-// brief (R7.2). The autonomous run context (handoff, failure trail) is appended
-// after this by the runner, so this prefix stays stable across a feat's sessions.
+// descriptions), the Executor Notes, the plan's quality gates — plus the feat's
+// stored context pack when one exists. Compliance with the governors is enforced
+// mechanically (designConformance requires design.md to cite each governing ADR,
+// `plan validate` rejects tech outside the Decided stack, the code-reviewer gate
+// rejects it in code), not by inlining their bodies (R7.2).
+//
+// It stays deterministic (R7.3): the pack is read from disk like the seeds are, so
+// the same workspace state always renders the same brief. The autonomous run context
+// (handoff, failure trail) is appended after this by the runner, so this prefix stays
+// stable across a feat's sessions.
 func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	if _, ok := doc.Feat(feat.Slug); !ok {
 		return "", fmt.Errorf("feat %q is not in plan %q", feat.Slug, doc.Slug)
@@ -49,46 +40,16 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 
-	w("# Mission — %s / %s\n\n", doc.Slug, feat.Slug)
-	w("You are a fresh session in a self-correcting autonomous loop. Your mission is to\n")
-	w("fully deliver ONE feat of an approved csdd plan: %s. Drive the entire spec\n", feat.Slug)
-	w("lifecycle and its implementation yourself, then return the verdict schema.\n\n")
-
-	// 1. The mission contract.
-	w("## Your mission (own the whole flow)\n\n")
-	for i, s := range missionSteps {
-		w("%d. %s\n", i+1, s)
-	}
-
-	// Authority: neutralize the interactive-development STOP rules (CLAUDE.md) that
-	// otherwise make an autonomous session refuse to self-approve its spec phases and
-	// stall waiting for a human. The plan-level `plan approve` gate already carried
-	// the human authorization; inside this loop the session IS the approver.
-	w("\n**Your authority — inside this loop, YOU are the approver:**\n")
-	w("- A human already opened the gate for this whole plan by running `csdd plan approve %s`. That IS the human authorization CLAUDE.md's phase-gate and STOP rules require, and it covers every spec you author for this plan.\n", doc.Slug)
-	w("- So you approve THIS feat's spec phases yourself: after each phase validates, run `csdd spec approve %s --phase requirements|design|tasks`. Do NOT pause for a human, do NOT return `continue` because a phase \"still needs approval\", and do NOT treat approving your own spec as routing around a gate — approving it is the mission.\n", feat.Slug)
-	w("- CLAUDE.md's \"a human authorizes\" / \"STOP and surface the blocked item\" rules govern INTERACTIVE development. This is the autonomous plan loop: a blocked gate means fix the artifact until it validates, then approve and continue (use `--force` only to clear a stale prior-phase hash you have just re-validated).\n")
-	w("- Follow the `plan-dev` skill for the exact per-phase workflow and completion criteria when it is installed (`.claude/skills/plan-dev/`); it restates these rules as an executable checklist.\n")
-
-	w("\n**Forbidden actions:**\n")
-	for _, f := range forbiddenActions {
-		w("- %s\n", f)
-	}
-	w("\n**Verdict protocol:**\n")
-	w("- `done` — the WHOLE feat is delivered and every self-check below passes. The loop checks this claim against your artifacts before accepting it (see below), so never claim done on hope.\n")
-	w("- `continue` — honest partial work: you are out of room before the feat is complete. Put the handoff for your successor in `summary` (what is done, what remains, what to try next).\n")
-	w("\n")
-
-	// 2. Feat context.
-	w("## Feat: %s\n\n", feat.Slug)
+	// 1. The feat itself.
+	w("# Feat: %s — plan %s\n\n", feat.Slug, doc.Slug)
 	w("- Objective: %s\n", orDash(feat.Objective))
 	w("- Milestone: %s\n", orDash(feat.Milestone))
 	if len(feat.Depends) > 0 {
-		w("- Depends on (delivered earlier in the plan): %s\n", strings.Join(feat.Depends, ", "))
+		w("- Depends on (delivered earlier in this run): %s\n", strings.Join(feat.Depends, ", "))
 	}
 	w("\n")
 
-	// 3. Governing stack — refs only. The brief used to inline each Decided row
+	// 2. Governing stack — refs only. The brief used to inline each Decided row
 	// (choice/version/why) so a design could not drift from the stack; with the
 	// bodies gone, compliance is enforced mechanically — `csdd spec validate` +
 	// `plan validate` reject tech outside the Decided table, and the
@@ -108,7 +69,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("\n")
 	}
 
-	// 3b. Governing decisions — refs only. The brief used to inline each cited
+	// 2b. Governing decisions — refs only. The brief used to inline each cited
 	// ADR's title + body so a design could not silently ignore the decisions it
 	// was bound to; with the bodies gone, `designConformance` requires the
 	// authored design.md to cite each governing adr:<slug>, and the session
@@ -116,7 +77,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	if len(feat.ADRRefs) > 0 {
 		adrs := ScanADRs(root)
 		w("## Governing decisions (docs/adr — fetch the why; cite each in design)\n\n")
-		w("The brief no longer inlines ADR bodies. For each governor run `csdd graph explain adr:<slug>` for the decision; `csdd spec validate` requires your design.md to cite it.\n\n")
+		w("The brief does not inline ADR bodies. For each governor run `csdd graph explain adr:<slug>` for the decision; `csdd spec validate` requires your design.md to cite it.\n\n")
 		for _, slug := range feat.ADRRefs {
 			if _, res := adrs.Resolve(slug); res != ADRResolved {
 				w("- adr:%s — WARNING: does not resolve to a docs/adr record (validate should have caught this).\n", slug)
@@ -127,7 +88,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("\n")
 	}
 
-	// 4. Wiki refs — path only (the session reads what it needs, when it needs it).
+	// 3. Wiki refs — path only (the session reads what it needs, when it needs it).
 	if len(feat.WikiRefs) > 0 {
 		w("## Reference pages (read what you need; do not assume the content)\n\n")
 		for _, ref := range feat.WikiRefs {
@@ -141,7 +102,7 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("\n")
 	}
 
-	// 5. Seeds — pre-authored artifacts to fold into this feat's spec.
+	// 4. Seeds — pre-authored artifacts to fold into this feat's spec.
 	if seeds := featSeedFiles(root, doc.Slug, feat.Slug); len(seeds) > 0 {
 		w("## Seeds (pre-authored inputs for this feat's spec)\n\n")
 		for _, s := range seeds {
@@ -150,55 +111,93 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 		w("\n")
 	}
 
+	// 5. The discovered half: where this feat lives in the tree, what constrains it,
+	// what is already there. Read from disk, so the brief stays deterministic.
+	pack, err := LoadPack(root, doc.Slug, feat.Slug)
+	if err != nil {
+		// A corrupt pack is worth naming, but never worth failing a brief over: the
+		// rest of it is exact.
+		w("_(the stored context pack for this feat could not be read: %s)_\n\n", firstLine(err.Error()))
+	}
+	renderPack(&b, pack)
+
 	// 6. Executor Notes — verbatim.
 	if doc.ExecutorNotes != "" {
 		w("## Executor Notes\n\n%s\n\n", doc.ExecutorNotes)
 	}
 
-	// 7. Graph-first consultation.
-	w("## Consult the knowledge graph BEFORE reading code\n\n")
-	w("- `csdd graph query <term>` — find the nodes for a concept.\n")
-	w("- `csdd graph explain <id>` — see a node's neighborhood and provenance.\n")
-	w("- `csdd graph path <a> <b>` — trace how two artifacts connect.\n")
-	w("Traverse the graph to locate the relevant code; do not grep the whole tree.\n\n")
-
-	// 8. Self-checks. The loop trusts the session's judgment but verifies its
-	// artifacts (R10), so the brief states both halves: what only the session can
-	// check, and what the gate will check regardless of what the verdict claims.
-	w("## Before you declare `done` — run these checks YOURSELF\n\n")
-	w("Run each of these ONCE, here at feat exit — not after every task:\n\n")
-	w("- `csdd spec validate %s` (the spec is structurally sound: EARS, traceability, tasks)\n", feat.Slug)
-	w("- `csdd graph analyze --strict` (spec↔task↔component traceability holds)\n")
-	w("- every task box in specs/%s/tasks.md is `[x]`\n\n", feat.Slug)
-	w("DELEGATE the command gate to the `quality-gate` sub-agent, dispatched together\n")
-	w("with `code-reviewer` (and `security-reviewer` when auth/secrets/input were\n")
-	w("touched) once the last implementer has finished. It runs the commands below\n")
-	w("plus the Tier-3 `csdd spec test-report %s --run --lang <lang>` (coverage on,\n", feat.Slug)
-	w("no --fast) and returns PASS/FAIL with the real failing output. Running them\n")
-	w("inline instead lands the whole suite, lint and typecheck output in YOUR\n")
-	w("context, which you then re-read on every remaining turn. The reviewers are\n")
-	w("limited by their model and the gate by CPU, so they overlap for free.\n\n")
+	// 7. The plan's own verification contract.
+	w("## Quality gates for this plan\n\n")
+	w("Delegate these to the `quality-gate` sub-agent once, at feat exit:\n\n")
 	for _, g := range planGateCommands(doc) {
 		w("- %s\n", g)
 	}
-	w("\n## What the loop checks before accepting `done`\n\n")
-	w("The loop trusts your JUDGMENT — it never reviews your code or re-runs your\n")
-	w("suites — but it does check your ARTIFACTS. A `done` verdict is accepted only\n")
-	w("when all of these hold on disk:\n\n")
-	w("- every task box in specs/%s/tasks.md is `[x]`\n", feat.Slug)
-	w("- specs/%s/spec.json has all three phases approved and `ready_for_implementation` true\n", feat.Slug)
-	w("- specs/%s/test-report.json is green with no open attentions\n\n", feat.Slug)
-	w("If any of them fails, your `done` becomes a `continue` and comes back to the\n")
-	w("next session with a note naming what was missing. A feat that spends its whole\n")
-	w("attempt budget is stopped and surfaced for a human.\n\n")
-	w("An honest `continue` and a refused `done` cost the same one attempt — but the\n")
-	w("`continue` spends it carrying YOUR handoff, which says what you learned and\n")
-	w("what to try next. A refused `done` spends it to be told what you could have\n")
-	w("checked yourself.\n\n")
-	w("Only then return `{\"status\":\"done\"}`. If you ran out of room first, return\n")
-	w("`{\"status\":\"continue\"}` with the handoff in `summary`.\n")
+
+	// 8. Where the process lives. One pointer, not a copy: both documents are in the
+	// session's context already, and the copy is what drifted.
+	w("\n---\n\n")
+	w("Your authority, the cycle, delegation, git and the `done` gate are in this\n")
+	w("worktree's CLAUDE.md and the `plan-dev` skill — follow them, and do not stop\n")
+	w("for a human at a phase gate. Return `{\"status\":\"done\"}` when the whole feat is\n")
+	w("delivered, or `{\"status\":\"continue\"}` with the handoff for your successor in\n")
+	w("`summary`.\n")
 
 	return b.String(), nil
+}
+
+// renderPack writes the discovered half of the brief. Nothing here is authored by
+// csdd or by the plan: every line came from the enrichment pass and survived
+// VerifyPack, so the section exists only when there is verified content to put in it.
+func renderPack(b *strings.Builder, p *EnrichPack) {
+	if p.Empty() {
+		return
+	}
+	w := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
+
+	if len(p.Touches) > 0 {
+		w("## Where this feat lives\n\n")
+		for _, t := range p.Touches {
+			w("- `%s` — %s\n", t.Path, t.Why)
+		}
+		w("\n")
+	}
+	if len(p.Governors) > 0 {
+		w("## Governing constraints\n\n")
+		for _, g := range p.Governors {
+			if g.Declared {
+				w("- %s — %s\n", g.ID, g.Constraint)
+				continue
+			}
+			w("- %s (discovered) — %s\n", g.ID, g.Constraint)
+		}
+		w("\nA **(discovered)** governor is not in the plan's Refs column: use it as context,\n")
+		w("but `spec validate` only requires your design to cite the declared ones.\n\n")
+	}
+	if len(p.Exists) > 0 {
+		w("## Already there (do not redo)\n\n")
+		for _, s := range p.Exists {
+			w("- %s\n", s)
+		}
+		w("\n")
+	}
+	if len(p.Missing) > 0 {
+		w("## Still missing\n\n")
+		for _, s := range p.Missing {
+			w("- %s\n", s)
+		}
+		w("\n")
+	}
+	if len(p.Traps) > 0 {
+		w("## Pitfalls found in this repository\n\n")
+		for _, s := range p.Traps {
+			w("- %s\n", s)
+		}
+		w("\n")
+	}
+	if p.Flow.Choice != "" {
+		w("## Suggested flow: `%s`\n\n%s\n\n", p.Flow.Choice, p.Flow.Why)
+		w("The flow is yours to decide — this is a reading of the context, not an order.\n\n")
+	}
 }
 
 // planGateCommands renders the plan's Quality Gates as backticked commands, or a

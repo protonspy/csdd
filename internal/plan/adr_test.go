@@ -249,11 +249,6 @@ func TestBriefListsGoverningADRs(t *testing.T) {
 	if !strings.Contains(out, "adr:ghost-ref") || !strings.Contains(out, "WARNING") {
 		t.Errorf("brief should warn on the unresolved ADR ref:\n%s", out)
 	}
-	// The mission tells the session to record any technology / hard-to-reverse
-	// trade-off it makes (stack row + ADR), never adopt one silently.
-	if !strings.Contains(out, "docs/stack.md Decided row") {
-		t.Errorf("brief should carry the record-your-decisions mission line:\n%s", out)
-	}
 }
 
 func joinIssues(issues []validator.Issue) string {

@@ -91,13 +91,16 @@ func TestPlanNextAndBriefCLI(t *testing.T) {
 	if !strings.Contains(out, `"feat": "upload"`) {
 		t.Errorf("unexpected next feat: %s", out)
 	}
-	// brief prints the whole-feat mission pack for that feat.
+	// brief prints the feat's mission pack: the feat itself, what governs it and the
+	// plan's gates — the development process lives in the worktree's CLAUDE.md.
 	code, out, errOut := run(t, "plan", "brief", "photos", "--root", dir)
 	if code != 0 {
 		t.Fatalf("plan brief failed (code=%d): %s", code, errOut)
 	}
-	if !strings.Contains(out, "Mission — photos / upload") || !strings.Contains(out, "Forbidden actions") {
-		t.Errorf("brief output incomplete: %s", out)
+	for _, want := range []string{"# Feat: upload — plan photos", "Objective:", "Quality gates for this plan"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("brief output is missing %q: %s", want, out)
+		}
 	}
 }
 

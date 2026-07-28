@@ -61,7 +61,7 @@ func runPlan(args []string, templates embed.FS) int {
 
 func planRun(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
-	var root, model, effort string
+	var root, model, effort, enrichModel string
 	var autonomous, assumeYes, noTelegram bool
 	var sessionBudget float64
 	var maxIterations, stall, featAttempts, maxRetries, maxRepairs, squadLimit int
@@ -72,6 +72,7 @@ func planRun(args []string, templates embed.FS) int {
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
 	fs.StringVar(&model, "model", "opus", "Model the orchestrating session runs on (claude --model): sonnet|opus|haiku|fable or a full model ID. It reviews and decides the spec; spec authoring is delegated to the `spec-author` sub-agent (sonnet) and task implementation to the `implementer` sub-agent (each on its own, cheaper model). Empty inherits the ambient default.")
 	fs.StringVar(&effort, "effort", "medium", "Reasoning effort the orchestrating session runs at (claude --effort): low|medium|high|xhigh|max. Empty inherits the ambient default.")
+	fs.StringVar(&enrichModel, "enrich-model", "sonnet", "Model the per-feat context pass runs on (claude --model). Before each feat is dispatched it reads the worktree once and records what the feat touches, what governs it and what is already there, so the orchestrator does not rediscover it every attempt. `none` turns the pass off and briefs from the plan alone.")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
 	fs.IntVar(&maxIterations, "max-iterations", 30, "Sessions the run may spend; one iteration is one claude session.")
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
@@ -99,6 +100,11 @@ func planRun(args []string, templates embed.FS) int {
 	if squadLimit < 0 || squadLimit > planSquadLimitMax {
 		render.Err(fmt.Sprintf("--squad-limit must be between 1 and %d (got %d)", planSquadLimitMax, squadLimit))
 		return 1
+	}
+	// `none` is how a human spells "no enrichment pass"; the runner reads an empty
+	// model as disabled.
+	if strings.EqualFold(strings.TrimSpace(enrichModel), "none") {
+		enrichModel = ""
 	}
 	if autonomous {
 		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
@@ -136,6 +142,7 @@ func planRun(args []string, templates embed.FS) int {
 		FeatAttempts:  featAttempts,
 		SessionIdle:   sessionIdle,
 		SquadLimit:    squadLimit,
+		EnrichModel:   enrichModel,
 		WorktreeEntry: planEntryDoc(templates),
 		Out:           os.Stdout,
 	})
@@ -516,15 +523,18 @@ func planNext(args []string) int {
 
 func planBrief(args []string) int {
 	fs := flag.NewFlagSet("plan brief", flag.ContinueOnError)
-	var root, feat string
+	var root, feat, enrichModel string
+	var refresh bool
 	addRoot(fs, &root)
 	fs.StringVar(&feat, "feat", "", "Feat to brief (default: the sequencer's next feat).")
+	fs.BoolVar(&refresh, "refresh", false, "Re-run the context pass for this feat before printing, replacing its stored pack. This is the same pass `plan run` makes before dispatching a feat, so it is how you review — and, by editing .csdd/plan/<slug>/briefs/<feat>.json, correct — what a session will be handed.")
+	fs.StringVar(&enrichModel, "enrich-model", "sonnet", "Model --refresh runs the context pass on (claude --model).")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
 	}
 	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan brief SLUG [--feat F]")
+		render.Err("usage: " + prog() + " plan brief SLUG [--feat F] [--refresh]")
 		return 1
 	}
 	r, doc, code := resolvePlan(root, positionals[0])
@@ -550,6 +560,26 @@ func planBrief(args []string) int {
 			return 1
 		}
 		target = f
+	}
+	// --refresh runs the pass against the workspace itself rather than a worktree:
+	// there is no run in flight to have cut one, and the tree a human is looking at
+	// is the tree they are asking about. Diagnostics go to stderr so the brief on
+	// stdout stays a clean artifact to pipe or diff.
+	if refresh {
+		if err := plan.RemovePack(r, doc.Slug, target.Slug); err != nil {
+			render.Err(err.Error())
+			return 1
+		}
+		hook := plan.EnrichHook(enrichModel)
+		if hook == nil {
+			render.Err("--refresh needs a model: pass --enrich-model")
+			return 1
+		}
+		if plan.EnsurePack(r, doc, target, r, hook, func(format string, a ...any) {
+			render.Warn(strings.TrimSpace(fmt.Sprintf(format, a...)))
+		}) == nil {
+			render.Warn("the context pass produced nothing for " + target.Slug + "; briefing from the plan alone")
+		}
 	}
 	out, err := plan.FeatBrief(r, doc, target)
 	if err != nil {

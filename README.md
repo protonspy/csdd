@@ -302,6 +302,10 @@ csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
 
 The session's verdict declares one of three intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass), `continue` (honest partial work; the summary is the handoff to the next session on the same feat), or `blocked` (the feat turned out to need another feat of this plan that has not landed — it parks without spending an attempt, and the discovered edge is recorded in `.csdd/plan/<slug>/discovered-deps.json`, never written back into `plan.md`).
 
+What a session is handed is **the feat, not the method**. The brief carries the feat row, its governing refs, the seeds, the Executor Notes and the plan's Quality Gates; the development process — the session's authority to approve its own phases, the cycle, what it delegates, the git it owns and what makes a `done` acceptable — lives in the plan-session `CLAUDE.md` written into each worktree and in the `plan-dev` skill, both of which the session reads every turn anyway.
+
+Before a feat is dispatched, a **context pass** (`--enrich-model`, default `sonnet`) reads its worktree once and records what the feat touches, which decisions and stack rows govern it, what is already there and what is not, into `.csdd/plan/<slug>/briefs/<feat>.json`. Every path and every `adr:`/`stack:` citation is checked against the workspace before it is stored — an unverifiable claim is dropped, not rendered — and the pack is keyed to the feat row, so a feat's later attempts reuse it instead of rediscovering the same tree at the orchestrator's price. `csdd plan brief <slug> --feat F --refresh` re-runs the pass and prints the brief, which is how you review (and, by editing the JSON, correct) what a session will be handed. `--enrich-model none` turns the pass off and briefs from the plan alone.
+
 Feats are handed out in **dependency order**, not table order: the `Depends` column the plan already declares is what schedules the run, so a feat is only dispatched once everything it builds on is delivered. If a feat is blocked, everything downstream of it is reported as unreachable with the root cause named, instead of being dispatched into a tree where its foundation does not exist.
 
 `--squad-limit N` (1..6, default 1) runs up to **N sessions at once, each on its own feat and each in its own git worktree**. Filesystem isolation is what makes it safe: every concurrent session gets a worktree under `.csdd/plan/<slug>/trees/<feat>` on branch `csdd/<slug>/<feat>`, so no two agents ever share an index, a build, or a half-written file. Scheduling is the `Depends` graph alone — the `(P)` column is **not** consulted, because it used to mean "consents to share a working tree" and feats no longer share one.
@@ -323,6 +327,8 @@ csdd plan run    <slug>                     # bypass-mode loop — alerts + asks
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
                         --squad-limit 3      # run up to 3 sessions at once (1..6, default 1), one git worktree each
+                        --enrich-model none  # skip the per-feat context pass (default: sonnet)
+csdd plan brief  <slug> --feat F --refresh  # re-run the context pass and print what the session gets
 ```
 
 #### When a run ends without completing

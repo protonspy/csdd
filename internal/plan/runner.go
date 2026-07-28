@@ -62,6 +62,11 @@ type Hooks struct {
 	// sleeps until the session window reopens; tests inject a stub that records the
 	// duration and returns immediately.
 	Sleep func(d time.Duration)
+	// Enrich runs the cheap discovery pass that produces a feat's context pack,
+	// returning the raw JSON its model answered with. Nil disables enrichment: the
+	// brief then carries only what the plan states, which is the behavior every run
+	// had before the pass existed.
+	Enrich func(EnrichRequest) (string, error)
 }
 
 // SessionRequest is everything one dispatch hands the Session hook. It is a struct
@@ -125,6 +130,13 @@ type RunOptions struct {
 	// ledger, the journal and the run's bookkeeping are written in exactly the order
 	// they were before — only the sessions themselves overlap.
 	SquadLimit int
+	// EnrichModel is the claude --model the context-enrichment pass runs on. It is a
+	// separate knob from Model because it is a separate job: the pass reads the tree
+	// and fills a bounded schema, which a cheap model does well, and it exists to
+	// keep that reading OFF the orchestrator's model. Empty disables enrichment
+	// entirely — the brief then carries only what the plan states. The CLI defaults
+	// it to sonnet (--enrich-model, `none` to turn it off).
+	EnrichModel string
 	// WorktreeEntry is the CLAUDE.md written into each feat's worktree, replacing
 	// the repository's own for the life of the run. Empty leaves the repository's
 	// file in place. The CLI fills it from the plan-session template; the runner
@@ -452,22 +464,30 @@ func openDispatch(opts RunOptions, doc *PlanDoc, feat Feat, st *runState, iter i
 	logf := runLogf(opts)
 	key := feat.Slug
 
-	base, err := FeatBrief(opts.Root, doc, feat)
-	if err != nil {
-		st.hist(key).add("brief assembly failed", err.Error())
-		journal(opts, feat.Slug, "failed", "brief assembly: "+firstLine(err.Error()))
-		logf("  ✗ brief error: %v", err)
-		return nil
-	}
-	// The worktree is prepared before the attempt is charged, for the same reason
-	// the brief is: a feat that could not be given a tree to work in has not been
-	// tried, and spending one of its bounded attempts on the runner's own failure
-	// would surface it as unable to converge (R1.2, R10.4).
+	// The worktree is prepared before the attempt is charged: a feat that could not
+	// be given a tree to work in has not been tried, and spending one of its bounded
+	// attempts on the runner's own failure would surface it as unable to converge
+	// (R1.2, R10.4). It also comes first because both steps below read it — the
+	// enricher describes the tree the session will actually work in, which for a feat
+	// with dependencies is only correct after they have been merged into it.
 	dir, err := opts.Hooks.Trees.Ensure(feat.Slug)
 	if err != nil {
 		st.hist(key).add("worktree setup failed", err.Error())
 		journal(opts, feat.Slug, "failed", "worktree setup: "+firstLine(err.Error()))
 		logf("  ✗ could not prepare an isolated worktree for %s: %v", feat.Slug, err)
+		return nil
+	}
+	// Discovery, once per feat rather than once per attempt: EnsurePack reuses the
+	// stored pack whenever the feat row that produced it has not changed. It cannot
+	// fail the dispatch — enrichment is an optimization over the deterministic brief,
+	// so every failure inside it is logged and the brief renders without it.
+	EnsurePack(opts.Root, doc, feat, dir, opts.Hooks.Enrich, logf)
+
+	base, err := FeatBrief(opts.Root, doc, feat)
+	if err != nil {
+		st.hist(key).add("brief assembly failed", err.Error())
+		journal(opts, feat.Slug, "failed", "brief assembly: "+firstLine(err.Error()))
+		logf("  ✗ brief error: %v", err)
 		return nil
 	}
 
@@ -1137,6 +1157,7 @@ func fillRunDefaults(opts *RunOptions) {
 		tty:  tty,
 		now:  opts.Hooks.Now,
 	})
+	installEnrichHook(&opts.Hooks, opts.EnrichModel)
 }
 
 // syncWriter serializes writes to one destination so concurrent sessions cannot
