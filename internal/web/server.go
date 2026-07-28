@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -76,7 +77,7 @@ func Serve(opts Options) int {
 	}
 
 	a := newAuth(opts.Auth, opts.Password)
-	localURL := "http://" + ln.Addr().String()
+	localURL := advertisedURL(ln, opts.Host)
 
 	// Catch both Ctrl-C and SIGTERM (kill / service stop) so the tunnel teardown
 	// (e.g. the pinggy ssh child) always runs and the public endpoint is freed.
@@ -96,7 +97,7 @@ func Serve(opts Options) int {
 		}
 	}
 
-	printStartup(localURL, publicURL, opts.Provider, tunnelPass, a, opts.Root)
+	printStartup(localURL, publicURL, opts.Provider, tunnelPass, a, opts.Root, isWildcardHost(opts.Host))
 
 	if err := serve(ctx, ln, opts, a, publicURL); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		render.Err("csdd web: " + err.Error())
@@ -165,9 +166,14 @@ func serve(ctx context.Context, ln net.Listener, opts Options, a *auth, publicUR
 // printStartup writes the access banner: the local URL, the auth token and a
 // one-click magic link, and the public tunnel URL when enabled. provider names
 // the tunnel in use; tunnelPass is the loca.lt interstitial password (this
-// machine's public IP), set only for localtunnel.
-func printStartup(localURL, publicURL, provider, tunnelPass string, a *auth, root string) {
+// machine's public IP), set only for localtunnel. allIfaces marks a wildcard
+// bind, whose remaining hop to a remote client is the host/cloud firewall — the
+// one part of "expose this dashboard" csdd cannot do for the user.
+func printStartup(localURL, publicURL, provider, tunnelPass string, a *auth, root string, allIfaces bool) {
 	render.OK("csdd web → " + localURL)
+	if allIfaces {
+		render.Info("bound to all interfaces — a remote client also needs this port opened in the host firewall (ufw/iptables) and in any cloud provider firewall or security group.")
+	}
 	if a.enabled {
 		render.Info("auth token: " + render.Bold(a.token))
 		render.Info("open authenticated: " + entryURL(localURL, a))
@@ -205,6 +211,47 @@ func entryURL(base string, a *auth) string {
 		return base + "/token/" + a.token
 	}
 	return base
+}
+
+// advertisedURL turns the bound listener into a URL a human can actually open.
+// A wildcard bind is the case that needs help: Go serves --host 0.0.0.0 from a
+// dual-stack socket, so ln.Addr() reads back as "[::]:7777" — an address no
+// browser can reach and, worse, the base of the printed magic link. Substitute
+// the machine's own interface address, which is what a LAN or VPS client types.
+func advertisedURL(ln net.Listener, host string) string {
+	if !isWildcardHost(host) {
+		return "http://" + ln.Addr().String()
+	}
+	port := strconv.Itoa(tcpPort(ln))
+	if ip := primaryIP(); ip != "" {
+		return "http://" + net.JoinHostPort(ip, port)
+	}
+	return "http://" + net.JoinHostPort("localhost", port) // no routable NIC
+}
+
+// primaryIP reports this machine's first non-loopback interface address,
+// preferring IPv4 because that is the form users type. On a VPS behind NAT this
+// is the private address rather than the public one, which is still far more
+// useful than the wildcard it replaces. Returns "" when nothing is routable.
+func primaryIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	var v6 string
+	for _, a := range addrs {
+		n, ok := a.(*net.IPNet)
+		if !ok || n.IP.IsLoopback() || n.IP.IsLinkLocalUnicast() {
+			continue
+		}
+		if v4 := n.IP.To4(); v4 != nil {
+			return v4.String()
+		}
+		if v6 == "" {
+			v6 = n.IP.String()
+		}
+	}
+	return v6
 }
 
 func tcpPort(ln net.Listener) int {
