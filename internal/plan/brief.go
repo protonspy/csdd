@@ -20,7 +20,7 @@ import (
 // writes, which splits them into the state checks the session reads itself and
 // the command gate it delegates to the `quality-gate` sub-agent.
 var missionSteps = []string{
-	"Author the spec if it does not exist yet: `csdd spec init <feat> [--flow unit|tdd|tdd-e2e]`, then generate, validate, and approve each phase — `csdd spec generate <feat> --artifact requirements|design|tasks`, `csdd spec validate <feat>`, `csdd spec approve <feat> --phase requirements|design|tasks`. This authoring is YOUR job — the decisions run on your (orchestrator) model. CHOOSE THE FLOW DELIBERATELY: `tdd` (the default) for money, auth, tenancy, and anything irreversible; `unit` for surfaces whose behaviors are render/CRUD states, which halves the verification round-trips per behavior. The flow you pick decides the shape of tasks.md, and `csdd spec validate` enforces that shape.",
+	"Author the spec if it does not exist yet: `csdd spec init <feat> [--flow unit|tdd|tdd-e2e]`, then for each phase DELEGATE the authoring to the `spec-author` sub-agent (sonnet): dispatch it with the feat, the phase, and any governing refs (ADRs/stack/wiki); it scaffolds (`csdd spec generate <feat> --artifact requirements|design|tasks`), consults the graph, authors the body, and runs `csdd spec validate <feat>`. REVIEW its artifact and run `csdd spec validate <feat>` yourself, then `csdd spec approve <feat> --phase requirements|design|tasks`. If the review or the validate finds gaps, RE-DISPATCH spec-author with a fix-list rather than hand-editing inline. Authoring runs on the cheap model; the JUDGMENT — review, validate, approve — stays on your (orchestrator) model. CHOOSE THE FLOW DELIBERATELY: `unit` (the default) for surfaces whose behaviors are render/CRUD states, which halves the verification round-trips per behavior; `tdd` REQUIRED for money, auth, tenancy, and anything irreversible. The flow you pick decides the shape of tasks.md, and `csdd spec validate` enforces that shape.",
 	"Implement the tasks by DELEGATING each one to the `implementer` sub-agent (Agent/Task tool) — one leaf task per sub-agent. You orchestrate and decide; the implementer executes the already-made decision on its own (fast) model under the spec's `development_flow`, so do NOT hand-write task code inline. HAND IT THE TASK, NOT THE SPEC: the dispatch carries the task text with its `_Requirements:_`/`_Boundary:_`/`_Depends:_`, the acceptance criteria those IDs name, and the `### <Component>` section of design.md that owns the boundary — you already read the spec to author it, and making every implementer re-read all of it pays that cost again per sub-agent. Dispatch `(P)` tasks in DIFFERENT `_Boundary:_` groups concurrently (worktree isolation); honor every `_Depends:_` and keep same-boundary tasks sequential. Check each task's box `[x]` in specs/<feat>/tasks.md as its implementer lands it green. (If the `implementer` sub-agent is not installed in this workspace, fall back to running the cycle skill that matches the flow yourself — `tdd-cycle` under tdd/tdd-e2e, `unit-cycle` under unit — one task at a time.)",
 	"COMMIT YOUR WORK, and commit it where you already are. You are running inside a git worktree the runner created for this feat, already checked out on this feat's own branch — do NOT create a branch, do NOT switch branches, do NOT push, and do NOT open a PR. Commit via /csdd-commit (the pre-push gate runs there) as you land each task, and make sure NOTHING is left uncommitted before you declare `done`: the runner merges your BRANCH into the run's base, so work you left in the working tree does not exist as far as the plan is concerned. The runner refuses a `done` whose worktree is dirty and hands the feat straight back. One PR covers the whole run and a human opens it after the run ends.",
 	"Record any technology or hard-to-reverse trade-off the contract does not already cover — a docs/stack.md Decided row, plus a docs/adr record when the why needs more than a line. Prefer the option that deviates least from the decided stack.",
@@ -33,12 +33,15 @@ var forbiddenActions = []string{
 }
 
 // FeatBrief assembles the deterministic mission pack for one whole feat (R7). It
-// draws only on explicit content — the feat row, its seeds, resolved stack rows,
-// resolved wiki refs (path + description, never the body), the Executor Notes, and
-// the feat's own quality gates — so the same plan and feat always produce a
-// byte-identical brief (R7.3). It inlines stack rows in full but never wiki bodies
-// (R7.2). The autonomous run context (handoff, failure trail) is appended after
-// this by the runner, so this prefix stays stable across a feat's sessions.
+// draws only on explicit content — the feat row, its seeds, the governing ADR/stack
+// refs (slugs/names/paths only — never ADR bodies, stack row details, or wiki
+// descriptions), the Executor Notes, and the feat's own quality gates — so the same
+// plan and feat always produce a byte-identical brief (R7.3). Compliance with the
+// governors is enforced mechanically — designConformance requires design.md to cite
+// each governing ADR, `plan validate` rejects tech outside the Decided stack, and
+// the code-reviewer gate rejects it in code — not by inlining their bodies in the
+// brief (R7.2). The autonomous run context (handoff, failure trail) is appended
+// after this by the runner, so this prefix stays stable across a feat's sessions.
 func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	if _, ok := doc.Feat(feat.Slug); !ok {
 		return "", fmt.Errorf("feat %q is not in plan %q", feat.Slug, doc.Slug)
@@ -85,63 +88,55 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	}
 	w("\n")
 
-	// 3. Stack rows — inlined in full (they are one-line contracts).
+	// 3. Governing stack — refs only. The brief used to inline each Decided row
+	// (choice/version/why) so a design could not drift from the stack; with the
+	// bodies gone, compliance is enforced mechanically — `csdd spec validate` +
+	// `plan validate` reject tech outside the Decided table, and the
+	// `code-reviewer` gate rejects it in code. The session fetches a row's detail
+	// via `csdd graph query <term>` when it needs it.
 	if len(feat.StackRefs) > 0 {
 		rows := decidedRows(root)
-		w("## Tech contract (docs/stack.md — use ONLY these)\n\n")
+		w("## Governing stack (docs/stack.md Decided — use ONLY these)\n\n")
+		w("Fetch a row's version/why via `csdd graph query <term>`; do NOT introduce tech outside this list — the `code-reviewer` gate rejects it.\n\n")
 		for _, name := range feat.StackRefs {
-			if r, ok := rows[normalizeTechName(name)]; ok {
-				w("- **%s** (%s) — version %s. %s", orDash(r.Choice), orDash(r.Domain), orDash(r.Version), orDash(r.Why))
-				if r.Refs != "" {
-					w(" Refs: %s", r.Refs)
-				}
-				w("\n")
+			if _, ok := rows[normalizeTechName(name)]; ok {
+				w("- stack:%s\n", name)
 			} else {
-				w("- **%s** — WARNING: not found in the Decided table (validate should have caught this).\n", name)
+				w("- stack:%s — WARNING: not found in the Decided table (validate should have caught this).\n", name)
 			}
 		}
 		w("\n")
 	}
 
-	// 3b. Decisions — cited ADRs inlined in full (they are short by format, the
-	// stack-row treatment; the why travels with the what, principle 4).
+	// 3b. Governing decisions — refs only. The brief used to inline each cited
+	// ADR's title + body so a design could not silently ignore the decisions it
+	// was bound to; with the bodies gone, `designConformance` requires the
+	// authored design.md to cite each governing adr:<slug>, and the session
+	// fetches the decision itself via `csdd graph explain adr:<slug>`.
 	if len(feat.ADRRefs) > 0 {
 		adrs := ScanADRs(root)
-		w("## Decisions (docs/adr — the why)\n\n")
+		w("## Governing decisions (docs/adr — fetch the why; cite each in design)\n\n")
+		w("The brief no longer inlines ADR bodies. For each governor run `csdd graph explain adr:<slug>` for the decision; `csdd spec validate` requires your design.md to cite it.\n\n")
 		for _, slug := range feat.ADRRefs {
-			adr, res := adrs.Resolve(slug)
-			if res != ADRResolved {
-				w("- **adr:%s** — WARNING: does not resolve to a docs/adr record (validate should have caught this).\n", slug)
+			if _, res := adrs.Resolve(slug); res != ADRResolved {
+				w("- adr:%s — WARNING: does not resolve to a docs/adr record (validate should have caught this).\n", slug)
 				continue
 			}
-			w("### %s (adr:%s)\n\n", orDash(adr.Title), adr.Slug)
-			if adr.Status == ADRStatusSuperseded {
-				w("_status: superseded")
-				if adr.SupersededBy != 0 {
-					w(" by %s", fourDigit(adr.SupersededBy))
-				}
-				w("_\n\n")
-			}
-			if adr.Body != "" {
-				w("%s\n\n", adr.Body)
-			}
+			w("- adr:%s\n", slug)
 		}
+		w("\n")
 	}
 
-	// 4. Wiki refs — path + description only (the session reads what it needs).
+	// 4. Wiki refs — path only (the session reads what it needs, when it needs it).
 	if len(feat.WikiRefs) > 0 {
 		w("## Reference pages (read what you need; do not assume the content)\n\n")
 		for _, ref := range feat.WikiRefs {
-			path, desc := wikiRefInfo(root, ref)
+			path, _ := wikiRefInfo(root, ref)
 			if path == "" {
 				w("- [[%s]] — WARNING: no matching page under docs/wiki/pages/.\n", ref)
 				continue
 			}
-			if desc != "" {
-				w("- %s — %s\n", path, desc)
-			} else {
-				w("- %s\n", path)
-			}
+			w("- %s\n", path)
 		}
 		w("\n")
 	}

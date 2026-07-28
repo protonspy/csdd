@@ -58,16 +58,20 @@ func TestBriefContentAndDeterminism(t *testing.T) {
 		t.Errorf("brief is not byte-deterministic")
 	}
 
-	// Stack row inlined in full (the Decided row for Go).
-	if !strings.Contains(out, "Go") || !strings.Contains(out, "1.22") {
-		t.Errorf("brief should inline the full stack row: %s", out)
+	// Stack row listed as a short ref only (the Decided row for go); version/why
+	// are NOT inlined — the session fetches them via the graph when it needs them.
+	if !strings.Contains(out, "stack:go") {
+		t.Errorf("brief should list the governing stack ref: %s", out)
 	}
-	// Wiki ref as path + description, NOT the page body.
+	if strings.Contains(out, "1.22") {
+		t.Errorf("brief must NOT inline the stack row version/why (the gate enforces compliance now): %s", out)
+	}
+	// Wiki ref as path only — NOT the frontmatter description and NOT the page body.
 	if !strings.Contains(out, "docs/wiki/pages/storage-design.md") {
 		t.Errorf("brief should cite the wiki page path")
 	}
-	if !strings.Contains(out, "How photos are stored") {
-		t.Errorf("brief should include the wiki frontmatter description")
+	if strings.Contains(out, "How photos are stored") {
+		t.Errorf("brief must NOT inline the wiki frontmatter description: %s", out)
 	}
 	if strings.Contains(out, "SECRET_BODY_TOKEN") {
 		t.Errorf("brief must NOT inline the wiki page body (token leaked)")

@@ -111,6 +111,37 @@ func TestSpecGenerateBugfixAndResearch(t *testing.T) {
 	}
 }
 
+// TestSpecGenerateTasksShapeFollowsFlow guards the flow-aware tasks scaffold:
+// under `unit` the generated tasks.md is implementation-then-cover (no RED/GREEN
+// pair); under `tdd` it is the RED→GREEN pair. Generating the wrong shape would
+// hand the author a tasks.md `csdd spec validate` immediately rejects.
+func TestSpecGenerateTasksShapeFollowsFlow(t *testing.T) {
+	for _, tc := range []struct {
+		flow         string
+		wantRedGreen bool
+	}{
+		{"unit", false},
+		{"tdd", true},
+	} {
+		t.Run(tc.flow, func(t *testing.T) {
+			dir := freshWorkspace(t)
+			if code, _, _ := run(t, "spec", "init", "feat", "--flow", tc.flow, "--root", dir); code != 0 {
+				t.Fatalf("spec init --flow %s failed", tc.flow)
+			}
+			// tasks normally needs design approved; --force bypasses the gate so we
+			// exercise only the template-selection branch.
+			if code, _, _ := run(t, "spec", "generate", "feat", "--artifact", "tasks", "--force", "--root", dir); code != 0 {
+				t.Fatalf("spec generate tasks failed")
+			}
+			tasks := readFile(t, filepath.Join(dir, "specs", "feat", "tasks.md"))
+			hasRedGreen := strings.Contains(tasks, "RED —") || strings.Contains(tasks, "GREEN —")
+			if hasRedGreen != tc.wantRedGreen {
+				t.Errorf("flow %q: RED/GREEN present=%v, want %v", tc.flow, hasRedGreen, tc.wantRedGreen)
+			}
+		})
+	}
+}
+
 // TestSpecGenerateAuxiliaryDoesNotClobberPhase guards the fix where research and
 // bugfix (auxiliary, ungated artifacts) must not reset the phase chain or the
 // approvals state advanced by the main requirements/design/tasks flow.

@@ -92,7 +92,7 @@ type RunOptions struct {
 	// is omitted. The CLI defaults these to opus / high.
 	Model         string
 	Effort        string
-	MaxIterations int // sessions the run may spend; default 100
+	MaxIterations int // sessions the run may spend; default 30
 	// Stall ends the run after this many consecutive iterations that FAILED (a
 	// session error or an unparseable verdict) with no forward motion. Honest
 	// partial work (`continue`) resets it, so the stall guard catches a broken
@@ -106,7 +106,7 @@ type RunOptions struct {
 	// `continue`, and `continue` resets the stall guard — so without this bound a
 	// session that is confidently wrong about being finished would be re-dispatched
 	// until the global iteration cap, turning a silent false-done into a silent
-	// infinite loop. The two ship together. Default 8.
+	// infinite loop. The two ship together. Default 4.
 	FeatAttempts int
 	// SessionIdle bounds how long a session may make no progress at all — no
 	// output on its event stream and no CPU anywhere in its process group — before
@@ -125,8 +125,13 @@ type RunOptions struct {
 	// ledger, the journal and the run's bookkeeping are written in exactly the order
 	// they were before — only the sessions themselves overlap.
 	SquadLimit int
-	Out        io.Writer
-	Hooks      Hooks
+	// WorktreeEntry is the CLAUDE.md written into each feat's worktree, replacing
+	// the repository's own for the life of the run. Empty leaves the repository's
+	// file in place. The CLI fills it from the plan-session template; the runner
+	// only carries it to the tree keeper.
+	WorktreeEntry string
+	Out           io.Writer
+	Hooks         Hooks
 }
 
 // Run outcomes, chosen so the CLI can surface them as distinct exit codes.
@@ -193,7 +198,7 @@ func Run(opts RunOptions) (RunSummary, error) {
 		if err != nil {
 			return RunSummary{}, err
 		}
-		opts.Hooks.Trees = gitTrees{root: opts.Root, slug: opts.Slug, base: base}
+		opts.Hooks.Trees = gitTrees{root: opts.Root, slug: opts.Slug, base: base, logf: logf, entry: opts.WorktreeEntry}
 		h = opts.Hooks
 		logf("worktrees: one per feat, branched from and merged back into %s", base)
 		if specsAreIgnored(opts.Root) {
@@ -1097,13 +1102,13 @@ func fillRunDefaults(opts *RunOptions) {
 		opts.SessionBudget = 0
 	}
 	if opts.MaxIterations <= 0 {
-		opts.MaxIterations = 100
+		opts.MaxIterations = 30
 	}
 	if opts.Stall <= 0 {
 		opts.Stall = 10
 	}
 	if opts.FeatAttempts <= 0 {
-		opts.FeatAttempts = 8
+		opts.FeatAttempts = 4
 	}
 	if opts.Out == nil {
 		opts.Out = io.Discard

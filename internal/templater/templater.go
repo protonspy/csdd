@@ -220,3 +220,17 @@ func WorkflowTemplateFiles(efs fs.FS) (map[string]string, error) {
 
 	return out, nil
 }
+
+// PlanEntry is the lean CLAUDE.md the plan runner writes into each feat's
+// worktree. It is static: the file has no placeholders, because anything
+// interpolated per feat would be a byte the session pays for on every turn.
+//
+// It exists as a separate template rather than a variant of the root CLAUDE.md
+// because the two address different readers. The root file governs INTERACTIVE
+// development, where a human authorizes each phase gate; a plan session has no
+// human and must approve its own phases, so the root file's rules are not merely
+// verbose there — they are wrong, and the mission brief has to spend a section
+// undoing them.
+func PlanEntry(efs fs.FS) (string, error) {
+	return Static(efs, "templates/plan/CLAUDE.md.tmpl")
+}

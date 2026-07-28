@@ -12,7 +12,7 @@ Preflight first: `csdd plan status <slug>` must show the plan **approved** and
 **drift-free**. Then:
 
 - `csdd plan run <slug>` — the loop spawns one fresh session per iteration with
-  `--dangerously-skip-permissions` (default cap 100, `--max-iterations`). Each
+  `--dangerously-skip-permissions` (default cap 30, `--max-iterations`). Each
   session is handed ONE whole feat's mission brief and drives the entire flow
   itself. Run it inside the hardened sandbox: the runner checks
   `csdd sandbox doctor` first, and when isolation is NOT verified it alerts and

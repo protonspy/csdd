@@ -213,7 +213,7 @@ status: draft
 - verify: make check
 `
 
-func TestBriefInlinesADRs(t *testing.T) {
+func TestBriefListsGoverningADRs(t *testing.T) {
 	root := setupWorkspace(t, "p", adrBriefPlan)
 	writeADRs(t, root, map[string]string{
 		"0001-pick-store.md": "# We store records under docs/adr\n\nDECISION_BODY_TOKEN: append-only, project-scoped.\n",
@@ -234,12 +234,16 @@ func TestBriefInlinesADRs(t *testing.T) {
 	if out2, _ := FeatBrief(root, doc, feat); out != out2 {
 		t.Errorf("ADR brief is not byte-deterministic")
 	}
-	// The resolved ADR is inlined in full (title + body).
-	if !strings.Contains(out, "We store records under docs/adr") {
-		t.Errorf("brief should inline the ADR title:\n%s", out)
+	// The brief lists the governing ADR as a short ref, NOT inlined in full: the
+	// body must not leak, and the session is directed to fetch it via the graph.
+	if !strings.Contains(out, "adr:pick-store") {
+		t.Errorf("brief should list the governing ADR ref:\n%s", out)
 	}
-	if !strings.Contains(out, "DECISION_BODY_TOKEN") {
-		t.Errorf("brief should inline the ADR body in full (unlike wiki):\n%s", out)
+	if strings.Contains(out, "DECISION_BODY_TOKEN") {
+		t.Errorf("brief must NOT inline the ADR body (the gate enforces citation now):\n%s", out)
+	}
+	if !strings.Contains(out, "csdd graph explain adr:") {
+		t.Errorf("brief should direct the session to fetch the ADR via graph explain:\n%s", out)
 	}
 	// A broken ADR ref is a WARNING, not a hard omission.
 	if !strings.Contains(out, "adr:ghost-ref") || !strings.Contains(out, "WARNING") {

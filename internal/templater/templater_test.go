@@ -187,7 +187,7 @@ func TestShippedArtifactsPresent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"implementer.md", "code-reviewer.md", "security-reviewer.md", "quality-gate.md",
+		"implementer.md", "spec-author.md", "code-reviewer.md", "security-reviewer.md", "quality-gate.md",
 	} {
 		if _, ok := agents[name]; !ok {
 			t.Errorf("shipped agents missing %q", name)
@@ -287,9 +287,68 @@ func TestImplementerAgentShipped(t *testing.T) {
 	}
 }
 
-// TestImplementerAgentEncodesDiscipline covers requirements 2.1–2.6, 4.1–4.3: the
-// agent body encodes the per-task discipline, defers language specifics to
-// steering/skills, and documents how to specialize it.
+// TestSpecAuthorAgentShipped covers the spec-author agent: it ships alongside the
+// other agents, drafts (never approves) one spec phase on the cheap sonnet model,
+// scaffolds via `csdd spec generate`, and defers approval to the orchestrator.
+func TestSpecAuthorAgentShipped(t *testing.T) {
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, ok := agents["spec-author.md"]
+	if !ok {
+		t.Fatal("AgentFiles is missing spec-author.md")
+	}
+	// Least-privilege tools: it writes spec artifacts, so Edit/Write/Bash are in,
+	// but it must not approve or implement.
+	// effort is high (not medium): spec authoring is the SDD contract — EARS,
+	// the design boundary map, traceability — a judgment task, and the repo runs
+	// every judgment sub-agent at high (code-reviewer, implementer,
+	// security-reviewer). A shallow first draft pushes the real authoring back
+	// onto the opus reviewer via fix-lists, defeating the cost split.
+	for _, want := range []string{
+		"name: spec-author",
+		"tools: Read, Grep, Glob, Edit, Write, Bash",
+		"model: sonnet",
+		"effort: high",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("spec-author.md frontmatter missing %q", want)
+		}
+	}
+	if !strings.Contains(body, "description:") {
+		t.Error("spec-author.md missing a description")
+	}
+}
+
+// TestSpecAuthorAgentEncodesDiscipline pins the authoring discipline and the
+// hand-off to the orchestrator: scaffold via generate, consult the graph, write
+// to EARS/traceability, validate, and never approve.
+func TestSpecAuthorAgentEncodesDiscipline(t *testing.T) {
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := agents["spec-author.md"]
+	for _, want := range []string{
+		"csdd spec generate",        // scaffold, not hand-write
+		"graph",                     // consult the knowledge graph
+		"EARS",                      // requirements contract
+		"Requirements Traceability", // design contract
+		"csdd spec validate",        // self-validate before reporting
+		"do not approve",            // the orchestrator owns approval
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("spec-author.md should reference %q", want)
+		}
+	}
+	// It names the approve command only to forbid it — never to instruct calling it.
+	for _, bad := range []string{"csdd spec approve <feat>", "spec approve <feat>"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("spec-author.md must not instruct approving its own phase: %q", bad)
+		}
+	}
+}
 func TestImplementerAgentEncodesDiscipline(t *testing.T) {
 	agents, err := AgentFiles(FS)
 	if err != nil {

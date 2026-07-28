@@ -59,12 +59,16 @@ var knownSpecKeys = []string{
 }
 
 // defaultDevelopmentFlow is the flow assumed when none is selected and steering
-// declares no default. It keeps csdd's test-first posture as the default.
-const defaultDevelopmentFlow = "tdd"
+// declares no default. `unit` is the default: implementation first, with a unit
+// test covering the behavior in the same task — the lightest posture that still
+// keeps every behavior tested. `tdd` (RED→GREEN) is REQUIRED for money, auth,
+// tenancy, and anything irreversible; set it explicitly (steering default or
+// --flow) where those guarantees matter.
+const defaultDevelopmentFlow = "unit"
 
 // developmentFlows is the closed set of selectable development flows:
-//   - unit:    tests written after the code (no RED-first ritual)
-//   - tdd:     test-first RED→GREEN (the default)
+//   - unit:    implementation first, then a unit test covering it in the same task (the default)
+//   - tdd:     test-first RED→GREEN — required for money/auth/tenancy/irreversible surfaces
 //   - tdd-e2e: TDD plus end-to-end coverage of golden and error flows
 var developmentFlows = []string{"unit", "tdd", "tdd-e2e"}
 
@@ -228,7 +232,7 @@ func specInit(args []string, templates embed.FS) int {
 	var opts SpecInitOptions
 	addRoot(fs, &opts.Root)
 	fs.StringVar(&opts.Language, "language", "en", "Spec language (default: en).")
-	fs.StringVar(&opts.Flow, "flow", "", "Development flow: unit|tdd|tdd-e2e (default: steering default, else tdd).")
+	fs.StringVar(&opts.Flow, "flow", "", "Development flow: unit|tdd|tdd-e2e (default: steering default, else unit).")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -481,6 +485,13 @@ func SpecGenerate(templates embed.FS, opts SpecGenerateOptions) error {
 		"bugfix":       {"bugfix.md", "templates/spec/bugfix.md.tmpl"},
 	}
 	pair := templateMap[opts.Artifact]
+	// tasks.md is shaped by the spec's development_flow: the RED/GREEN pair under
+	// tdd/tdd-e2e, implementation-then-cover under unit. Scaffolding the wrong shape
+	// would hand the author a tasks.md the validator immediately rejects, so pick
+	// the template the declared flow will accept.
+	if opts.Artifact == "tasks" && effectiveFlow(data.DevelopmentFlow) == "unit" {
+		pair[1] = "templates/spec/tasks-unit.md.tmpl"
+	}
 	target := filepath.Join(sdir, pair[0])
 	if pathExists(target) && !opts.Force {
 		return fmt.Errorf("%s already exists. Use --force to overwrite", target)

@@ -534,8 +534,8 @@ func validDevelopmentFlow(f string) bool {
 // A missing spec.json yields "" and every flow check stays silent: without the
 // file there is no declared flow to hold the tasks to, and inventing one would
 // manufacture findings on a correctly-shaped file. A spec.json that exists but
-// omits the field resolves to "tdd", which is the default the whole toolchain
-// already assumes (tasks-generation: "absent ⇒ tdd", cli.effectiveFlow).
+// omits the field resolves to "unit", which is the default the whole toolchain
+// already assumes (tasks-generation: "absent ⇒ unit", cli.effectiveFlow).
 func specDevelopmentFlow(specDir string) string {
 	data, err := os.ReadFile(filepath.Join(specDir, "spec.json"))
 	if err != nil {
@@ -549,7 +549,7 @@ func specDevelopmentFlow(specDir string) string {
 	}
 	f := strings.TrimSpace(s.DevelopmentFlow)
 	if f == "" {
-		return "tdd"
+		return "unit"
 	}
 	if !validDevelopmentFlow(f) {
 		return "" // already reported where the flow is written; don't double-report here

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/protonspy/csdd/internal/paths"
@@ -47,14 +48,18 @@ func runPlan(args []string, templates embed.FS) int {
 	case "generate":
 		return planGenerate(rest, templates)
 	case "run":
-		return planRun(rest)
+		return planRun(rest, templates)
+	case "cost":
+		return planCost(rest)
+	case "verify":
+		return planVerify(rest)
 	default:
 		render.Err("unknown plan action: " + action)
 		return 1
 	}
 }
 
-func planRun(args []string) int {
+func planRun(args []string, templates embed.FS) int {
 	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
 	var root, model, effort string
 	var autonomous, assumeYes, noTelegram bool
@@ -65,13 +70,13 @@ func planRun(args []string) int {
 	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
 	fs.BoolVar(&noTelegram, "no-telegram", false, "Do not auto-start the Telegram notifier even when a bot is configured (.csdd/bot.json).")
 	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
-	fs.StringVar(&model, "model", "opus", "Model the orchestrating session runs on (claude --model): sonnet|opus|haiku|fable or a full model ID. It authors and decides the spec; task implementation is delegated to the `implementer` sub-agent (which runs on its own, cheaper model). Empty inherits the ambient default.")
-	fs.StringVar(&effort, "effort", "high", "Reasoning effort the orchestrating session runs at (claude --effort): low|medium|high|xhigh|max. Empty inherits the ambient default.")
+	fs.StringVar(&model, "model", "opus", "Model the orchestrating session runs on (claude --model): sonnet|opus|haiku|fable or a full model ID. It reviews and decides the spec; spec authoring is delegated to the `spec-author` sub-agent (sonnet) and task implementation to the `implementer` sub-agent (each on its own, cheaper model). Empty inherits the ambient default.")
+	fs.StringVar(&effort, "effort", "medium", "Reasoning effort the orchestrating session runs at (claude --effort): low|medium|high|xhigh|max. Empty inherits the ambient default.")
 	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
-	fs.IntVar(&maxIterations, "max-iterations", 100, "Sessions the run may spend; one iteration is one claude session.")
+	fs.IntVar(&maxIterations, "max-iterations", 30, "Sessions the run may spend; one iteration is one claude session.")
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
 	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
-	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 8). Bounds a feat whose `done` the verdict gate keeps refusing.")
+	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 4). Bounds a feat whose `done` the verdict gate keeps refusing.")
 	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once, each on its own feat in its own git worktree (1..6, default 1). Feats run together whenever the plan's Depends graph allows it; each delivered feat is merged into the run's base branch. Requires a clean git repository.")
 	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
 	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
@@ -131,6 +136,7 @@ func planRun(args []string) int {
 		FeatAttempts:  featAttempts,
 		SessionIdle:   sessionIdle,
 		SquadLimit:    squadLimit,
+		WorktreeEntry: planEntryDoc(templates),
 		Out:           os.Stdout,
 	})
 	if err != nil {
@@ -691,4 +697,215 @@ func printPlanStatus(st plan.PlanStatus) {
 		}
 		fmt.Printf("  %-3s %-*s  %-13s  %-10s  %s\n", f.Num, maxName, f.Slug, f.State, f.Milestone, progress)
 	}
+}
+
+// planCost reports what a run spent, read back out of sessions.jsonl.
+//
+// The file has recorded every attempt's cost since R9.2 and nothing read it back,
+// so the only way to see a run's spend was to parse JSONL by hand. Exit code stays
+// 0 whatever the numbers say — this reports, it does not judge.
+func planCost(args []string) int {
+	fs := flag.NewFlagSet("plan cost", flag.ContinueOnError)
+	var root string
+	var jsonOut bool
+	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
+		return failOnFlagParse(err)
+	}
+	if len(positionals) < 1 {
+		render.Err("usage: " + prog() + " plan cost SLUG [--json]")
+		return 1
+	}
+	r, doc, code := resolvePlan(root, positionals[0])
+	if code != 0 {
+		return code
+	}
+	rep := plan.BuildCostReport(r, doc.Slug)
+	if jsonOut {
+		return emitJSON(rep)
+	}
+	printCostReport(rep)
+	return 0
+}
+
+func printCostReport(rep plan.CostReport) {
+	fmt.Printf("plan: %s\n", rep.Plan)
+	if rep.Totals.Attempts == 0 {
+		render.Info("no sessions recorded yet — this plan has not been run")
+		return
+	}
+	fmt.Printf("  %-28s %8s %8s %6s %10s %12s\n", "feat", "attempts", "settled", "gated", "cost", "tokens")
+	for _, f := range rep.Feats {
+		fmt.Printf("  %-28s %8d %8d %6d %10s %12s%s\n",
+			f.Feat, f.Attempts, f.Settled, f.Gated, money(f.CostUSD), thousands(f.Tokens.Total()), deliveredMark(f.Delivered))
+	}
+	fmt.Printf("  %-28s %8d %8d %6d %10s %12s\n",
+		"TOTAL", rep.Totals.Attempts, rep.Totals.Settled, rep.Totals.Gated,
+		money(rep.Totals.CostUSD), thousands(rep.Totals.Tokens.Total()))
+
+	t := rep.Totals.Tokens
+	fmt.Printf("\n  tokens: %s fresh input · %s output · %s cache read · %s cache write\n",
+		thousands(t.Input), thousands(t.Output), thousands(t.CacheRead), thousands(t.CacheCreation))
+
+	if len(rep.ByModel) > 0 {
+		fmt.Printf("\n  by model\n")
+		for _, m := range rep.ByModel {
+			fmt.Printf("    %-34s %12s %10s\n", m.Model, thousands(m.Tokens.Total()), money(m.CostUSD))
+		}
+		// The two figures come from different fields of the same event: the
+		// envelope's own `usage` block, and the CLI's per-model aggregation. A gap
+		// between them is work the top-level figure did not count, which on a plan
+		// run means the sub-agents. Reporting both is the honest move — asserting
+		// which one is right would be a guess.
+		if mt := rep.ModelTotal().Total(); mt != rep.Totals.Tokens.Total() {
+			fmt.Printf("    %-34s %12s\n", "(per-model total)", thousands(mt))
+			render.Warn(fmt.Sprintf("the per-model breakdown and the session totals disagree by %s tokens; "+
+				"the session total counts the orchestrating chain, the breakdown counts every model that billed",
+				thousands(abs(mt-rep.Totals.Tokens.Total()))))
+		}
+	}
+
+	if n := len(rep.Unmeasured); n > 0 {
+		render.Warn(fmt.Sprintf("%d attempt(s) were opened and never settled: %s", n, strings.Join(rep.Unmeasured, ", ")))
+		fmt.Println("  Those sessions ran and spent money; the run was interrupted before their cost")
+		fmt.Println("  could be recorded, so every figure above understates the real total.")
+	}
+	if rep.Totals.Gated > 0 {
+		fmt.Printf("\n  %d of %d settled session(s) were paid for and handed back (a refused `done`).\n",
+			rep.Totals.Gated, rep.Totals.Settled)
+	}
+}
+
+// planVerify proves — or fails to prove — that each feat was delivered, by
+// cross-checking the ledger, the on-disk artifacts, git, and the worktrees.
+// Findings exit 2, the convention every lint/validate command in this CLI follows.
+func planVerify(args []string) int {
+	fs := flag.NewFlagSet("plan verify", flag.ContinueOnError)
+	var root string
+	var jsonOut bool
+	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
+	positionals, err := parseFlags(fs, args)
+	if err != nil {
+		return failOnFlagParse(err)
+	}
+	if len(positionals) < 1 {
+		render.Err("usage: " + prog() + " plan verify SLUG [--json]")
+		return 1
+	}
+	r, doc, code := resolvePlan(root, positionals[0])
+	if code != 0 {
+		return code
+	}
+	rep := plan.Verify(r, doc)
+	if jsonOut {
+		if !rep.OK {
+			_ = emitJSON(rep)
+			return 2
+		}
+		return emitJSON(rep)
+	}
+	printVerifyReport(rep)
+	if !rep.OK {
+		return 2
+	}
+	return 0
+}
+
+func printVerifyReport(rep plan.VerifyReport) {
+	fmt.Printf("plan: %s\n", rep.Plan)
+	if rep.Git {
+		fmt.Printf("merges checked against: %s\n", rep.Branch)
+	} else {
+		render.Warn("not a git repository (or detached HEAD) — merge evidence cannot be checked")
+	}
+	fmt.Printf("  %-28s %-18s %-7s %-10s %-7s %s\n", "feat", "state", "ledger", "artifacts", "merged", "worktree")
+	for _, f := range rep.Feats {
+		fmt.Printf("  %-28s %-18s %-7s %-10s %-7s %s\n",
+			f.Feat, f.State, yesNo(f.LedgerDone), yesNo(f.Artifacts), mergedCell(rep.Git, f.Merged, f.MergeCommit), liveCell(f.LiveWorktree))
+	}
+	var findings int
+	for _, f := range rep.Feats {
+		for _, msg := range f.Findings {
+			findings++
+			render.Err(msg)
+		}
+	}
+	if findings == 0 {
+		render.OK("every feat's records agree")
+		return
+	}
+	fmt.Printf("\n%d finding(s): the records disagree about what was delivered.\n", findings)
+}
+
+func deliveredMark(done bool) string {
+	if done {
+		return "  ✓"
+	}
+	return ""
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+func mergedCell(git, merged bool, commit string) string {
+	if !git {
+		return "—"
+	}
+	if merged {
+		return commit
+	}
+	return "no"
+}
+
+func liveCell(live bool) string {
+	if live {
+		return "live"
+	}
+	return "—"
+}
+
+func money(usd float64) string { return fmt.Sprintf("$%.2f", usd) }
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// thousands groups an integer with thin separators so a seven-digit token count is
+// readable at a glance, which is the only reason these numbers are printed at all.
+func thousands(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var b strings.Builder
+	for i, r := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte('.')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// planEntryDoc is the lean CLAUDE.md each feat's worktree gets for the duration of
+// the run. A template that will not render is not worth failing a run over: the
+// sessions fall back to the repository's own file, which is more expensive to read
+// and still correct enough to work from.
+func planEntryDoc(templates embed.FS) string {
+	doc, err := templater.PlanEntry(templates)
+	if err != nil {
+		render.Warn("could not load the plan-session CLAUDE.md; sessions will read the repository's own: " + err.Error())
+		return ""
+	}
+	return doc
 }

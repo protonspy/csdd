@@ -862,14 +862,15 @@ func TestValidateSpecFlowDefaultsAndSilence(t *testing.T) {
   - [ ] 1.1 GREEN — implement without a failing test first
     - _Requirements: 1.1_
 `
-	// spec.json present but no development_flow: the documented default is tdd.
+	// spec.json present but no development_flow: the documented default is unit,
+	// under which a RED/GREEN-shaped task is itself a finding.
 	if issues := flowIssues(t, map[string]string{
 		"spec.json":       specJSON(""),
 		"requirements.md": validRequirements,
 		"design.md":       validDesign,
 		"tasks.md":        orphanGreen,
 	}); len(issues) != 1 {
-		t.Errorf("absent development_flow should default to tdd and report the orphan GREEN, got: %v", issues)
+		t.Errorf("absent development_flow should default to unit and report the orphan GREEN, got: %v", issues)
 	}
 	// No spec.json at all: nothing declares a flow, so the checks stay silent
 	// rather than inventing one.

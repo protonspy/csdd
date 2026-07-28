@@ -22,8 +22,15 @@ ask the orchestrator which range to review (`git diff`, a commit, a branch).
 3. Adherence to the spec — does the change match `requirements.md` and the `design.md` boundaries?
 4. Regressions — could this break behavior listed as "MUST NOT change"?
 5. Security-sensitive mistakes — secrets in code/logs, missing authz checks, unvalidated input at boundaries.
-6. Overengineering — speculative abstraction, unused options, scope creep beyond the task.
-7. Clarity — naming, dead code, comments that lie.
+6. Stack & ADR conformance — every dependency, import, library, and framework the
+   change introduces must map to a `docs/stack.md` **Decided** row, and any
+   governing `adr:<slug>` the feat's Refs declare must be honored (not contradicted).
+   New tech outside the decided stack, or a decision that drifts from a cited ADR,
+   is a Blocker: surface it as a finding (and a `docs/stack.md`/ADR follow-up) rather
+   than merging it quietly. `csdd graph explain adr:<slug>` and
+   `csdd graph query <term>` fetch the governing context the brief no longer inlines.
+7. Overengineering — speculative abstraction, unused options, scope creep beyond the task.
+8. Clarity — naming, dead code, comments that lie.
 
 ## Output format
 

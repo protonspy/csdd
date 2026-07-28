@@ -148,6 +148,9 @@ type SessionRecord struct {
 	NumTurns      int           `json:"num_turns,omitempty"`
 	Tokens        SessionTokens `json:"tokens"`
 	Models        []string      `json:"models,omitempty"`
+	// ByModel splits Tokens across the models that billed them. It is what makes a
+	// cost report able to say WHERE a session spent, rather than only how much.
+	ByModel []ModelTokens `json:"by_model,omitempty"`
 }
 
 // newSessionRecord stamps one attempt's outcome and cost into a record.
@@ -165,6 +168,7 @@ func newSessionRecord(feat string, iter, attempt int, status, detail string, m S
 		NumTurns:      m.NumTurns,
 		Tokens:        m.Tokens,
 		Models:        m.Models,
+		ByModel:       m.ByModel,
 	}
 }
 

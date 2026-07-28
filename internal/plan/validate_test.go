@@ -199,3 +199,52 @@ status: draft
 		}
 	}
 }
+
+// TestValidateDesignConformance pins the mechanical backstop that lets the brief
+// drop ADR bodies: a feat bound to adr:<slug> must have its authored design.md
+// cite that governor. Silent when design.md is absent (plan validated before any
+// spec is authored) and clears once the design references the slug.
+func TestValidateDesignConformance(t *testing.T) {
+	const planMD = `---
+name: p
+status: draft
+---
+## Feats
+
+| # | Feat | Objective | Depends | Milestone | (P) | Refs |
+|---|------|-----------|---------|-----------|-----|------|
+| 1 | a | A | — | M1 | | adr:auth |
+
+## Quality Gates
+
+- verify: make check
+`
+	root := setupWorkspace(t, "p", planMD)
+	writeADRs(t, root, map[string]string{
+		"0001-auth.md": "# Use OAuth for authentication\n\nContext. Decision. Why.\n",
+	})
+
+	// design.md authored without citing the governing ADR → finding.
+	writeFile(t, filepath.Join(root, "specs", "a", "design.md"),
+		"# Design\n\nNo mention of the decision.\n")
+	issues := validateStrings(t, root, "p")
+	if !msgsContain(issues, "does not cite governing ADR 'adr:auth'") {
+		t.Errorf("missing ADR-conformance finding: %v", issues)
+	}
+
+	// Once the design cites the slug, the finding clears.
+	writeFile(t, filepath.Join(root, "specs", "a", "design.md"),
+		"# Design\n\nHonors adr:auth for the login boundary.\n")
+	if got := validateStrings(t, root, "p"); msgsContain(got, "does not cite governing ADR") {
+		t.Errorf("citing the ADR should clear the finding: %v", got)
+	}
+
+	// No design.md authored yet → silent (plan validated before spec authoring).
+	root2 := setupWorkspace(t, "p", planMD)
+	writeADRs(t, root2, map[string]string{
+		"0001-auth.md": "# Use OAuth for authentication\n\nContext. Decision. Why.\n",
+	})
+	if got := validateStrings(t, root2, "p"); msgsContain(got, "does not cite governing ADR") {
+		t.Errorf("absent design.md must be silent: %v", got)
+	}
+}

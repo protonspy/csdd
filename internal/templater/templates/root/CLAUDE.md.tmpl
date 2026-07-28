@@ -2,168 +2,155 @@
 
 This repository follows a Spec-Driven + Test-Driven Development (SDD+TDD)
 workflow native to **Claude Code**. Steering, specs, skills, and sub-agents are
-managed by the `csdd` CLI — or, preferably, its MCP tools (see *Driving csdd*).
-
-**This file is the contract and the operational reference** — the gates, command
-surface, and phrasing rules all live here. Read it before you create, generate,
-approve, or edit any steering file, spec, skill, or agent. Full CLI surface:
-`npx @protonspy/csdd --help`.
+managed by the `csdd` CLI — or, preferably, its MCP tools. **This file is the
+contract and the operational reference** — the gates, command surface, and
+phrasing rules all live here. Read it before you create, generate, approve, or
+edit any steering file or spec. Full CLI surface: `npx @protonspy/csdd --help`.
 
 ## STOP — hard rules, enforced not advisory
 
-Breaking one of these corrupts the contract layer that every human review and
-every gate depends on:
+Breaking one corrupts the contract layer every human review and every gate
+depends on:
 
 1. **`csdd` is the only sanctioned author of managed files.** Create and change
-   steering, specs, skills, and agents **only** through the `csdd_*` MCP tools or
-   the `csdd` CLI — never by writing the files directly.
+   steering, specs, skills, and agents **only** through the `csdd_*` MCP tools
+   or the `csdd` CLI — never by writing the files directly.
 2. **Never hand-edit `spec.json`.** It records phase approvals and
-   `ready_for_implementation`. Writing to it directly — even to "unblock"
-   yourself — bypasses the human gate and is a process violation. Phases are
-   crossed *only* with `npx @protonspy/csdd spec approve <feature> --phase <phase>`, which a
-   human authorizes.
+   `ready_for_implementation`. Phases are crossed *only* with
+   `npx @protonspy/csdd spec approve <feature> --phase <phase>`, which a human
+   authorizes.
 3. **Never hand-edit frontmatter, task annotations, or `.mcp.json`.** If a
    generated file is wrong, regenerate it from the template and edit the *body*,
    then re-validate — do not patch the machine-managed parts by hand.
-4. **Never skip a phase gate.** `requirements → design → tasks → implementation`
-   is strictly ordered; you cannot generate a phase until the prior one is
-   human-approved. `--force` is allowed **only** when the user explicitly
-   authorizes a fast-track / Quick Plan.
+4. **Never skip a phase gate.** `requirements → design → tasks →
+   implementation` is strictly ordered; you cannot generate a phase until the
+   prior one is human-approved. `--force` is allowed **only** when the user
+   explicitly authorizes a fast-track / Quick Plan.
 5. **When a rule blocks you, stop and surface it** — report the blocked item to
    the human. Do not route around the gate.
 
 **One sanctioned exception — the autonomous `csdd plan run` loop.** The human
 authorized the whole plan up front (`csdd plan approve`), so a session there
-self-approves its own *validated* spec phases and does not stop for a human at a
-gate — rules 2, 4, and 5 govern *interactive* development. The session still
-validates every phase before approving it and delegates each task to the
-`implementer` sub-agent. See the `plan-dev` skill.
+self-approves its own *validated* spec phases (authoring delegated to the
+`spec-author` sub-agent, each task to the `implementer`) and does not stop for a
+human at a gate — rules 2, 4, and 5 govern *interactive* development. The
+session still validates every phase before approving it. See the `plan-dev`
+skill.
 
-## Driving csdd — prefer the MCP tools for the dev flow
+## Driving csdd — the MCP tools are the default
 
-`npx @protonspy/csdd init` registers a **`csdd` MCP server** in `.mcp.json`. When it is
-connected, drive the development flow with its **`csdd_*` tools** instead of
-shelling out:
+`csdd init` registers a **`csdd` MCP server** in `.mcp.json` — a stdio server
+that runs the `csdd` binary under the hood — so it is configured by default.
+Reach csdd through its **`csdd_*` tools** (`csdd_steering_*`, `csdd_spec_*`, …):
+they take typed params (the `artifact`/`phase`/`inclusion` enums, required
+fields) that stop invalid values, and build the exact argv. **Phase gates,
+validators, and exit codes are identical to the CLI** — same binary either way.
+Use the **CLI** (`npx @protonspy/csdd …`) when the server isn't connected, and
+for setup/management — `init`, `copy`, `mcp`, `export` are intentionally *not*
+tools.
 
-| Resource | Tools | CLI fallback |
-|---|---|---|
-| steering | `csdd_steering_*` | `npx @protonspy/csdd steering …` |
-| spec | `csdd_spec_*` | `npx @protonspy/csdd spec …` |
-| skill | `csdd_skill_*` | `npx @protonspy/csdd skill …` |
-| agent | `csdd_agent_*` | `npx @protonspy/csdd agent …` |
+## Mental model
 
-Typed parameters (the `artifact`/`phase`/`inclusion` enums, required fields) stop
-invalid values; the server builds the exact argv. **Phase gates, validators, and
-exit codes are identical either way.** Use the **CLI** when the server isn't
-connected, and always for **setup/management** — `init`, `copy`, `mcp`, `export`
-are intentionally *not* tools.
-
-## Mental model — read this first
-
-Two distinctions matter more than anything else:
-
-- **Specification vs Design.** *Specification* is the contract:
-  `requirements.md`, the File Structure Plan inside `design.md`, and the
-  `_Boundary:_`/`_Depends:_` annotations on `tasks.md`. **Humans review and
-  approve this.** *Design* is the implementation space *inside* that contract —
-  components, internals, sequencing. **You are free here once the specification
-  is approved.**
+- **Specification vs Design.** *Specification* is the contract —
+  `requirements.md`, the File Structure Plan in `design.md`, the `_Boundary:_`/
+  `_Depends:_` annotations on `tasks.md` — **humans review and approve this.**
+  *Design* is the space *inside* that contract; **you are free there once the
+  specification is approved.**
 - **Phase gates.** Every spec advances `requirements → design → tasks →
   implementation`; the CLI blocks generating a phase until the prior one is
-  human-approved in `spec.json` (STOP rule 4). Those gates protect the
-  *Specification* half above.
+  human-approved in `spec.json` (STOP rule 4).
 
-## Working discipline — how you write inside the gates
+## Working discipline
 
-The gates decide *what* to build and *when*; these decide *how*. Bias toward
-caution over speed; use judgment on genuinely trivial changes.
+Bias toward caution over speed; use judgment on genuinely trivial changes.
 
-- **Think before you code.** State your assumptions; when a requirement reads two
-  ways, surface both instead of silently choosing; when a simpler path exists, say
-  so. If something is unclear, stop and name it — the STOP reflex, applied to design.
-- **Simplicity first.** Write the least code that satisfies the task and passes its
-  tests — nothing speculative: no unrequested features, no abstraction for
-  single-use code, no config nobody asked for, no handling for impossible states.
-  If 200 lines could be 50, rewrite it. This is the *Design* freedom, spent frugally.
-- **Stay surgical.** Touch only what the task needs. Don't reformat or refactor
-  adjacent code; match the surrounding style even when you'd write it differently.
-  Remove only the imports and symbols your change orphaned — flag pre-existing dead
-  code, don't delete it. Every changed line traces to a requirement the task carries.
-- **Drive to a verifiable goal.** Turn the task into a checkable outcome first —
-  "add validation" becomes "a failing test for invalid input, then make it pass".
-  Sharp criteria let you loop to green on your own; vague ones ("make it work")
-  force round-trips.
+- **Think before you code** — state assumptions, surface ambiguity, pick the
+  simpler path and say so; unclear → stop and name it.
+- **Simplicity first** — least code that satisfies the task and passes its tests;
+  no speculative features, no abstraction for single-use code.
+- **Stay surgical** — touch only what the task needs, match surrounding style,
+  don't reformat adjacent code; flag pre-existing dead code, don't delete it.
+- **Drive to a verifiable goal** — turn the task into a checkable outcome first.
 
-## Command cheat sheet
+## Command surface — CLI reference (the binary the MCP server runs)
 
-Names are **kebab-case** (`api-conventions`, `photo-albums`, `code-reviewer`);
-the CLI rejects anything else. Global flags on every command: `--root PATH`
-(override workspace), `--force` (override safety checks), `-h`/`--help`,
-`-v`/`--version`. Exit codes: `0` OK, `1` user error, `2` validation failure.
+The MCP tools above are the default path for the agent; this is the canonical CLI
+reference and the fallback when the server isn't connected. Names are
+**kebab-case** (`api-conventions`, `photo-albums`); the CLI rejects anything else.
+Global flags: `--root PATH`, `--force`, `-h`/`--help`, `-v`/`--version`. Exit
+codes: `0` OK, `1` user error, `2` validation failure.
 
 ```bash
-# bootstrap (one time per repo)
-npx @protonspy/csdd init [--with-baseline] [--exclude agents,skills,…] [--no-mcp]
-
-# copy one shipped artifact into the workspace (pairs with init --exclude)
-npx @protonspy/csdd copy skills/tdd-cycle             # or agents/…, rules/…, commands/…, hooks/…, templates/…, steering/…
-
-# steering (project memory)
-npx @protonspy/csdd steering init
-npx @protonspy/csdd steering create NAME --inclusion {always|fileMatch|manual|auto} \
-        [--pattern GLOB]... [--description TEXT]
-npx @protonspy/csdd steering {list,show,delete,validate} [NAME]
-
-# specs — generate → validate → human approves, one phase at a time
-npx @protonspy/csdd spec init     FEATURE
+npx @protonspy/csdd init [--with-baseline] [--exclude …] [--no-mcp]      # bootstrap once
+npx @protonspy/csdd steering {init,create,list,show,delete,validate} …
+npx @protonspy/csdd spec init FEATURE
 npx @protonspy/csdd spec generate FEATURE --artifact {requirements|design|tasks|research|bugfix} [--force]
-npx @protonspy/csdd spec approve  FEATURE --phase    {requirements|design|tasks} [--force]
-npx @protonspy/csdd spec status   FEATURE            # show + validate in one shot
+npx @protonspy/csdd spec approve  FEATURE --phase {requirements|design|tasks} [--force]
+npx @protonspy/csdd spec status   FEATURE                                 # show + validate
 npx @protonspy/csdd spec {list,show,validate,delete} FEATURE
-
-# skills — executable workflow bundles
-npx @protonspy/csdd skill create NAME --description TEXT
-npx @protonspy/csdd skill {add-reference,add-script,add-asset} SKILL FILE
-npx @protonspy/csdd skill {list,show,validate,delete} NAME
-
-# custom sub-agents — least privilege
-npx @protonspy/csdd agent create NAME --description TEXT [--tools TOOL]... [--model M]
-npx @protonspy/csdd agent {list,show,delete} NAME
-
-# mcp servers (.mcp.json)
-npx @protonspy/csdd mcp add NAME --command CMD [--arg A]... [--env K=V]...   # stdio
-npx @protonspy/csdd mcp add NAME --url URL [--type sse|http] [--env K=V]...  # remote
-npx @protonspy/csdd mcp {list,show,enable,disable,remove,validate} [NAME]
+npx @protonspy/csdd graph {build,query,explain,path,analyze} …           # knowledge graph
+npx @protonspy/csdd plan {init,run,status,brief,validate,approve,cost,verify} …
 ```
 
+You can also create **skills**, **custom sub-agents**, and register **MCP
+servers** with csdd — consult `csdd --help` (or `csdd skill --help`, `csdd
+agent --help`, `csdd mcp --help`) for the exact commands rather than
+hand-authoring those files.
+
 ## The development cycle (follow it in order)
+
+The steps below run through the **`csdd_*` MCP tools** by default — their typed
+params carry the `artifact`/`phase` enums and required fields, so the contract
+is enforced without you spelling flags. The CLI block above is the fallback.
 
 ```
 requirements ──approve──▶ design ──approve──▶ tasks ──approve──▶ implementation
    (human)                (human)              (human)         ready_for_implementation: true
 ```
 
-1. **Start each feature on a clean context:** `/clear`, then `npx @protonspy/csdd spec init <feature>`.
-2. **Generate → review → approve, one phase at a time:** `spec generate --artifact requirements` → human reviews → `spec approve --phase requirements`; then `design`, then `tasks`. The gate refuses the next `generate` until the current phase is approved.
-3. `ready_for_implementation` flips to `true` only after all three phases are approved — and only csdd flips it. Do not set it yourself.
-4. **Branch before the first task:** `git switch -c <type>/<feature>` (kebab-case: `feat/ fix/ chore/ refactor/ docs/ test/ perf/`). With hooks enabled (`csdd init --hooks`), a PreToolUse hook blocks commits on the default branch.
-5. Implement one task per iteration with fresh-context sub-agents — `implementer` drives the task through the cycle its spec's `development_flow` declares (`tdd-cycle` under tdd/tdd-e2e, `unit-cycle` under unit) → `code-reviewer` (plus `security-reviewer` for auth/secrets/input), with `quality-gate` running the command gate at feat exit — inside the approved design boundary. Independent `(P)` tasks in *different* `_Boundary:_` groups run as parallel `implementer` sub-agents in isolated worktrees; same-boundary tasks stay ordered and every `_Depends:_` is honored first.
-6. Commit a slice only after review is clean, then push — with the pre-push gate installed (`csdd init --prepush`, then `git config core.hooksPath .githooks`), it runs the test gate and blocks a red push.
-7. **Close each feature with a `/clear`** once its PR ships, so context does not accumulate across features.
-8. Steering is updated only when a new pattern emerges that the agent could not derive from the code.
+1. **Start each feature on a clean context:** `/clear`, then `csdd_spec_init`.
+   **Pick the flow deliberately:** `unit` (the default) for render/CRUD surfaces;
+   `tdd`/`tdd-e2e` **required** for money, auth, tenancy, and anything
+   irreversible — it decides the shape of `tasks.md` and `csdd_spec_validate`
+   enforces it.
+2. **Generate → review → approve, one phase at a time:** `csdd_spec_generate`
+   (artifact) → human review → `csdd_spec_approve` (phase). The gate refuses the
+   next generate until the current phase is approved.
+3. `ready_for_implementation` flips to `true` only after all three phases are
+   approved — and only csdd flips it.
+4. **Branch before the first task:** `git switch -c <type>/<feature>` (kebab-case).
+   With hooks (`csdd init --hooks`), a PreToolUse hook blocks commits on the
+   default branch.
+5. Implement one task per iteration via the `implementer` sub-agent (the flow's
+   cycle: `tdd-cycle` under `tdd`/`tdd-e2e`, `unit-cycle` under `unit`) →
+   `code-reviewer` (+`security-reviewer` for auth/secrets/input), with
+   `quality-gate` at feat exit — inside the approved design boundary.
+   Independent `(P)` tasks in *different* `_Boundary:_` groups run as parallel
+   `implementer` sub-agents in isolated worktrees; same-boundary tasks stay
+   ordered; every `_Depends:_` honored first.
+6. Commit a slice only after review is clean, then push — with the pre-push gate
+   (`csdd init --prepush`, `git config core.hooksPath .githooks`) it runs the
+   test gate and blocks a red push.
+7. **Close each feature with a `/clear`** once its PR ships.
 
 ### Variants
 
-- **Bugfix** — replace `requirements.md` with `bugfix.md` (`spec generate --artifact bugfix`); the phase gate is skipped. The validator requires `Current Behavior:`, `Expected Behavior:`, `Unchanged Behavior:`, and `Root Cause`. Document the root cause **before** writing any code.
-- **Research** — for brownfield or novel domains add `spec generate --artifact research` before design. Every finding in `research.md` must connect to a concrete commitment in `design.md`.
-- **No spec needed** — small reversible changes (typos, one-line fixes) skip the spec layer. SDD is a contract layer, not a tax.
+- **Bugfix** — replace `requirements.md` with `bugfix.md` (`spec generate
+  --artifact bugfix`); the phase gate is skipped. The validator requires
+  `Current Behavior:`, `Expected Behavior:`, `Unchanged Behavior:`, and `Root
+  Cause`. Document the root cause **before** writing any code.
+- **Research** — for brownfield or novel domains add `spec generate --artifact
+  research` before design. Every finding in `research.md` must connect to a
+  concrete commitment in `design.md`.
+- **No spec needed** — small reversible changes (typos, one-line fixes) skip
+  the spec layer. SDD is a contract layer, not a tax.
 
 ## EARS — the only acceptable requirement phrasing
 
 Every criterion in `requirements.md` **must** use EARS. Trigger keywords
-(`WHEN`/`WHILE`/`IF`/`WHERE`/`SHALL`/`THE SYSTEM`) are **fixed English** — localize
-only the variable parts. Use **`SHALL`**, never `should`. One behavior per
-criterion. Quantify ("fast"/"robust" are not testable).
+(`WHEN`/`WHILE`/`IF`/`WHERE`/`SHALL`/`THE SYSTEM`) are **fixed English** —
+localize only the variable parts. Use **`SHALL`**, never `should`. One
+behavior per criterion. Quantify ("fast"/"robust" are not testable).
 
 | Pattern | Template |
 |---|---|
@@ -191,12 +178,13 @@ outcomes**, never file edits. Every task carries machine-readable annotations:
 Sizing: major tasks 3–10 sub-tasks; leaves 1–3 hours. Phase order:
 `## Phase 1: Foundation → Phase 2: Core → Phase 3: Integration → Phase 4: Validation`.
 
-## Steering, skills, agents, MCP — the essentials
+## Steering — project memory
 
-- **Steering** (`.claude/steering/*.md`) is always-on project memory, imported into the managed block below. `inclusion:` (`always|fileMatch|manual|auto`) documents intended scope. Put organizational patterns and the *why* here; **never** secrets, file dumps, or details derivable from code. Golden rule: *if new code follows existing patterns, steering should not need updating.*
-- **Skills** (`.claude/skills/<name>/`) are executable capability bundles: `SKILL.md` (≤ 500 lines / ~5k tokens) + `references/` + `assets/` + `scripts/`. Required sections: `## Goal`, `## Execution Workflow`, `## Gotchas`, `## Verification Before Reporting`, `## Completion Criteria`. Every `references/` file must be cited by name with a load trigger. Build skills from real expertise, never generic LLM output.
-- **Sub-agents** (`.claude/agents/<name>.md`) default to `Read, Grep` (least privilege). The more powerful the agent, the smaller its scope and the larger the human review must be.
-- **MCP servers** (`.mcp.json`) are managed only with `npx @protonspy/csdd mcp`. Each server sets exactly one transport — `command` (stdio) **or** `url` (remote), never both. Scope narrowly, avoid `--auto-approve`, pass secrets via `--env`, never inline them.
+**Steering** (`.claude/steering/*.md`) is always-on project memory, imported
+into the managed block below. `inclusion:` (`always|fileMatch|manual|auto`)
+documents intended scope. Put organizational patterns and the *why* here;
+**never** secrets, file dumps, or details derivable from code. Golden rule: *if
+new code follows existing patterns, steering should not need updating.*
 
 ## Validation — what the gates catch
 
@@ -205,41 +193,38 @@ continuing):
 
 - **steering** — `inclusion` is valid; `fileMatch` has a non-empty pattern; `auto` has `name` + `description`.
 - **spec (requirements)** — every criterion starts with an EARS keyword; no `should`; requirement headers unique.
-- **spec (design)** — `## Architecture Pattern & Boundary Map` and `## File Structure Plan` present; every requirement ID appears in the `## Requirements Traceability` table; `design.md` ≤ 1000 lines.
-- **spec (tasks)** — leaves have `_Requirements:_`; referenced IDs exist; every `(P)` has `_Boundary:_` matching a design component; `_Depends:_` IDs exist; no two `(P)` share a boundary.
+- **spec (design)** — `## Architecture Pattern & Boundary Map` and `## File Structure Plan` present; every requirement ID appears in `## Requirements Traceability`; `design.md` ≤ 1000 lines; **each governing `adr:<slug>` the feat's Refs declare must be cited** (enforced by `plan validate`).
+- **spec (tasks)** — leaves have `_Requirements:_`; referenced IDs exist; every `(P)` has `_Boundary:_` matching a design component; `_Depends:_` IDs exist; no two `(P)` share a boundary; the shape matches `development_flow` (RED→GREEN under `tdd`/`tdd-e2e`, implement→cover under `unit`).
 - **skill** — `name` matches the dir; `description` non-empty; body ≤ 500 lines / ~5k tokens; required headings present; every `references/` file cited.
 - **mcp** — well-formed JSON; exactly one transport per server; remote `type` is `sse`/`http`; no empty env keys.
 
-Run `npx @protonspy/csdd spec status <feature>` between every step.
+Run `csdd spec status <feature>` between every step (MCP `csdd_spec_status`, or the CLI above).
 
 ## Anti-patterns — refuse to do these
 
-Skipping phase gates outside authorized fast-track work · hand-editing
+Skipping phase gates outside authorized fast-track · hand-editing
 `spec.json`/frontmatter/`.mcp.json` · writing tasks as file edits · omitting
-`_Boundary:_` on `(P)` tasks · letting `design.md` exceed 1000 lines · treating
-`research.md` findings as decoration · putting secrets in steering/specs ·
-skipping the "why" when adding a steering rule · granting broad tool scope to a
-sub-agent · adding MCP servers with broad scope or `--auto-approve` · adding AI or
-assistant attribution (`Co-authored-by:`, `Claude-Session`, "Generated with…") to
-commits or PRs.
-
-Escalate to a human when a feature touches auth, payments, PII, or regulated
-data; when a change needs `--force` past a gate; or before anything destructive.
+`_Boundary:_` on `(P)` tasks · `design.md` > 1000 lines · treating
+`research.md` findings as decoration · secrets in steering/specs · skipping the
+"why" on a steering rule · broad tool scope on a sub-agent · MCP servers with
+broad scope or `--auto-approve` · AI/assistant attribution (`Co-authored-by:`,
+"Generated with…") in commits or PRs. Escalate to a human for auth, payments,
+PII, or regulated data; for any `--force` past a gate; or before anything
+destructive.
 
 ## Knowledge base — graph, wiki, tech contract
 
-The workflow moments for the knowledge base (consult the graph before searching;
-rebuild after changes; ingest raw sources; gate with `analyze`/`wiki lint`) and
-the tech-contract protocol live in the managed block below. `csdd init` keeps it
-in sync — do not hand-edit between the markers.
+The graph/wiki workflow moments and the tech-contract protocol live in the
+managed block below — kept in sync by `csdd init`; do not hand-edit between the
+markers.
 
 <!-- csdd:knowledge:start -->
 <!-- csdd:knowledge:end -->
 
 ## Project memory (steering)
 
-Steering files are always-on project memory, loaded via the `@`-imports below.
-`csdd` keeps this list in sync with `.claude/steering/` — do not hand-edit
+Steering files are always-on project memory, loaded via the `@`-imports below
+— `csdd` keeps this list in sync with `.claude/steering/`; do not hand-edit
 between the markers.
 
 <!-- csdd:steering:start -->
@@ -248,13 +233,11 @@ between the markers.
 ## Layout
 
 - `.claude/steering/` — project memory imported above.
-- `specs/<feature-name>/` — per-feature contracts (`spec.json` + `requirements.md` + `design.md` + `tasks.md`).
-- `.claude/rules/` — generation rules and review gates the agent runs mechanically.
-- `.claude/templates/` — templates the agent uses when generating artifacts.
-- `.claude/skills/<skill-name>/` — executable workflow skills.
-- `.claude/agents/<name>.md` — custom sub-agents with least-privilege tool scope.
-- `.claude/commands/<name>.md` — slash commands (`/csdd-commit` generates the commit message from the diff + active spec).
-- `.claude/settings.json` — permission guards; plus the hook automation wiring (format on edit, command safety, stop reminder) when `.claude/hooks/` is opted in (`csdd init --hooks`).
-- `.githooks/pre-push` — the test gate at push time (opt-in: `csdd init --prepush`, then `git config core.hooksPath .githooks`).
-- `.github/pull_request_template.md` — evidence-bearing PR body.
-- `.mcp.json` — Model Context Protocol servers.
+- `specs/<feature>/` — per-feature contracts (`spec.json` + `requirements.md` + `design.md` + `tasks.md`).
+- `.claude/{rules,templates}/` — generation rules, review gates, and artifact templates the agent runs mechanically.
+- `.claude/skills/<name>/` — executable workflow skills.
+- `.claude/agents/<name>.md` — sub-agents (least-privilege tool scope).
+- `.claude/commands/<name>.md` — slash commands (`/csdd-commit` builds the message from the diff + active spec).
+- `.claude/settings.json` — permission guards + hook wiring (with `csdd init --hooks`).
+- `.githooks/pre-push` — the test gate at push (`csdd init --prepush` + `git config core.hooksPath .githooks`).
+- `.github/pull_request_template.md` · `.mcp.json` — evidence-bearing PR body · MCP servers.

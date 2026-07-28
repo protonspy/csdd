@@ -25,6 +25,24 @@ type SessionMetrics struct {
 	// its work (an orchestrator model plus the implementer sub-agent's own), so
 	// which models ran is part of comparing one run against another (R9.3).
 	Models []string
+	// ByModel is what each model billed, sorted by model ID.
+	//
+	// It exists because Tokens alone cannot answer the question a cost report is
+	// for. The plan loop deliberately tiers its work — an orchestrator that decides
+	// and sub-agents that execute on a cheaper model — and two sessions with nearly
+	// identical token counts have been observed costing 2.4× different amounts
+	// purely because one delegated and the other did not. Which tier the tokens
+	// landed on is therefore the single most actionable figure in the record, and
+	// until now the runner parsed `modelUsage` only far enough to read the KEYS and
+	// threw the counts away.
+	ByModel []ModelTokens
+}
+
+// ModelTokens is one model's share of a session.
+type ModelTokens struct {
+	Model   string        `json:"model"`
+	Tokens  SessionTokens `json:"tokens"`
+	CostUSD float64       `json:"cost_usd,omitempty"`
 }
 
 // SessionTokens is the token usage a session billed, split the way the API
@@ -87,11 +105,66 @@ func parseSessionMetrics(raw []byte) SessionMetrics {
 			CacheCreation: ev.Usage.CacheCreation,
 		},
 	}
-	for name := range ev.ModelUsage {
+	for name, raw := range ev.ModelUsage {
 		m.Models = append(m.Models, name)
+		m.ByModel = append(m.ByModel, ModelTokens{Model: name, Tokens: modelTokens(raw), CostUSD: modelCost(raw)})
 	}
 	sort.Strings(m.Models) // deterministic: the record is diffed across runs
+	sort.Slice(m.ByModel, func(i, j int) bool { return m.ByModel[i].Model < m.ByModel[j].Model })
 	return m
+}
+
+// modelUsageKeys maps each field to every spelling the CLI has been observed to
+// use for it. `modelUsage` is assembled by the Claude CLI rather than returned by
+// the API, and the two do not agree on case — the envelope's own `usage` block is
+// snake_case while CLI-side aggregations are commonly camelCase. Reading both
+// costs nothing and means a rename upstream degrades to a zero in one column
+// instead of silently zeroing the whole breakdown.
+var modelUsageKeys = map[string][]string{
+	"input":          {"input_tokens", "inputTokens"},
+	"output":         {"output_tokens", "outputTokens"},
+	"cache_read":     {"cache_read_input_tokens", "cacheReadInputTokens"},
+	"cache_creation": {"cache_creation_input_tokens", "cacheCreationInputTokens"},
+	"cost":           {"cost_usd", "costUSD", "totalCostUSD", "total_cost_usd"},
+}
+
+// modelTokens reads one model's entry out of `modelUsage`. Anything unparseable
+// yields zeros: this is bookkeeping, and a breakdown that cannot be read must not
+// take down a session that otherwise succeeded.
+func modelTokens(raw json.RawMessage) SessionTokens {
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return SessionTokens{}
+	}
+	return SessionTokens{
+		Input:         pickNum(m, modelUsageKeys["input"]),
+		Output:        pickNum(m, modelUsageKeys["output"]),
+		CacheRead:     pickNum(m, modelUsageKeys["cache_read"]),
+		CacheCreation: pickNum(m, modelUsageKeys["cache_creation"]),
+	}
+}
+
+func modelCost(raw json.RawMessage) float64 {
+	var m map[string]any
+	if json.Unmarshal(raw, &m) != nil {
+		return 0
+	}
+	for _, k := range modelUsageKeys["cost"] {
+		if f, ok := m[k].(float64); ok {
+			return f
+		}
+	}
+	return 0
+}
+
+// pickNum returns the first key that holds a number, as an int.
+func pickNum(m map[string]any, keys []string) int {
+	for _, k := range keys {
+		if f, ok := m[k].(float64); ok {
+			return int(f)
+		}
+	}
+	return 0
 }
 
 // SessionOutcome is everything one session produced: the verdict it DECLARED and
