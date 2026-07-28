@@ -524,3 +524,55 @@ func TestSpecTemplatesCiteTheirRules(t *testing.T) {
 		}
 	}
 }
+
+// TestPlanSessionEntryCarriesTheLoopContract guards the plan-session CLAUDE.md as
+// the ONE place the autonomous loop's process is written down.
+//
+// It used to be written down three times — here, in every feat's brief, and in the
+// `plan-dev` skill — and the copies had begun to disagree: the brief named checks
+// and sub-agents this file did not. The brief is now feat context only, so anything
+// missing here is missing from the session's context entirely.
+func TestPlanSessionEntryCarriesTheLoopContract(t *testing.T) {
+	doc, err := PlanEntry(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		// Authority: without it the session stalls at its own phase gates waiting
+		// for a human that the loop does not have.
+		"You are the approver",
+		"csdd plan approve",
+		"csdd spec approve",
+		// Delegation: authoring and implementation both run on cheaper models, and
+		// the orchestrator only reviews and decides.
+		"spec-author",
+		"implementer",
+		"development_flow",
+		"tdd-cycle",
+		"unit-cycle",
+		// The feat-exit gate and the evidence artifact the verdict gate reads.
+		"quality-gate",
+		"code-reviewer",
+		"security-reviewer",
+		"test-report",
+		"--run --lang",
+		"graph analyze --strict",
+		// Git: the session commits in the worktree it was given and opens nothing.
+		"/csdd-commit",
+		"Do not create or switch branches",
+		// The contract the plan itself is.
+		"plan.md",
+		".csdd/",
+		// Decisions get recorded where the next feat can find them, never adopted
+		// silently: the brief used to carry this line.
+		"docs/stack.md",
+		"docs/adr",
+		// The verdict and what the loop checks it against.
+		"done",
+		"continue",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("the plan-session CLAUDE.md should carry %q — the brief no longer does", want)
+		}
+	}
+}

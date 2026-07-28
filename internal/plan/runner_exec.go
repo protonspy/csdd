@@ -49,6 +49,73 @@ func installRealHooks(h *Hooks, runModel, runEffort string, sess sessionEnv) {
 	}
 }
 
+// installEnrichHook fills the enrichment seam, unless the run turned it off with an
+// empty model. It is separate from installRealHooks because the model it needs is a
+// run option rather than a session parameter, and because a test that wants a real
+// session but a stubbed enricher (or the reverse) should not have to fight the
+// wiring for it.
+func installEnrichHook(h *Hooks, enrichModel string) {
+	if h.Enrich == nil {
+		h.Enrich = EnrichHook(enrichModel)
+	}
+}
+
+// EnrichHook builds the enrichment hook for callers outside the runner — `csdd plan
+// brief --refresh`, which is how a human regenerates and reviews a feat's pack
+// before approving the plan it belongs to. An empty model yields a nil hook, which
+// every caller already treats as "enrichment is off".
+func EnrichHook(model string) func(EnrichRequest) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		return nil
+	}
+	return func(req EnrichRequest) (string, error) {
+		return execClaudeEnrich(req, model)
+	}
+}
+
+// enrichIdle bounds the discovery pass. It is far tighter than a session's idle
+// budget because the pass is bounded work — read the tree, fill a schema — and one
+// that has gone quiet for this long is stuck, not thinking. A feat whose enrichment
+// times out is briefed without a pack rather than delayed further.
+const enrichIdle = 3 * time.Minute
+
+// enrichTools is the least privilege the pass can do its job with: read the tree,
+// search it, and consult the knowledge graph. It authors nothing and runs no gates,
+// so it gets no general shell and no write tools — the pass is the one part of the
+// loop whose output a language model composes freely, and the narrowest tool scope
+// is what keeps that from becoming a way to change the workspace.
+const enrichTools = "Read,Grep,Glob,Bash(csdd graph:*),Bash(npx @protonspy/csdd graph:*)"
+
+// execClaudeEnrich runs the discovery pass for one feat and returns the raw JSON it
+// answered with. It runs in the feat's own worktree for the same reason the session
+// does: the tree with this feat's dependencies merged in is the only place the feat
+// is describable.
+//
+// Every error here is the caller's to swallow (EnsurePack does), so this reports what
+// went wrong and nothing more — an enrichment that fails costs the run a leaner
+// brief, never a feat.
+func execClaudeEnrich(req EnrichRequest, model string) (string, error) {
+	args := []string{
+		claudeFlags.print,
+		claudeFlags.outputFormat, "json",
+		claudeFlags.jsonSchema, req.Schema,
+		claudeFlags.model, model,
+		claudeFlags.allowedTools, enrichTools,
+	}
+	cmd := exec.Command("claude", args...)
+	cmd.Dir = req.Dir
+	// Same reason the session's brief rides on stdin: the prompt is well past what
+	// Windows allows on a command line, and `claude -p` with no positional reads it
+	// from there.
+	cmd.Stdin = strings.NewReader(req.Prompt)
+
+	stdout, stderr, err := supervised{cmd: cmd, idle: enrichIdle}.run()
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", err, firstLine(strings.TrimSpace(stderr)))
+	}
+	return stdout, nil
+}
+
 // sessionEnv carries what the real Session hook needs beyond the feat itself: the
 // watchdog's idle budget and the seams the live session view reports through. It is
 // passed rather than read from globals so a test can drive a real session end-to-end.
@@ -74,7 +141,7 @@ const verdictSchema = `{"type":"object","required":["status"],` +
 // claudeFlags are every `claude` flag the runner relies on, pinned in one place so
 // a version drift is a single, reviewable edit (risk register §8).
 var claudeFlags = struct {
-	print, outputFormat, verbose, jsonSchema, maxBudget, model, effort, bypass string
+	print, outputFormat, verbose, jsonSchema, maxBudget, model, effort, bypass, allowedTools string
 }{
 	print:        "-p",
 	outputFormat: "--output-format",
@@ -84,6 +151,7 @@ var claudeFlags = struct {
 	model:        "--model",
 	effort:       "--effort",
 	bypass:       "--dangerously-skip-permissions",
+	allowedTools: "--allowedTools",
 }
 
 // sessionArgs builds the `claude` argument vector for one plan session. It is pure

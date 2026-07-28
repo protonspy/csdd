@@ -76,9 +76,9 @@ func TestBriefContentAndDeterminism(t *testing.T) {
 	if strings.Contains(out, "SECRET_BODY_TOKEN") {
 		t.Errorf("brief must NOT inline the wiki page body (token leaked)")
 	}
-	// Forbidden actions and Executor Notes verbatim.
-	if !strings.Contains(out, "Do NOT edit plan.md") {
-		t.Errorf("brief should carry the forbidden-actions contract")
+	// The plan's own verification contract, and the Executor Notes verbatim.
+	if !strings.Contains(out, "make check") {
+		t.Errorf("brief should carry the plan's Quality Gates")
 	}
 	if !strings.Contains(out, "Run gofmt before committing") {
 		t.Errorf("brief should carry the Executor Notes verbatim")
@@ -86,60 +86,6 @@ func TestBriefContentAndDeterminism(t *testing.T) {
 	// Seeds listed.
 	if !strings.Contains(out, "docs/plans/p/seeds/upload/requirements.md") {
 		t.Errorf("brief should list the feat's seeds")
-	}
-}
-
-func TestBriefSelfChecks(t *testing.T) {
-	root := setupWorkspace(t, "p", briefPlan)
-	out := briefFor(t, root, "p", "upload")
-	// The self-checks the session runs before declaring done: spec validate, graph
-	// analyze, and the plan's own Quality Gates.
-	if !strings.Contains(out, "csdd spec validate upload") {
-		t.Errorf("brief should tell the session to run spec validate itself")
-	}
-	if !strings.Contains(out, "graph analyze --strict") {
-		t.Errorf("brief should list the graph traceability self-check")
-	}
-	if !strings.Contains(out, "make check") {
-		t.Errorf("brief should inject the plan Quality Gates as self-checks")
-	}
-	// The verdict protocol is done|continue only.
-	if !strings.Contains(out, "`done`") || !strings.Contains(out, "`continue`") {
-		t.Errorf("brief should teach the done|continue verdict protocol")
-	}
-}
-
-// TestBriefApprovalAuthority: the brief must grant the autonomous session authority
-// to approve its own spec phases, so CLAUDE.md's interactive "a human authorizes"
-// STOP rules do not stall the loop at approval.
-func TestBriefApprovalAuthority(t *testing.T) {
-	root := setupWorkspace(t, "p", briefPlan)
-	out := briefFor(t, root, "p", "upload")
-	if !strings.Contains(out, "YOU are the approver") {
-		t.Errorf("brief should assert the session's approval authority: %s", out)
-	}
-	if !strings.Contains(out, "csdd plan approve p") {
-		t.Errorf("brief should point at the plan-level human gate already given")
-	}
-	if !strings.Contains(out, "csdd spec approve upload") {
-		t.Errorf("brief should tell the session to self-approve its spec phases")
-	}
-	if !strings.Contains(out, "plan-dev") {
-		t.Errorf("brief should point the session at the plan-dev skill")
-	}
-}
-
-// TestBriefDelegatesImplementation: the mission must route task implementation to
-// the `implementer` sub-agent (the orchestrator decides, the fast sub-agent
-// executes), not have the orchestrating session hand-write task code inline.
-func TestBriefDelegatesImplementation(t *testing.T) {
-	root := setupWorkspace(t, "p", briefPlan)
-	out := briefFor(t, root, "p", "upload")
-	if !strings.Contains(out, "implementer") {
-		t.Errorf("brief should delegate task implementation to the implementer sub-agent:\n%s", out)
-	}
-	if !strings.Contains(out, "DELEGATING") && !strings.Contains(out, "delegat") {
-		t.Errorf("brief should tell the session to delegate implementation, not hand-write it inline")
 	}
 }
 
@@ -151,68 +97,91 @@ func TestBriefUnknownFeat(t *testing.T) {
 	}
 }
 
-// TestBriefIsFlowAware guards the brief against re-hardcoding one development flow.
-// It used to say the implementer works "test-first" and to name `tdd-cycle` as the
-// only fallback, which silently overrode a spec that declared `unit`: the flow field
-// existed, the validator now enforces the task shape it implies, and the brief told
-// the session to ignore both.
-func TestBriefIsFlowAware(t *testing.T) {
-	root := setupWorkspace(t, "p", briefPlan)
-	out := briefFor(t, root, "p", "upload")
-	for _, want := range []string{
-		"development_flow", // the brief points at the spec's declared flow
-		"tdd-cycle",        // …and names the cycle skill for each side of it
-		"unit-cycle",
-		"--flow", // authoring picks the flow deliberately
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("brief should mention %q so the session honours the spec's flow:\n%s", want, out)
-		}
-	}
-	// The old wording made test-first unconditional. Any reintroduction of a bare
-	// "test-first" instruction re-breaks the unit flow.
-	if strings.Contains(out, "test-first") {
-		t.Errorf("brief hardcodes 'test-first', which overrides a spec declaring development_flow 'unit'")
-	}
-}
-
-// TestBriefDelegatesTheCommandGate guards the split the feat-exit block encodes:
-// the session reads state itself, and delegates the command gate.
+// TestBriefCarriesNoProcess is the boundary the brief now holds: it describes the
+// FEAT, never the development process.
 //
-// Running the plan's Quality Gates inline lands the whole suite, lint and
-// typecheck output in the orchestrator's context — which is then re-read on every
-// remaining turn of the feat. That is 58% of a measured session's wall clock
-// spent in API calls, and reading exit codes does not need the orchestrator's
-// model.
-func TestBriefDelegatesTheCommandGate(t *testing.T) {
-	root := setupWorkspace(t, "p", briefPlan)
-	out := briefFor(t, root, "p", "upload")
-	for _, want := range []string{
-		"quality-gate",  // the sub-agent that owns the command gate
-		"code-reviewer", // dispatched with it, so the two overlap
-		"--run --lang",  // and it records the Tier-3 evidence through csdd
-		"csdd spec validate",
-		"graph analyze --strict",
+// The process lives in the worktree's CLAUDE.md and the `plan-dev` skill, both of
+// which the session reads every turn anyway. Restating it here was not merely
+// duplicate — the copies drifted, and the brief's authority block argued against
+// STOP rules that the plan-session CLAUDE.md replacing the interactive one no longer
+// contains. Anything on this list reappearing means the two are diverging again.
+func TestBriefCarriesNoProcess(t *testing.T) {
+	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
+	for _, banned := range []string{
+		"YOU are the approver",      // authority — CLAUDE.md's job
+		"csdd spec approve",         // the phase-gate workflow
+		"csdd spec init",            // the cycle
+		"implementer",               // delegation
+		"spec-author",               //  …
+		"/csdd-commit",              // git
+		"do NOT create a branch",    //  …
+		"Forbidden actions",         // the hard rules
+		"Verdict protocol",          // the verdict contract
+		"An honest `continue`",      // the attempt economics
+		"Before you declare `done`", // the feat-exit checklist
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("feat-exit block should mention %q:\n%s", want, out)
+		if strings.Contains(out, banned) {
+			t.Errorf("the brief carries process again (%q); that belongs in the plan-session CLAUDE.md:\n%s", banned, out)
 		}
 	}
-	// The evidence artifact is what the verdict gate reads; a delegated gate that
-	// only reports in prose leaves it stale and the `done` is refused.
-	if !strings.Contains(out, "test-report") {
-		t.Error("the delegated gate must still record test-report.json through csdd")
+	// What it does carry instead: one pointer at where the process lives, and the
+	// verdict shape the runner parses.
+	if !strings.Contains(out, "plan-dev") || !strings.Contains(out, "CLAUDE.md") {
+		t.Errorf("the brief should point at the process rather than restate it:\n%s", out)
+	}
+	if !strings.Contains(out, `{"status":"done"}`) {
+		t.Errorf("the brief should still name the verdict the runner parses:\n%s", out)
 	}
 }
 
-// TestBriefDispatchesTheTaskNotTheSpec keeps the implementer dispatch narrow.
-// Seven implementers each re-reading an 800-line spec pays the authoring cost
-// once per sub-agent, in contexts that re-read it on every one of their turns.
-func TestBriefDispatchesTheTaskNotTheSpec(t *testing.T) {
-	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
-	for _, want := range []string{"_Boundary:", "acceptance criteria", "design.md"} {
+// TestBriefRendersTheContextPack: a verified pack is the discovered half of the
+// brief — where the feat lives, what constrains it, what is already there.
+func TestBriefRendersTheContextPack(t *testing.T) {
+	root := setupWorkspace(t, "p", briefPlan)
+	writeFile(t, filepath.Join(root, "docs", "wiki", "pages", "storage-design.md"), "---\ntitle: t\n---\n")
+	if err := SavePack(root, "p", "upload", &EnrichPack{
+		Touches:   []PackTouch{{Path: "docs/wiki/pages/storage-design.md", Why: "describes the old uploader"}},
+		Governors: []PackGovernor{{ID: "stack:go", Constraint: "no new runtime deps", Declared: true}},
+		Exists:    []string{"the bucket client already exists"},
+		Missing:   []string{"no checksum on write"},
+		Traps:     []string{"the fixture server rejects chunked uploads"},
+		Flow:      PackFlow{Choice: "unit", Why: "render/CRUD only"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := briefFor(t, root, "p", "upload")
+	for _, want := range []string{
+		"Where this feat lives",
+		"describes the old uploader",
+		"no new runtime deps",
+		"Already there (do not redo)",
+		"the bucket client already exists",
+		"no checksum on write",
+		"the fixture server rejects chunked uploads",
+		"Suggested flow: `unit`",
+		"not an order", // the flow stays the session's decision
+	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("the implementer dispatch should name %q as what to hand over:\n%s", want, out)
+			t.Errorf("the brief should render the pack's %q:\n%s", want, out)
 		}
+	}
+	// A pack is still deterministic input: same disk state, same brief (R7.3).
+	if out2 := briefFor(t, root, "p", "upload"); out != out2 {
+		t.Errorf("a brief with a pack is not byte-deterministic")
+	}
+}
+
+// TestBriefWithoutPackIsPlanOnly: enrichment is an optimization, never a
+// dependency. With no pack on disk the brief is the plan's own content and nothing
+// else — which is exactly what a run with `--enrich-model none` gets.
+func TestBriefWithoutPackIsPlanOnly(t *testing.T) {
+	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
+	for _, absent := range []string{"Where this feat lives", "Already there", "Suggested flow"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("brief should have no %q section without a pack:\n%s", absent, out)
+		}
+	}
+	if !strings.Contains(out, "Ingest and store photos") {
+		t.Errorf("brief should still carry the feat's objective:\n%s", out)
 	}
 }

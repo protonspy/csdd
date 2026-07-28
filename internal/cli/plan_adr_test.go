@@ -101,9 +101,6 @@ func TestADRValidateE2E(t *testing.T) {
 	if strings.Contains(out, "BODY_TOKEN") {
 		t.Errorf("brief must NOT inline the ADR body (the gate enforces citation now):\n%s", out)
 	}
-	if !strings.Contains(out, "docs/stack.md Decided row") {
-		t.Errorf("brief should carry the record-your-decisions mission line")
-	}
 
 	// Broken citation: rewrite the ADR to a different slug.
 	mustWrite(t, adrPath("0001-pick-store.md"), "# renamed\n\nbody\n") // still slug pick-store
