@@ -49,10 +49,6 @@ type FeatCost struct {
 	ByStatus  map[string]int `json:"by_status,omitempty"`
 }
 
-// wasted is the share of a feat's sessions that were paid for and handed back. It
-// is the number an optimization is trying to move.
-func (f FeatCost) wasted() int { return f.Gated }
-
 // BuildCostReport reads sessions.jsonl and aggregates it. A missing file yields an
 // empty report rather than an error: a plan that has never been run has spent
 // nothing, which is a fine thing to report.
