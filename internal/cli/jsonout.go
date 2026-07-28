@@ -53,6 +53,19 @@ type validationJSON struct {
 	Issues []issueJSON `json:"issues"`
 }
 
+// planSummaryJSON is one row of `plan list --json`. It keys the slug as "plan",
+// matching what `plan status --json` calls it, so an agent reads the same field
+// name whether it listed the plans or asked about one.
+type planSummaryJSON struct {
+	Slug     string `json:"plan"`
+	Name     string `json:"name,omitempty"`
+	Approved bool   `json:"approved"`
+	Drift    bool   `json:"drift"`
+	Feats    int    `json:"feats"`
+	Done     int    `json:"done"`
+	Complete bool   `json:"complete"`
+}
+
 // specSummaryJSON is one row of `spec list --json`.
 type specSummaryJSON struct {
 	Feature  string   `json:"feature"`

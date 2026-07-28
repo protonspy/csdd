@@ -149,7 +149,7 @@ RESOURCES
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
-  plan     {init,validate,approve,status,next,brief,generate,run,unblock}   Plans decompose an initiative into feats (docs/plans/<slug>/); each feat becomes one spec.
+  plan     {init,list,validate,approve,status,next,brief,generate,run,unblock}   Plans decompose an initiative into feats (docs/plans/<slug>/); each feat becomes one spec.
   sandbox  {init,doctor}                        Scaffold a hardened default-deny-egress devcontainer; doctor proves isolation before bypass mode.
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
@@ -180,6 +180,8 @@ EXAMPLES
         --inclusion fileMatch --pattern 'src/api/**/*' --pattern '**/*Controller.*'
   %[1]s steering create observability \
         --inclusion auto --description 'Logging/metrics. Use when adding instrumentation.'
+  %[1]s plan list                                            # every plan under docs/plans/ with approval + progress
+  %[1]s plan list --json                                     # same rows, machine-readable
   %[1]s spec init photo-albums
   %[1]s spec generate photo-albums --artifact requirements
   %[1]s spec approve photo-albums --phase requirements

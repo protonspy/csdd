@@ -32,6 +32,8 @@ func runPlan(args []string, templates embed.FS) int {
 	switch action {
 	case "init":
 		return planInit(rest, templates)
+	case "list":
+		return planList(rest)
 	case "validate":
 		return planValidate(rest)
 	case "status":
@@ -250,6 +252,83 @@ func planInit(args []string, templates embed.FS) int {
 	}
 	render.Info(fmt.Sprintf("next: author the feats, then `%s plan validate %s`", prog(), slug))
 	return 0
+}
+
+// planList is the whole-workspace view `plan status` lacks: every plan under
+// docs/plans/ with its approval state and delivery progress, so you can see what
+// exists before drilling into one.
+func planList(args []string) int {
+	fs := flag.NewFlagSet("plan list", flag.ContinueOnError)
+	var root string
+	var jsonOut bool
+	addRoot(fs, &root)
+	addJSON(fs, &jsonOut)
+	if _, err := parseFlags(fs, args); err != nil {
+		return failOnFlagParse(err)
+	}
+	r, err := workspace.Resolve(root)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	sums, err := plan.Summaries(r)
+	if err != nil {
+		render.Err(err.Error())
+		return 1
+	}
+	if jsonOut {
+		rows := make([]planSummaryJSON, 0, len(sums))
+		for _, s := range sums {
+			rows = append(rows, planSummaryJSON{
+				Slug: s.Slug, Name: s.Name, Approved: s.Approved, Drift: s.Drift,
+				Feats: s.Feats, Done: s.Done, Complete: s.Complete,
+			})
+		}
+		return emitJSON(rows)
+	}
+	if len(sums) == 0 {
+		render.Info("no plans found; create one with `" + prog() + " plan init SLUG`")
+		return 0
+	}
+	printPlanList(sums)
+	return 0
+}
+
+// printPlanList renders one line per plan. Like printPlanStatus, the columns hold
+// plain (un-colored) words so the fixed widths stay aligned regardless of terminal
+// color support.
+func printPlanList(sums []plan.Summary) {
+	maxName := len("plan")
+	for _, s := range sums {
+		if len(s.Slug) > maxName {
+			maxName = len(s.Slug)
+		}
+	}
+	drifted := false
+	fmt.Printf("  %-*s  %-8s  %-9s  %s\n", maxName, "plan", "approval", "feats", "name")
+	for _, s := range sums {
+		approval := "draft"
+		switch {
+		case s.Drift:
+			// Drift outranks approval in the column: the approval exists but no
+			// longer binds the current plan.md, which is what `plan run` refuses on.
+			approval = "drift"
+			drifted = true
+		case s.Approved:
+			approval = "approved"
+		}
+		feats := "—"
+		if s.Feats > 0 {
+			feats = fmt.Sprintf("%d/%d", s.Done, s.Feats)
+			if s.Complete {
+				feats += " ✓"
+			}
+		}
+		fmt.Printf("  %-*s  %-8s  %-9s  %s\n", maxName, s.Slug, approval, feats, s.Name)
+	}
+	if drifted {
+		render.Warn("drift: plan.md/seeds changed since approval — re-approve before running")
+	}
 }
 
 // resolvePlan is the shared preamble for validate/status: resolve the root and
