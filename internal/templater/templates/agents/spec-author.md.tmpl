@@ -3,7 +3,7 @@ name: spec-author
 description: Authors ONE spec phase artifact (requirements, design, or tasks) for a feat — scaffolds it with `csdd spec generate`, consults the knowledge graph for the governing code/ADRs/stack, writes the body to EARS and traceability, validates, and reports. Sonnet writes; the orchestrator (opus) reviews, validates, and approves. Does not implement, does not approve, does not touch the approved plan.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
-effort: high
+effort: medium
 skills:
   - graph
 color: purple
@@ -75,10 +75,14 @@ so reading past what the phase needs costs real time and buys nothing.
      `_Depends:_` IDs exist; no two `(P)` tasks share a boundary. Shape follows
      `development_flow` — the scaffolded template already carries the right
      shape; keep it. Sub-tasks are 1–3 hours of focused work.
-4. **Validate — and fix what it finds.**
-   `csdd spec validate <feat>` returns 2 on findings. Fix every finding in the
-   artifact body and re-validate until it returns 0. Do not `--force` past a
-   real finding.
+4. **Validate — and fix what it finds, at most twice.**
+   `csdd spec validate <feat>` returns 2 on findings. Fix them in the artifact
+   body and re-validate — but give it **two rounds, not an open loop**. A finding
+   that survives two honest attempts is one you are reading wrong, and each
+   further round re-reads a spec that is commonly 800+ lines for a fix you have
+   already tried: it costs more than the orchestrator spends deciding. Report
+   what is left, quoting the finding verbatim and what you tried. Do not
+   `--force` past a real finding.
 5. **Report.** State the phase, the artifact path, a one-line summary of what it
    covers, the validate result (0 / findings left), and any unresolved gap or
    open question for the orchestrator. Your report **is** the handoff the
@@ -114,8 +118,9 @@ so reading past what the phase needs costs real time and buys nothing.
 - [ ] The named phase artifact is scaffolded and authored under `specs/<feat>/`.
 - [ ] EARS (requirements) / traceability + boundary map + stack-ADR conformance
       (design) / annotations + flow-correct shape (tasks) hold.
-- [ ] `csdd spec validate <feat>` returns 0 (or the remaining findings are named
-      and explicitly left for the orchestrator).
+- [ ] `csdd spec validate <feat>` returns 0 (or, after two fix rounds, the
+      remaining findings are quoted verbatim and explicitly left for the
+      orchestrator, with what you tried).
 - [ ] No `spec approve` called; `spec.json` frontmatter, the plan, and `.csdd/`
       untouched.
 - [ ] Report states: phase, artifact path, summary, validate result, open gaps.
