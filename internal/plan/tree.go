@@ -53,6 +53,28 @@ type treeKeeper interface {
 	Discard(feat string) error
 }
 
+// inPlaceTrees is the keeper for a serial run: every feat works in the repository
+// itself, on the branch the human is already standing on.
+//
+// A worktree contains only TRACKED files, so everything a suite needs and git
+// ignores is absent from it — node_modules/, .venv/, build caches, the lot. On a
+// real project that is not a detail: the session cannot run a test, a lint or a
+// build until it has rebuilt the environment, and it pays that per feat and again
+// per attempt. The isolation this buys is worth it for a squad, where several
+// sessions would otherwise share one index. With ONE session there is no peer to
+// collide with, so the run pays the cost and gets nothing for it.
+//
+// Integrate and Discard are therefore no-ops rather than stubs: the work is already
+// on the branch (nothing to land) and no directory belongs to the feat (nothing to
+// remove). The plan-session CLAUDE.md swap is deliberately absent too — it works by
+// marking the file skip-worktree, and doing that to the entry file a human maintains,
+// in the checkout they work in, would hide their own file from them.
+type inPlaceTrees struct{ root string }
+
+func (t inPlaceTrees) Ensure(string) (string, error) { return t.root, nil }
+func (t inPlaceTrees) Integrate(string) error        { return nil }
+func (t inPlaceTrees) Discard(string) error          { return nil }
+
 // MergeConflictError signals that a delivered feat could not be landed on the run's
 // base because it conflicts with what is already there.
 //

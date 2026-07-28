@@ -200,24 +200,15 @@ func Run(opts RunOptions) (RunSummary, error) {
 	if !h.ClaudeAvailable() {
 		return RunSummary{}, fmt.Errorf("the `claude` CLI is not available on PATH; the runner needs it to spawn sessions")
 	}
-	// Every feat now works in its own git worktree, so a repository is no longer
-	// incidental to a run — it is the isolation mechanism. Resolve the base the run
-	// integrates into and refuse anything that would make merging feats back
-	// ambiguous. Skipped when a treeKeeper was injected: the loop's own tests drive
-	// the whole run against plain directories and no git at all.
+	// Where the feats work. Skipped when a treeKeeper was injected: the loop's own
+	// tests drive the whole run against plain directories and no git at all.
 	if opts.Hooks.Trees == nil {
-		base, err := preflightGit(opts.Root)
+		keeper, err := resolveTrees(opts, logf)
 		if err != nil {
 			return RunSummary{}, err
 		}
-		opts.Hooks.Trees = gitTrees{root: opts.Root, slug: opts.Slug, base: base, logf: logf, entry: opts.WorktreeEntry}
+		opts.Hooks.Trees = keeper
 		h = opts.Hooks
-		logf("worktrees: one per feat, branched from and merged back into %s", base)
-		if specsAreIgnored(opts.Root) {
-			logf("⚠ specs/ is gitignored: each feat's spec will stay in the worktree that authored it and be")
-			logf("  discarded with it. The code lands on %s; the artifacts justifying it will not, so", base)
-			logf("  `csdd plan status` and the graph will disagree with the ledger after this run.")
-		}
 	}
 	// Every session runs bypass-mode (--dangerously-skip-permissions), so a
 	// verified sandbox is the expected home (principle 7). When doctor fails, the
@@ -1105,6 +1096,39 @@ func journalDone(opts RunOptions, feat, summary string) {
 		return
 	}
 	journal(opts, feat, "done", summary)
+}
+
+// resolveTrees picks where the run's feats work, and the squad size is what decides
+// it.
+//
+// A worktree per feat exists to keep concurrent sessions off one shared index. That
+// is a real hazard with a squad and no hazard at all with one session — while the
+// cost is the same either way, and it is not small: a worktree holds only tracked
+// files, so a serial run was reinstalling every gitignored dependency the suite needs
+// before it could run a single gate, per feat and again per attempt. So a serial run
+// (the default) works in the repository itself, and only a squad pays for isolation.
+//
+// The git preflight moves with the worktrees, deliberately. It resolves the base
+// feats are cut from and merged back into, and refuses a repository where that would
+// be ambiguous — questions an in-place run does not ask, because it lands nothing:
+// the session commits on the branch the human left it on.
+func resolveTrees(opts RunOptions, logf func(string, ...any)) (treeKeeper, error) {
+	if opts.SquadLimit <= 1 {
+		logf("worktrees: off — one session at a time, working in %s itself", opts.Root)
+		logf("  (--squad-limit >1 isolates each feat in its own worktree, cut from and merged back into the base)")
+		return inPlaceTrees{root: opts.Root}, nil
+	}
+	base, err := preflightGit(opts.Root)
+	if err != nil {
+		return nil, err
+	}
+	logf("worktrees: one per feat, branched from and merged back into %s", base)
+	if specsAreIgnored(opts.Root) {
+		logf("⚠ specs/ is gitignored: each feat's spec will stay in the worktree that authored it and be")
+		logf("  discarded with it. The code lands on %s; the artifacts justifying it will not, so", base)
+		logf("  `csdd plan status` and the graph will disagree with the ledger after this run.")
+	}
+	return gitTrees{root: opts.Root, slug: opts.Slug, base: base, logf: logf, entry: opts.WorktreeEntry}, nil
 }
 
 // runLogf is the runner's line-oriented logger onto opts.Out.

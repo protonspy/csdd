@@ -525,3 +525,60 @@ func containsSubstring(hay []string, needle string) bool {
 	}
 	return false
 }
+
+// TestSerialRunWorksInTheCheckoutItself pins which keeper a run gets, because the
+// squad size is the only thing that decides it and the difference is not cosmetic.
+//
+// A worktree carries only tracked files, so a serial run in one was reinstalling
+// every gitignored dependency its suite needs — per feat, and again per attempt —
+// to buy isolation from peers it does not have. At --squad-limit 1 the feats work
+// in the repository itself; above it, isolation is what the concurrency is paying
+// for and the worktrees come back.
+func TestSerialRunWorksInTheCheckoutItself(t *testing.T) {
+	root := gitRepo(t)
+	writeRepoFile(t, root, "README.md", "# repo\n")
+	commitAll(t, root, "init")
+	quiet := func(string, ...any) {}
+
+	keeper, err := resolveTrees(RunOptions{Root: root, Slug: "p", SquadLimit: 1}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inPlace, ok := keeper.(inPlaceTrees)
+	if !ok {
+		t.Fatalf("a serial run must work in the checkout, got %T", keeper)
+	}
+	// Every feat resolves to the repository itself, and neither landing nor cleanup
+	// has anything to do: the work is already on the branch the human is standing on.
+	for _, feat := range []string{"a", "b"} {
+		dir, err := inPlace.Ensure(feat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dir != root {
+			t.Errorf("feat %s should work in %s, got %s", feat, root, dir)
+		}
+		if err := inPlace.Integrate(feat); err != nil {
+			t.Errorf("integrate should be a no-op: %v", err)
+		}
+		if err := inPlace.Discard(feat); err != nil {
+			t.Errorf("discard should be a no-op: %v", err)
+		}
+	}
+	// Nothing was created under the run's state dir — no worktree, no branch.
+	if entries, err := os.ReadDir(filepath.Join(stateDir(root, "p"), "trees")); err == nil && len(entries) > 0 {
+		t.Errorf("a serial run must cut no worktrees, found %d", len(entries))
+	}
+	if out, _ := runGit(root, "branch", "--list", "csdd/*"); strings.TrimSpace(out) != "" {
+		t.Errorf("a serial run must create no feat branches, got %q", out)
+	}
+
+	// A squad still gets the worktrees, and with them the git preflight.
+	squad, err := resolveTrees(RunOptions{Root: root, Slug: "p", SquadLimit: 2}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := squad.(gitTrees); !ok {
+		t.Errorf("a squad must be isolated per feat, got %T", squad)
+	}
+}
