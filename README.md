@@ -308,7 +308,9 @@ Before a feat is dispatched, a **context pass** (`--enrich-model`, default `sonn
 
 Feats are handed out in **dependency order**, not table order: the `Depends` column the plan already declares is what schedules the run, so a feat is only dispatched once everything it builds on is delivered. If a feat is blocked, everything downstream of it is reported as unreachable with the root cause named, instead of being dispatched into a tree where its foundation does not exist.
 
-`--squad-limit N` (1..6, default 1) runs up to **N sessions at once, each on its own feat and each in its own git worktree**. Filesystem isolation is what makes it safe: every concurrent session gets a worktree under `.csdd/plan/<slug>/trees/<feat>` on branch `csdd/<slug>/<feat>`, so no two agents ever share an index, a build, or a half-written file. Scheduling is the `Depends` graph alone — the `(P)` column is **not** consulted, because it used to mean "consents to share a working tree" and feats no longer share one.
+**A serial run works in your checkout.** At `--squad-limit 1` (the default) one session runs at a time, in the repository itself — the environment your suite needs is already installed there. The worktrees below are what a *squad* pays for isolation: a worktree carries only tracked files, so it starts without `node_modules/`, `.venv/` or any other build cache git ignores, and rebuilding those per feat buys a serial run nothing, since it has no peer to collide with.
+
+`--squad-limit N` (2..6) runs up to **N sessions at once, each on its own feat and each in its own git worktree**. Filesystem isolation is what makes it safe: every concurrent session gets a worktree under `.csdd/plan/<slug>/trees/<feat>` on branch `csdd/<slug>/<feat>`, so no two agents ever share an index, a build, or a half-written file. Scheduling is the `Depends` graph alone — the `(P)` column is **not** consulted, because it used to mean "consents to share a working tree" and feats no longer share one.
 
 Because a plan is a DAG, isolation alone is not enough: `c` depends on `a` and `b`, and a worktree cut from an untouched base would contain neither. So the runner **merges a feat into the run's base the moment its `done` clears the verdict gate**, and every later worktree is cut from that updated base. The branch survives the merge; the worktree is removed. The human PR gate still sits where it always did, after the run, over the base branch — the session commits on its feat's branch and does not open one.
 
@@ -326,7 +328,7 @@ csdd plan status <slug>                    # feats, milestones, what's next
 csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
 csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
                         --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
-                        --squad-limit 3      # run up to 3 sessions at once (1..6, default 1), one git worktree each
+                        --squad-limit 3      # 3 sessions at once, one git worktree each (default 1: serial, in this checkout)
                         --enrich-model none  # skip the per-feat context pass (default: sonnet)
 csdd plan brief  <slug> --feat F            # print what the session gets (enriches on first use)
 csdd plan brief  <slug> --feat F --refresh  # discard the stored context pack and run the pass again

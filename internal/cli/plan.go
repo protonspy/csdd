@@ -78,7 +78,7 @@ func planRun(args []string, templates embed.FS) int {
 	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
 	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
 	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 4). Bounds a feat whose `done` the verdict gate keeps refusing.")
-	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once, each on its own feat in its own git worktree (1..6, default 1). Feats run together whenever the plan's Depends graph allows it; each delivered feat is merged into the run's base branch. Requires a clean git repository.")
+	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once (1..6, default 1). At 1 the run is serial and works in this checkout, where the environment your suite needs is already installed. Above 1 each feat gets its own git worktree — cut from and merged back into the run's base branch, which requires a clean repository, and which starts without anything git ignores (node_modules/, .venv/, build caches).")
 	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
 	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
 	positionals, err := parseFlags(fs, args)
