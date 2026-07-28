@@ -124,13 +124,18 @@ func TestBriefCarriesNoProcess(t *testing.T) {
 			t.Errorf("the brief carries process again (%q); that belongs in the plan-session CLAUDE.md:\n%s", banned, out)
 		}
 	}
-	// What it does carry instead: one pointer at where the process lives, and the
-	// verdict shape the runner parses.
-	if !strings.Contains(out, "plan-dev") || !strings.Contains(out, "CLAUDE.md") {
-		t.Errorf("the brief should point at the process rather than restate it:\n%s", out)
+	// Nor does it point AT the process any more. The pointer and the verdict shape
+	// addressed a headless session whose entire prompt was this text; a session that
+	// reads a brief now already has its CLAUDE.md and its skills, and there is no
+	// verdict to return to anybody.
+	for _, gone := range []string{"plan-dev", "CLAUDE.md", `{"status":"done"}`, "do not stop"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("the brief still carries the runner-era process pointer (%q):\n%s", gone, out)
+		}
 	}
-	if !strings.Contains(out, `{"status":"done"}`) {
-		t.Errorf("the brief should still name the verdict the runner parses:\n%s", out)
+	// And it opens on the feat, with no role preamble in front of it.
+	if !strings.HasPrefix(out, "# Feat: upload") {
+		t.Errorf("the brief should open on the feat itself:\n%s", firstLines(out, 6))
 	}
 }
 
@@ -183,33 +188,6 @@ func TestBriefWithoutPackIsPlanOnly(t *testing.T) {
 	}
 	if !strings.Contains(out, "Ingest and store photos") {
 		t.Errorf("brief should still carry the feat's objective:\n%s", out)
-	}
-}
-
-// TestBriefOpensByNamingTheRole pins the first four lines.
-//
-// The brief IS the prompt — it is fed to `claude -p` on stdin with nothing in front
-// of it — so whatever it opens with is where the session's role is established. It
-// used to open on a feat row, leaving the model to infer what it was supposed to be
-// from a table of objectives. The preamble is deliberately short: it names the role
-// and the shape of what follows, and stops. Process belongs to the plan-session
-// CLAUDE.md and the `plan-dev` skill (see TestBriefCarriesNoProcess), so a preamble
-// that starts explaining the cycle is this boundary eroding again.
-func TestBriefOpensByNamingTheRole(t *testing.T) {
-	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
-	if !strings.HasPrefix(out, "You are a senior software engineer.") {
-		t.Errorf("the brief must open by naming the role it is written for:\n%s", firstLines(out, 6))
-	}
-	// The role sits BEFORE the feat header — everything after it reads as material
-	// for that role rather than as a document that happened to arrive.
-	role, feat := strings.Index(out, "You are a senior software engineer"), strings.Index(out, "# Feat:")
-	if feat < 0 || role > feat {
-		t.Errorf("the role must come before the feat header:\n%s", firstLines(out, 8))
-	}
-	// Four lines, then the mission. A preamble long enough to need a heading has
-	// stopped being a preamble.
-	if head, _, _ := strings.Cut(out, "# Feat:"); strings.Count(head, "\n") > 6 {
-		t.Errorf("the role preamble should stay short, got:\n%s", head)
 	}
 }
 

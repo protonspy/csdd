@@ -590,7 +590,7 @@ func SpecApprove(opts SpecApproveOptions) error {
 	if !state.Generated {
 		// The generated flag is bookkeeping from `spec generate`; what an approval
 		// certifies is the artifact content. A phase authored directly — by a human
-		// or a `plan run` session — is just as approvable, so only a missing
+		// or a session delivering a plan feat — is just as approvable, so only a missing
 		// artifact blocks here.
 		if !phaseAuthored(sdir, data, opts.Phase) {
 			return fmt.Errorf("cannot approve '%s': %s not found — generate or author it first", opts.Phase, phaseArtifact(opts.Phase))
@@ -639,7 +639,7 @@ func SpecApprove(opts SpecApproveOptions) error {
 
 // phaseAuthored reports whether a phase has an artifact to validate or approve:
 // either `spec generate` marked it generated, or the artifact file itself exists
-// (authored directly by a human or a plan-run session). Approval and validation
+// (authored directly by a human or by a session working from a plan). Approval and validation
 // certify content, not the route it was produced by.
 func phaseAuthored(specDir string, data SpecJSON, phase string) bool {
 	if data.Approvals[phase].Generated {

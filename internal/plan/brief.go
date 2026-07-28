@@ -11,15 +11,15 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 )
 
-// FeatBrief assembles the mission pack for one whole feat (R7): who is reading it,
-// what this feat is, what governs it, what it is likely to touch, and what verifies
-// it. It does NOT carry the development process — how a session authors and approves its spec
-// phases, what it may delegate, what git it owns and what makes a `done` acceptable
-// live in the plan-session CLAUDE.md the runner writes into every worktree and in
-// the `plan-dev` skill, both of which the session already reads every turn. Stating
-// them a second time here cost more than the duplication: the two copies had begun
-// to disagree about the feat-exit checks, and a brief that argues against CLAUDE.md's
-// interactive STOP rules is arguing against a document the worktree no longer has.
+// FeatBrief assembles the context pack for one whole feat (R7): what this feat is,
+// what governs it, what it is likely to touch, and what verifies it.
+//
+// It is CONTEXT and nothing else. It carries no role preamble, no development
+// process, and no verdict protocol — those were written for the autonomous runner,
+// which addressed a headless session that had this text and nothing else. A brief is
+// read now by a session that already has its CLAUDE.md, its skills and a human in the
+// room; telling it who it is and how to work would be restating, worse, what it is
+// already governed by. What only the plan knows is the feat: that is what this holds.
 //
 // It draws on explicit content — the feat row, its seeds, the governing ADR/stack
 // refs (slugs/names/paths only — never ADR bodies, stack row details, or wiki
@@ -30,9 +30,9 @@ import (
 // rejects it in code), not by inlining their bodies (R7.2).
 //
 // It stays deterministic (R7.3): the pack is read from disk like the seeds are, so
-// the same workspace state always renders the same brief. The autonomous run context
-// (handoff, failure trail) is appended after this by the runner, so this prefix stays
-// stable across a feat's sessions.
+// the same workspace state always renders the same brief for the same workspace
+// state — which is what makes it reviewable with `csdd plan brief` before anyone
+// works from it.
 func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	if _, ok := doc.Feat(feat.Slug); !ok {
 		return "", fmt.Errorf("feat %q is not in plan %q", feat.Slug, doc.Slug)
@@ -40,23 +40,12 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 
-	// 0. Who is reading this. The brief is fed to `claude -p` on stdin as the entire
-	// prompt, so its opening lines are the only place the session's role is set —
-	// without them the first thing the model sees is a feat row, and it has to infer
-	// from context what it is supposed to be. It stays four lines on purpose: the
-	// process this engineer follows is NOT here (see the pointer at the end), and a
-	// preamble that grows is re-read on every turn of every session.
-	w("You are a senior software engineer. You deliver ONE feat of an approved plan to\n")
-	w("completion on your own, in an autonomous session with no human at the gate.\n")
-	w("Everything below is the mission: what this feat is, what governs it, where it\n")
-	w("lives in this repository, and what verifies it.\n\n")
-
 	// 1. The feat itself.
 	w("# Feat: %s — plan %s\n\n", feat.Slug, doc.Slug)
 	w("- Objective: %s\n", orDash(feat.Objective))
 	w("- Milestone: %s\n", orDash(feat.Milestone))
 	if len(feat.Depends) > 0 {
-		w("- Depends on (delivered earlier in this run): %s\n", strings.Join(feat.Depends, ", "))
+		w("- Depends on (delivered earlier in this plan): %s\n", strings.Join(feat.Depends, ", "))
 	}
 	w("\n")
 
@@ -139,19 +128,10 @@ func FeatBrief(root string, doc *PlanDoc, feat Feat) (string, error) {
 
 	// 7. The plan's own verification contract.
 	w("## Quality gates for this plan\n\n")
-	w("Delegate these to the `quality-gate` sub-agent once, at feat exit:\n\n")
+	w("These must pass for this feat:\n\n")
 	for _, g := range planGateCommands(doc) {
 		w("- %s\n", g)
 	}
-
-	// 8. Where the process lives. One pointer, not a copy: both documents are in the
-	// session's context already, and the copy is what drifted.
-	w("\n---\n\n")
-	w("Your authority, the cycle, delegation, git and the `done` gate are in this\n")
-	w("worktree's CLAUDE.md and the `plan-dev` skill — follow them, and do not stop\n")
-	w("for a human at a phase gate. Return `{\"status\":\"done\"}` when the whole feat is\n")
-	w("delivered, or `{\"status\":\"continue\"}` with the handoff for your successor in\n")
-	w("`summary`.\n")
 
 	return b.String(), nil
 }

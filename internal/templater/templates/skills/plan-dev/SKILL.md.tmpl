@@ -1,56 +1,54 @@
 ---
 name: plan-dev
-description: Use inside a `csdd plan run` session to deliver ONE approved-plan feat end-to-end — author + self-approve its spec phases, delegate each task to the `implementer` sub-agent (test-first), own git/PR, then return the done|continue verdict. This is the autonomous loop, so YOU are the approver; do not stop for a human at the phase gates.
+description: Use to deliver ONE feat of an approved csdd plan end-to-end in this session — brief the feat, drive its spec through requirements/design/tasks with the `spec-author` sub-agent, delegate each task to `implementer` (test-first), gate it and commit. The human approves every phase; you never approve your own.
 ---
 
-# Plan Dev — Autonomous Feat Delivery
+# Plan Dev — Delivering One Feat
 
 ## Goal
 
-Fully deliver **one** feat of an approved csdd plan in a single autonomous
-`plan run` session: drive its spec through `requirements → design → tasks`
-(you delegate authoring to the `spec-author` sub-agent, then review and decide),
-delegate each task to the `implementer` sub-agent (per the spec's
-`development_flow`), own the git dev-cycle and the PR, then return the verdict
-schema.
+Deliver **one** feat of an approved csdd plan, end to end, in this session: take
+its brief, drive its spec through `requirements → design → tasks` (you delegate
+authoring to the `spec-author` sub-agent, then review and present each phase for
+approval), delegate each task to the `implementer` sub-agent (per the spec's
+`development_flow`), gate the result, and commit.
 
-The loop trusts your **judgment** — it never reviews your code or re-runs your
-suites — but it does check your **artifacts**. A `done` verdict passes through a
-mechanical gate first: every task box `[x]` in `specs/<feat>/tasks.md`, all three
-phases approved with `ready_for_implementation` true, and
-`specs/<feat>/test-report.json` green with no open attentions. If any of those is
-missing, your `done` is converted to `continue` and handed back with a note naming
-what failed. So `done` means the whole feat is really delivered, not hoped — and
-claiming it early costs you an attempt rather than shipping a broken feat.
+**One feat per invocation.** When it is delivered you stop and report; picking the
+next feat is a decision for the human, not a loop you run.
 
-A feat that burns its attempt budget (default 4 sessions) is stopped and surfaced
-for a human. Returning an honest `continue` is always cheaper than a `done` the
-gate refuses.
+## The feat, and its brief
 
-## Your authority — non-negotiable (this overrides CLAUDE.md's human gate)
+If you were not told which feat, ask csdd:
 
-CLAUDE.md says phase approvals are a **human** gate and that you must STOP and
-surface a blocked gate. That rule governs **interactive** development. **This is
-the autonomous plan loop, and it is different:**
+```bash
+csdd plan status <plan>              # milestones, what is delivered, what is ready
+csdd plan next <plan>                # the feat whose Depends are all satisfied
+csdd plan brief <plan> --feat <feat> # that feat's context — read this first
+```
 
-- A human already opened the gate for this whole plan by running
-  `csdd plan approve <plan>`. **That IS the human authorization** the phase gates
-  require, and it covers every spec you author for this plan.
-- So **you** approve this feat's spec phases yourself with
-  `csdd spec approve <feat> --phase …`. Do **not** pause for a human, do **not**
-  return `continue` just because a phase "needs approval", and do **not** treat
-  approving your own spec as routing around a gate — approving it is the mission.
-- A blocked gate here means: **fix the artifact until it validates, then approve
-  and continue** — never escalate and stall.
+The brief is **context, not instructions**: the objective, the governing
+`adr:`/`stack:`/`[[wiki]]` refs, the seeds, where the feat lives in this
+repository, what is already there, what is missing, the pitfalls, and the plan's
+quality gates. The method is this skill; the constraints are your CLAUDE.md. Fetch
+a governor's detail with `csdd graph explain adr:<slug>` rather than assuming it.
 
-**Forbidden:** editing `plan.md` / `plan.json` (the approved plan is the
-contract) or touching `.csdd/` (the loop's operational state, incl.
-`progress.json`).
+## The phase gates are the human's
+
+`csdd plan approve` authorized the **plan** — which feats exist, in what order,
+under which constraints. It did not pre-approve the specs you are about to write.
+Each phase is still a gate:
+
+- You **author and validate**; the human **approves**. Present the artifact, say
+  what you decided and what you left open, and stop there.
+- Never run `csdd spec approve` yourself, and never `--force` past a gate. If a
+  phase will not validate, fix the artifact and present it again.
+- **Forbidden:** editing `plan.md` / `plan.json` (the approved plan is the
+  contract) or writing under `.csdd/` (csdd's own state).
 
 ## Execution Workflow
 
 Work the phases in order. Each phase is **generate → review → validate →
-self-approve**; the gate refuses the next phase until the current one is approved.
+present**; the gate refuses the next phase until the human has approved this one.
 
 ### 0) Orient via the knowledge graph (before reading code)
 - `csdd graph query <term>` to find the nodes for the concept, then
@@ -63,16 +61,17 @@ self-approve**; the gate refuses the next phase until the current one is approve
   `tdd`/`tdd-e2e` REQUIRED for money, auth, tenancy, anything irreversible. The
   flow decides the shape of `tasks.md`, and `csdd spec validate` enforces it.
 
-### 2) Requirements — delegate to `spec-author`, then review and approve
+### 2) Requirements — delegate to `spec-author`, then review and present
 - Dispatch the **`spec-author`** sub-agent with the feat + phase `requirements` +
   any governing refs. It scaffolds, consults the graph, authors the body (EARS,
   one behavior per criterion, numeric IDs), and runs `csdd spec validate`.
 - **REVIEW** the artifact: EARS phrasing, one behavior per criterion, numeric IDs.
 - Run `csdd spec validate <feat>` yourself. Re-dispatch `spec-author` with a
   fix-list if the review or validate finds gaps; do not hand-edit inline.
-- `csdd spec approve <feat> --phase requirements`.
+- Present it and ask for `csdd spec approve <feat> --phase requirements`.
+  Wait for the approval before generating the next phase — the gate enforces it.
 
-### 3) Design — delegate to `spec-author`, then review and approve
+### 3) Design — delegate to `spec-author`, then review and present
 - Dispatch **`spec-author`** for phase `design` (add `--artifact research` first
   for a brownfield/novel area, and pass the governing ADRs/stack it must comply
   with).
@@ -80,23 +79,23 @@ self-approve**; the gate refuses the next phase until the current one is approve
   `## File Structure Plan`, a `## Requirements Traceability` row for every
   requirement ID, and every technology choice inside a `docs/stack.md` Decided
   row with governing ADRs cited.
-- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps →
-  `csdd spec approve <feat> --phase design`.
+- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps → present
+  it for `csdd spec approve <feat> --phase design`.
 
-### 4) Tasks — delegate to `spec-author`, then review and approve
+### 4) Tasks — delegate to `spec-author`, then review and present
 - Dispatch **`spec-author`** for phase `tasks`.
 - **REVIEW** the artifact: every leaf task has `_Requirements:_`; every `(P)`
   task has a `_Boundary:_` matching a design component; `_Depends:_` IDs exist;
   no two `(P)` share a boundary; the shape matches the `development_flow`
   (`tdd`/`tdd-e2e`: RED→GREEN pairs; `unit`: implement → cover).
-- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps →
-  `csdd spec approve <feat> --phase tasks`.
+- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps → present
+  it for `csdd spec approve <feat> --phase tasks`.
 - `ready_for_implementation` flips to true only after all three approvals — and
   only csdd flips it. Never hand-edit `spec.json`.
 
 ### 5) Implement — delegate each task to the `implementer` sub-agent
-You authored and approved the spec; those were the decisions and they ran on your
-(orchestrator) model. Implementation is the *execution* of a decision already made,
+The spec is authored and approved; those were the decisions and they ran on your
+model. Implementation is the *execution* of a decision already made,
 so **delegate it** — do not hand-write task code inline.
 
 **Test timing — test the right thing at the right moment, not everything always.**
@@ -179,7 +178,7 @@ can see them *combined*, which is the only failure Tier 2 structurally cannot ca
   `docs/stack.md` **Decided** row, plus a `docs/adr` record when the *why* needs
   more than a line. Prefer the option that deviates least from the decided stack.
 
-### 8) Feat-exit self-check BEFORE you declare done
+### 8) Feat-exit check BEFORE you report the feat delivered
 Run these **once**, here — not after every task.
 
 **Delegate the gate; do not run it inline.** Spawn the **`quality-gate`**
@@ -207,9 +206,9 @@ You still check yourself, because these read state rather than produce output:
 - The `quality-gate` verdict is PASS, and `specs/<feat>/test-report.json` is green
   with no open attentions.
 
-These are the same artifacts the loop's verdict gate reads. If one of them fails
-here, the gate will refuse your `done` anyway — fixing it now is strictly cheaper
-than spending an attempt to be told.
+These four are what "delivered" means for a feat, and they are what the reviewer
+of the PR — and `csdd plan status` — will read. A feat reported delivered with one
+of them red is a feat somebody else has to discover.
 
 ## Handling a blocked gate
 
@@ -219,22 +218,27 @@ than spending an attempt to be told.
   approving it) → re-validate that phase, re-approve it, then continue;
   `--force` is only for clearing a stale prior-phase hash you have **just**
   re-validated, never for skipping review.
-- **Out of room** before the feat is complete → return `continue` with a precise
-  handoff (what is done, what remains, what to try next) in `summary`.
+- **A phase that will not validate however you fix it** → stop and surface it with
+  the finding quoted and what you tried. A plan whose feat cannot be specified is
+  a plan to revise, and revising it is the human's call.
+- **Out of room** before the feat is complete → stop and hand off in plain words:
+  what is done, what remains, what to try next. Leave the workspace committed and
+  the spec honest, so the next session starts from state rather than from guesses.
 
-## Verdict protocol
+## Reporting the feat
 
-Return exactly one, as the JSON schema the runner gave you:
-- `{"status":"done"}` — the WHOLE feat is delivered and every self-check in step
-  8 passes. Never claim done on hope: the loop verifies the artifacts behind this
-  claim, and a refused `done` costs you one of the feat's attempts.
-- `{"status":"continue","summary":"<handoff>"}` — honest partial work; the same
-  feat comes back next session with your handoff.
+There is no verdict schema and nothing parses your reply — you are reporting to a
+human. Say, in plain words: what the feat delivers, which phases were approved,
+what the feat-exit checks returned, every decision you recorded (stack row / ADR),
+and anything you deliberately left open. If the feat is NOT complete, say so
+first: an honest "3 of 7 tasks land, the composer is not started" is worth more
+than a summary that has to be audited.
 
 ## Gotchas
 
-- You are the approver here — stalling at a phase "waiting for a human" is the
-  single most common failure of this loop. Approve your own validated phases.
+- The human approves each phase. Present the artifact and what you decided; do
+  not run `csdd spec approve` yourself and do not generate the next phase before
+  the gate opens.
 - You orchestrate; you do not draft or implement. Delegate spec authoring to the
   `spec-author` sub-agent (sonnet) and each task to the `implementer` sub-agent,
   then review their work. One task per implementer (one cycle pass); do not
@@ -242,12 +246,12 @@ Return exactly one, as the JSON schema the runner gave you:
   drop the flow's test obligation — the RED test under `tdd`/`tdd-e2e`, the
   same-task test under `unit`.
 - Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
-- Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
-  `continue` summary instead, and keep working what you can.
-- `done` is a promise the loop DOES verify — mechanically, against tasks.md,
-  spec.json, and test-report.json. If a self-check fails and you can't fix it this
-  session, return `continue`, not `done`: an honest handoff keeps the feat moving,
-  a refused `done` just burns an attempt to tell you what you already knew.
+- Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan to the human
+  instead, and keep working what you can.
+- "Delivered" is a claim somebody will check against `tasks.md`, `spec.json` and
+  `test-report.json`. If a feat-exit check fails and you cannot fix it now, report
+  that plainly — a precise partial is worth more than a delivered-shaped summary
+  that the next reader has to take apart.
 - Do not re-verify what a sub-agent already verified. Its report is the evidence
   for its task; your gates run once, at batch merge and at feat exit.
 
@@ -257,13 +261,12 @@ Return exactly one, as the JSON schema the runner gave you:
   and every plan Quality Gate command.
 - Check: all three phases approved, `ready_for_implementation` true, every task
   box `[x]`, `specs/<feat>/test-report.json` green with no open attentions, and the
-  PR opened.
-- If any fails and you cannot resolve it now: return `continue` with a handoff —
-  do **not** return `done`.
+  work committed.
+- If any fails and you cannot resolve it now: say which, and what you tried.
 
 ## Completion Criteria
-- [ ] `requirements`, `design`, `tasks` each generated, validated, and
-      self-approved (`csdd spec approve … --phase …`).
+- [ ] `requirements`, `design`, `tasks` each generated, validated, presented, and
+      approved by the human (`csdd spec approve … --phase …`).
 - [ ] Every leaf task delivered by an `implementer` sub-agent running the flow's cycle
       (`tdd-cycle` or `unit-cycle`) — or by a fallback pass of that same skill — and
       its box `[x]`.
@@ -273,5 +276,5 @@ Return exactly one, as the JSON schema the runner gave you:
 - [ ] `specs/<feat>/test-report.json` is green with no open attentions.
 - [ ] Any new technology / hard-to-reverse decision recorded (stack row / ADR).
 - [ ] Branch, commits via `/csdd-commit`, and the PR are done.
-- [ ] Verdict returned: `done` only if all the above hold, else `continue` with a
-      handoff.
+- [ ] Reported: what the feat delivers, what the exit checks returned, what was
+      recorded, and anything left open.

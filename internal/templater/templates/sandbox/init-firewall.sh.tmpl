@@ -5,7 +5,7 @@
 # ONLY those (plus loopback, DNS, and established return traffic); all other
 # outbound traffic is dropped. It then PROVES isolation: a control host must be
 # unreachable and api.anthropic.com reachable, or it exits non-zero so
-# `csdd sandbox doctor` fails and `csdd plan run` alerts before proceeding.
+# `csdd sandbox doctor` fails and the isolation is reported as unproven.
 set -euo pipefail
 
 ALLOWLIST="${1:-/etc/csdd/allowed-domains.txt}"
