@@ -301,16 +301,21 @@ func TestSpecAuthorAgentShipped(t *testing.T) {
 	}
 	// Least-privilege tools: it writes spec artifacts, so Edit/Write/Bash are in,
 	// but it must not approve or implement.
-	// effort is high (not medium): spec authoring is the SDD contract — EARS,
-	// the design boundary map, traceability — a judgment task, and the repo runs
-	// every judgment sub-agent at high (code-reviewer, implementer,
-	// security-reviewer). A shallow first draft pushes the real authoring back
-	// onto the opus reviewer via fix-lists, defeating the cost split.
+	//
+	// effort is medium, and it used to be high. The argument for high was that
+	// authoring is judgment — EARS, the boundary map, traceability — and a shallow
+	// draft pushes the real work back onto the opus reviewer as fix-lists, which
+	// defeats the cost split. What a measured run showed is that the split was
+	// already lost at the other end: of one feat's $4.69, $3.15 was sonnet, and
+	// this agent is dispatched three times per feat (requirements, design, tasks)
+	// against a SCAFFOLDED artifact whose shape the template already fixes. High
+	// effort was buying deliberation over a form that is largely filled in, three
+	// times over. If fix-lists grow after this, that is the signal to move it back.
 	for _, want := range []string{
 		"name: spec-author",
 		"tools: Read, Grep, Glob, Edit, Write, Bash",
 		"model: sonnet",
-		"effort: high",
+		"effort: medium",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("spec-author.md frontmatter missing %q", want)
@@ -346,6 +351,19 @@ func TestSpecAuthorAgentEncodesDiscipline(t *testing.T) {
 	for _, bad := range []string{"csdd spec approve <feat>", "spec approve <feat>"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("spec-author.md must not instruct approving its own phase: %q", bad)
+		}
+	}
+	// The fix loop is BOUNDED. "Re-validate until it returns 0" is an open loop,
+	// and the finding it cannot resolve — usually a tasks.md shape that does not
+	// match the spec's development_flow — is exactly the one it will not resolve on
+	// the fourth pass either. Each pass re-reads an 800-line spec to retry a fix it
+	// already tried, which costs more than the orchestrator spends deciding.
+	if strings.Contains(body, "re-validate until it returns 0") {
+		t.Error("spec-author.md must not instruct an unbounded validate/fix loop")
+	}
+	for _, want := range []string{"at most twice", "two rounds"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("spec-author.md should bound the fix loop (%q)", want)
 		}
 	}
 }
@@ -573,6 +591,49 @@ func TestPlanSessionEntryCarriesTheLoopContract(t *testing.T) {
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("the plan-session CLAUDE.md should carry %q — the brief no longer does", want)
+		}
+	}
+}
+
+// TestAgentEffortLadder pins where each sub-agent's reasoning effort sits.
+//
+// The dial is not per-agent taste. It is dispatch frequency weighed against what
+// being shallow costs, and the two pull in opposite directions:
+//
+//   - `implementer` fires ~7 times per feat, but each dispatch is one small,
+//     already-bounded task with a cycle skill to follow. It stays high because it
+//     WRITES the code — a shallow implementation is the expensive kind.
+//   - `spec-author` fires 3 times per feat against a SCAFFOLDED artifact whose
+//     shape the template already fixes. Medium: deliberation over a form that is
+//     largely filled in, three times over, was not buying its cost.
+//   - `code-reviewer` / `security-reviewer` fire once or twice, and they are pure
+//     judgment. Lowering them saves almost nothing and risks the defect the gate
+//     exists to catch: one measured feat arrived "implemented" with 691 green
+//     tests and a drawer that never collapsed at any width — the ARIA and state
+//     were there, the layout was not. The review is what found it.
+//   - `quality-gate` runs commands and relays their real output; its own prompt
+//     says it decides nothing about the code. Low.
+//
+// Change a value here only with the reasoning that moved it, in this comment.
+func TestAgentEffortLadder(t *testing.T) {
+	agents, err := AgentFiles(FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"implementer.md":       "effort: high",
+		"spec-author.md":       "effort: medium",
+		"code-reviewer.md":     "effort: high",
+		"security-reviewer.md": "effort: high",
+		"quality-gate.md":      "effort: low",
+	} {
+		body, ok := agents[name]
+		if !ok {
+			t.Errorf("AgentFiles is missing %s", name)
+			continue
+		}
+		if !strings.Contains(body, want) {
+			t.Errorf("%s should carry %q", name, want)
 		}
 	}
 }
