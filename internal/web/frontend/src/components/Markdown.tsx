@@ -39,6 +39,11 @@ export function Markdown({ text }: { text: string }) {
             if (href?.startsWith('ref:')) {
               return <Ref token={href.slice('ref:'.length)} />
             }
+            // An in-app route (the hash router's `#/…`) is navigation, not an
+            // outbound link: it stays in this tab.
+            if (href?.startsWith('#')) {
+              return <a href={href}>{children}</a>
+            }
             return (
               <a href={href} target="_blank" rel="noreferrer">
                 {children}
