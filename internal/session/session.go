@@ -74,16 +74,21 @@ type Approval struct {
 
 // SpecCard is the per-spec summary used in the sidebar and the overview.
 type SpecCard struct {
-	Feature   string              `json:"feature"`
-	Phase     string              `json:"phase"`
-	Language  string              `json:"language"`
-	CreatedAt string              `json:"createdAt"`
-	Ready     bool                `json:"ready"`
-	Readable  bool                `json:"readable"`
-	Approvals map[string]Approval `json:"approvals"`
-	Artifacts []string            `json:"artifacts"`
-	Tasks     TaskStats           `json:"tasks"`
-	Issues    int                 `json:"issues"`
+	Feature   string `json:"feature"`
+	Phase     string `json:"phase"`
+	Language  string `json:"language"`
+	CreatedAt string `json:"createdAt"`
+	Ready     bool   `json:"ready"`
+	Readable  bool   `json:"readable"`
+	// DevelopmentFlow mirrors spec.json's development_flow (unit|tdd|tdd-e2e).
+	// Empty for legacy specs (treated as tdd by the dashboard). The frontend gates
+	// its TDD-only displays on this, so a unit-flow spec does not show inert
+	// RED/GREEN counters that never move.
+	DevelopmentFlow string              `json:"developmentFlow,omitempty"`
+	Approvals       map[string]Approval `json:"approvals"`
+	Artifacts       []string            `json:"artifacts"`
+	Tasks           TaskStats           `json:"tasks"`
+	Issues          int                 `json:"issues"`
 }
 
 // SpecDetail is the full per-spec view: the card plus the grouped task tree and
@@ -188,6 +193,7 @@ func buildCardFull(specsDir, feature string) (SpecCard, []TaskPhase, []validator
 	if ok {
 		card.Phase = s.Phase
 		card.Language = s.Language
+		card.DevelopmentFlow = s.DevelopmentFlow
 		card.CreatedAt = s.CreatedAt
 		card.Ready = s.ReadyForImplementation
 		for _, k := range phaseKeys {

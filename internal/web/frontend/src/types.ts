@@ -31,6 +31,8 @@ export interface SpecCard {
   createdAt: string
   ready: boolean
   readable: boolean
+  /** unit | tdd | tdd-e2e; absent on legacy specs (treated as tdd). Gates the TDD-only displays. */
+  developmentFlow?: string
   approvals: Record<string, Approval>
   artifacts: string[]
   tasks: TaskStats

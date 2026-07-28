@@ -25,6 +25,29 @@ func TestSpecJSONMirrorParsesFlow(t *testing.T) {
 	}
 }
 
+// TestSpecCardExposesDevelopmentFlow asserts the read-model plumbs the spec's
+// development_flow onto the SpecCard the dashboard renders, so the frontend can
+// gate its TDD-only displays (RED/GREEN counters) and not show inert zeros for a
+// unit-flow spec. An absent flow stays "" (legacy specs are treated as tdd by
+// the UI, so the empty value is deliberate, not a default).
+func TestSpecCardExposesDevelopmentFlow(t *testing.T) {
+	root := writeWorkspace(t, map[string]string{
+		"specs/upload/spec.json": `{"feature_name":"upload","phase":"tasks-generated","development_flow":"unit","approvals":{},"created_at":"2026-01-01T00:00:00Z"}`,
+		"specs/legacy/spec.json": `{"feature_name":"legacy","phase":"tasks-generated","approvals":{},"created_at":"2026-01-01T00:00:00Z"}`,
+	})
+	ov := LoadOverview(root)
+	byName := map[string]SpecCard{}
+	for _, c := range ov.Specs {
+		byName[c.Feature] = c
+	}
+	if c := byName["upload"]; c.DevelopmentFlow != "unit" {
+		t.Errorf("upload card DevelopmentFlow = %q, want unit", c.DevelopmentFlow)
+	}
+	if c := byName["legacy"]; c.DevelopmentFlow != "" {
+		t.Errorf("legacy card DevelopmentFlow = %q, want empty (absent in spec.json)", c.DevelopmentFlow)
+	}
+}
+
 // writeWorkspace materializes a temp workspace from a path→content map and
 // returns the root. Paths are slash-separated and relative to the root.
 func writeWorkspace(t *testing.T, files map[string]string) string {

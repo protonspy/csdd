@@ -99,6 +99,10 @@ export function SpecView({
 function OverviewTab({ detail }: { detail: SpecDetail }) {
   const phases = ['requirements', 'design', 'tasks']
   const issues = detail.issueList ?? []
+  // TDD-only displays (RED/GREEN task counters) are meaningless under the `unit`
+  // flow, where tasks are implement→cover with no RED/GREEN markers. Treat an
+  // absent flow as tdd (the historical default) so legacy specs keep their display.
+  const isTdd = detail.developmentFlow !== 'unit'
   return (
     <div className="overview-tab">
       <div className="cards">
@@ -123,15 +127,15 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
           <div className="stat-grid">
             <Stat label="total" value={detail.tasks.total} />
             <Stat label="done" value={detail.tasks.done} />
-            <Stat label="RED" value={detail.tasks.red} />
-            <Stat label="GREEN" value={detail.tasks.green} />
+            {isTdd && <Stat label="RED" value={detail.tasks.red} />}
+            {isTdd && <Stat label="GREEN" value={detail.tasks.green} />}
           </div>
         </div>
       </div>
 
       {detail.report ? (
         <>
-          <MetricsCard report={detail.report} red={detail.tasks.red} green={detail.tasks.green} />
+          <MetricsCard report={detail.report} red={detail.tasks.red} green={detail.tasks.green} isTdd={isTdd} />
           <TaskEvidenceCard report={detail.report} />
         </>
       ) : (
@@ -168,7 +172,7 @@ function OverviewTab({ detail }: { detail: SpecDetail }) {
 }
 
 
-function MetricsCard({ report, red, green }: { report: SpecReport; red: number; green: number }) {
+function MetricsCard({ report, red, green, isTdd }: { report: SpecReport; red: number; green: number; isTdd: boolean }) {
   const t = report.tests
   const c = report.coverage
   const passRate = t && t.total > 0 ? Math.round((t.passed * 100) / t.total) : 0
@@ -209,14 +213,16 @@ function MetricsCard({ report, red, green }: { report: SpecReport; red: number; 
             <ProgressBar pct={c.pct} />
           </div>
         )}
-        <div className="metric-block">
-          <div className="metric-head">
-            <span>TDD</span>
+        {isTdd && (
+          <div className="metric-block">
+            <div className="metric-head">
+              <span>TDD</span>
+            </div>
+            <div className="metric-line">
+              <span className="tdd red">RED {red}</span> <span className="tdd green">GREEN {green}</span>
+            </div>
           </div>
-          <div className="metric-line">
-            <span className="tdd red">RED {red}</span> <span className="tdd green">GREEN {green}</span>
-          </div>
-        </div>
+        )}
       </div>
       {report.attentions && report.attentions.length > 0 && (
         <ul className="attentions">
