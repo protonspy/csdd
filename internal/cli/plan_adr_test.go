@@ -70,7 +70,8 @@ status: draft
 
 // TestADRValidateE2E drives the decision-ref lint through the real CLI: a plan
 // citing a present ADR validates clean; broken, ambiguous, and cites-superseded
-// variants each fail with exit 2; and the brief inlines the cited record in full.
+// variants each fail with exit 2; and the brief lists the cited record as a short
+// ref (it no longer inlines the body — the gate enforces citation instead).
 func TestADRValidateE2E(t *testing.T) {
 	dir := freshWorkspace(t)
 	if code, _, e := run(t, "plan", "init", "photos", "--root", dir); code != 0 {
@@ -85,13 +86,20 @@ func TestADRValidateE2E(t *testing.T) {
 		t.Fatalf("plan citing a present ADR should validate clean: %s", e)
 	}
 
-	// The brief inlines the cited ADR in full.
+	// The brief lists the governing ADR as a short ref and directs fetching the
+	// body via the graph; it must NOT inline the ADR title or body.
 	code, out, _ := run(t, "plan", "brief", "photos", "--feat", "upload", "--root", dir)
 	if code != 0 {
 		t.Fatalf("plan brief failed: %d", code)
 	}
-	if !strings.Contains(out, "Store under docs/adr") || !strings.Contains(out, "BODY_TOKEN") {
-		t.Errorf("brief should inline the cited ADR in full:\n%s", out)
+	if !strings.Contains(out, "adr:pick-store") {
+		t.Errorf("brief should list the governing ADR ref:\n%s", out)
+	}
+	if !strings.Contains(out, "csdd graph explain adr:") {
+		t.Errorf("brief should direct the session to fetch the ADR via graph explain:\n%s", out)
+	}
+	if strings.Contains(out, "BODY_TOKEN") {
+		t.Errorf("brief must NOT inline the ADR body (the gate enforces citation now):\n%s", out)
 	}
 	if !strings.Contains(out, "docs/stack.md Decided row") {
 		t.Errorf("brief should carry the record-your-decisions mission line")

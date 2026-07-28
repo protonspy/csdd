@@ -9,12 +9,13 @@ are .claude/rules/tasks-parallel-analysis.md):
 - (P) — parallel-capable, runs alongside other (P) tasks in different boundaries.
 
 Task structure follows the spec's development_flow (see spec.json; absent ⇒ unit):
-- tdd / tdd-e2e: every behavior is a RED test sub-task immediately followed by the
-  minimal GREEN implementation sub-task (write the failing test, confirm it fails for the
-  expected reason, then the least code to pass; refactor under green); tdd-e2e also adds
-  an end-to-end task in Phase 4.
-- unit: write the implementation, then cover the behavior with a unit test in the same
-  task — no preceding RED sub-task, but every behavior still carries a test.
+- unit: write the implementation, then cover the behavior with a unit test in the
+  same task — no preceding RED sub-task, but every behavior still carries a test.
+  Implementation and its test live as sibling sub-tasks under one behavior, not as a
+  RED → GREEN pair.
+- (tdd / tdd-e2e use the RED → GREEN pair instead; if the spec should be test-first,
+  set development_flow to 'tdd' and regenerate tasks — do not hand-shape RED/GREEN
+  here.)
 One test per observable behavior, not per branch. Sub-tasks: 1-3 hours of focused work.
 -->
 
@@ -27,26 +28,26 @@ One test per observable behavior, not per branch. Sub-tasks: 1-3 hours of focuse
 ## Phase 2: Core
 
 - [ ] 2. [Core capability] _Boundary: <Component>_
-  - [ ] 2.1 RED — write the failing test for [behavior]; confirm it fails for the expected reason
+  - [ ] 2.1 Implement [behavior]
     - _Requirements: 1.1, 1.2_
     - _Depends: 1.1_
-  - [ ] 2.2 GREEN — minimal implementation to pass 2.1; refactor under green
+  - [ ] 2.2 Cover [behavior] with unit tests
     - _Requirements: 1.1, 1.2_
 
 ## Phase 3: Integration
 
 - [ ] 3. [Integration across boundaries] _Boundary: <Component>_
-  - [ ] 3.1 RED — write the failing integration test for [cross-boundary behavior]
+  - [ ] 3.1 Wire [cross-boundary behavior] across components
     - _Requirements: 1.2_
-    - _Depends: 2.2_
-  - [ ] 3.2 GREEN — wire the components to pass 3.1
+    - _Depends: 2.1_
+  - [ ] 3.2 Cover the cross-boundary behavior with tests
     - _Requirements: 1.2_
 
 ## Phase 4: Validation
 
 - [ ] 4. End-to-end tests for the golden path and the top error cases
   - _Requirements: 1.1, 1.2_
-  - _Depends: 3.2_
+  - _Depends: 3.1_
 
 ## Implementation Notes
 <!-- Cross-task learnings captured during execution. Appended by the implementer/reviewer loop. -->

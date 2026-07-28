@@ -60,15 +60,15 @@ func TestSpecInitFlowInvalid(t *testing.T) {
 	}
 }
 
-// Req 1.3 / 2.2: with no steering default, an omitted flow resolves to tdd.
-func TestSpecInitFlowDefaultsToTdd(t *testing.T) {
+// Req 1.3 / 2.2: with no steering default, an omitted flow resolves to unit.
+func TestSpecInitFlowDefaultsToUnit(t *testing.T) {
 	dir := freshWorkspace(t)
 	if code, _, errOut := run(t, "spec", "init", "no-flow", "--root", dir); code != 0 {
 		t.Fatalf("init: code=%d err=%q", code, errOut)
 	}
 	s, _ := readSpecFlow(t, dir, "no-flow")
-	if s.DevelopmentFlow != "tdd" {
-		t.Errorf("development_flow = %q, want tdd", s.DevelopmentFlow)
+	if s.DevelopmentFlow != "unit" {
+		t.Errorf("development_flow = %q, want unit", s.DevelopmentFlow)
 	}
 }
 
@@ -97,22 +97,22 @@ func TestSpecInitFlowSteeringDefault(t *testing.T) {
 	}
 }
 
-// Req 2.2: an invalid steering default does not corrupt init; it falls back to tdd.
+// Req 2.2: an invalid steering default does not corrupt init; it falls back to unit.
 func TestResolveDefaultFlowInvalidFallsBack(t *testing.T) {
 	dir := freshWorkspace(t)
 	steering := filepath.Join(dir, ".claude", "steering", "zzz-bad.md")
 	if err := os.WriteFile(steering, []byte("---\ninclusion: manual\ndefault_development_flow: bogus\n---\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := resolveDefaultFlow(dir); got != "tdd" {
-		t.Errorf("resolveDefaultFlow with invalid steering = %q, want tdd", got)
+	if got := resolveDefaultFlow(dir); got != "unit" {
+		t.Errorf("resolveDefaultFlow with invalid steering = %q, want unit", got)
 	}
 }
 
-// Req 3.1: a legacy spec.json with no development_flow is read as tdd.
+// Req 3.1: a legacy spec.json with no development_flow is read as unit.
 func TestEffectiveFlowLegacy(t *testing.T) {
-	if got := effectiveFlow(""); got != "tdd" {
-		t.Errorf("effectiveFlow(\"\") = %q, want tdd", got)
+	if got := effectiveFlow(""); got != "unit" {
+		t.Errorf("effectiveFlow(\"\") = %q, want unit", got)
 	}
 	if got := effectiveFlow("unit"); got != "unit" {
 		t.Errorf("effectiveFlow(unit) = %q, want unit", got)

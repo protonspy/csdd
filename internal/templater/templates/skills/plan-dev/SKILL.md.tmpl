@@ -9,8 +9,10 @@ description: Use inside a `csdd plan run` session to deliver ONE approved-plan f
 
 Fully deliver **one** feat of an approved csdd plan in a single autonomous
 `plan run` session: drive its spec through `requirements → design → tasks`
-(you author and decide), delegate each task to the `implementer` sub-agent
-(test-first), own the git dev-cycle and the PR, then return the verdict schema.
+(you delegate authoring to the `spec-author` sub-agent, then review and decide),
+delegate each task to the `implementer` sub-agent (per the spec's
+`development_flow`), own the git dev-cycle and the PR, then return the verdict
+schema.
 
 The loop trusts your **judgment** — it never reviews your code or re-runs your
 suites — but it does check your **artifacts**. A `done` verdict passes through a
@@ -21,7 +23,7 @@ missing, your `done` is converted to `continue` and handed back with a note nami
 what failed. So `done` means the whole feat is really delivered, not hoped — and
 claiming it early costs you an attempt rather than shipping a broken feat.
 
-A feat that burns its attempt budget (default 8 sessions) is stopped and surfaced
+A feat that burns its attempt budget (default 4 sessions) is stopped and surfaced
 for a human. Returning an honest `continue` is always cheaper than a `done` the
 gate refuses.
 
@@ -57,26 +59,38 @@ self-approve**; the gate refuses the next phase until the current one is approve
 
 ### 1) Create the spec (if absent)
 - `csdd spec init <feat>`. If seeds were listed in your brief, fold them in.
+- **Pick the flow deliberately:** `unit` (the default) for render/CRUD surfaces;
+  `tdd`/`tdd-e2e` REQUIRED for money, auth, tenancy, anything irreversible. The
+  flow decides the shape of `tasks.md`, and `csdd spec validate` enforces it.
 
-### 2) Requirements
-- `csdd spec generate <feat> --artifact requirements`.
-- Review the body: EARS phrasing, one behavior per criterion, numeric IDs.
-- `csdd spec validate <feat>` → fix every finding.
+### 2) Requirements — delegate to `spec-author`, then review and approve
+- Dispatch the **`spec-author`** sub-agent with the feat + phase `requirements` +
+  any governing refs. It scaffolds, consults the graph, authors the body (EARS,
+  one behavior per criterion, numeric IDs), and runs `csdd spec validate`.
+- **REVIEW** the artifact: EARS phrasing, one behavior per criterion, numeric IDs.
+- Run `csdd spec validate <feat>` yourself. Re-dispatch `spec-author` with a
+  fix-list if the review or validate finds gaps; do not hand-edit inline.
 - `csdd spec approve <feat> --phase requirements`.
 
-### 3) Design
-- `csdd spec generate <feat> --artifact design` (add `--artifact research` first
-  for a brownfield/novel area).
-- Ensure `## Architecture Pattern & Boundary Map`, `## File Structure Plan`, and
-  a `## Requirements Traceability` row for every requirement ID.
-- `csdd spec validate <feat>` → fix → `csdd spec approve <feat> --phase design`.
+### 3) Design — delegate to `spec-author`, then review and approve
+- Dispatch **`spec-author`** for phase `design` (add `--artifact research` first
+  for a brownfield/novel area, and pass the governing ADRs/stack it must comply
+  with).
+- **REVIEW** the artifact: `## Architecture Pattern & Boundary Map`,
+  `## File Structure Plan`, a `## Requirements Traceability` row for every
+  requirement ID, and every technology choice inside a `docs/stack.md` Decided
+  row with governing ADRs cited.
+- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps →
+  `csdd spec approve <feat> --phase design`.
 
-### 4) Tasks
-- `csdd spec generate <feat> --artifact tasks`.
-- Every leaf task has `_Requirements:_`; every `(P)` task has a `_Boundary:_`
-  matching a design component; `_Depends:_` IDs exist; no two `(P)` share a
-  boundary.
-- `csdd spec validate <feat>` → fix → `csdd spec approve <feat> --phase tasks`.
+### 4) Tasks — delegate to `spec-author`, then review and approve
+- Dispatch **`spec-author`** for phase `tasks`.
+- **REVIEW** the artifact: every leaf task has `_Requirements:_`; every `(P)`
+  task has a `_Boundary:_` matching a design component; `_Depends:_` IDs exist;
+  no two `(P)` share a boundary; the shape matches the `development_flow`
+  (`tdd`/`tdd-e2e`: RED→GREEN pairs; `unit`: implement → cover).
+- `csdd spec validate <feat>` → re-dispatch `spec-author` to fix gaps →
+  `csdd spec approve <feat> --phase tasks`.
 - `ready_for_implementation` flips to true only after all three approvals — and
   only csdd flips it. Never hand-edit `spec.json`.
 
@@ -84,6 +98,23 @@ self-approve**; the gate refuses the next phase until the current one is approve
 You authored and approved the spec; those were the decisions and they ran on your
 (orchestrator) model. Implementation is the *execution* of a decision already made,
 so **delegate it** — do not hand-write task code inline.
+
+**Test timing — test the right thing at the right moment, not everything always.**
+The verification work is split by scope and by who owns it, and each tier runs
+**once** at its moment:
+- **Tier 2 (task-exit, the `implementer`, `--fast`):** tests the **part** being
+  developed, during the task, on the implementer's own fast model. This is where
+  unit/conv tests for the task's behavior belong.
+- **Tier 3 (batch-exit then feat-exit, the `quality-gate`, coverage on):** tests
+  the **whole** merged result — full suite, lint, typecheck, build, quality —
+  once per batch (5a) and once per feat (step 8), never per task.
+- **Evidence:** each task records its own Tier-2 evidence
+  (`specs/<feat>/test-report.json`) as it lands; the final feat-exit run records
+  the Tier-3 evidence. You read the result the sub-agent reports, not the suite
+  output.
+- **Never run the full suite, lint, or typecheck inline in your orchestrator
+  context.** Their output lands in a context you re-read on every remaining turn
+  of the feat — that is real spend for no signal. Delegate; read the verdict.
 - Branch before the first task: `git switch -c feat/<feat>` (kebab-case).
 - For **each** leaf task, spawn the **`implementer`** sub-agent (Agent/Task tool),
   one task per sub-agent. It runs the cycle the spec's `development_flow` declares —
@@ -204,10 +235,12 @@ Return exactly one, as the JSON schema the runner gave you:
 
 - You are the approver here — stalling at a phase "waiting for a human" is the
   single most common failure of this loop. Approve your own validated phases.
-- You orchestrate; the `implementer` sub-agent implements. One task per implementer
-  (one cycle pass); do not batch tasks, hand-write task code inline, or drop the
-  flow's test obligation — the RED test under `tdd`/`tdd-e2e`, the same-task test
-  under `unit`.
+- You orchestrate; you do not draft or implement. Delegate spec authoring to the
+  `spec-author` sub-agent (sonnet) and each task to the `implementer` sub-agent,
+  then review their work. One task per implementer (one cycle pass); do not
+  batch tasks, hand-write task code inline, hand-author a spec phase inline, or
+  drop the flow's test obligation — the RED test under `tdd`/`tdd-e2e`, the
+  same-task test under `unit`.
 - Never hand-edit `spec.json`, frontmatter, or `.csdd/`; regenerate instead.
 - Do not edit `plan.md`/`plan.json` — surface a genuinely wrong plan in your
   `continue` summary instead, and keep working what you can.

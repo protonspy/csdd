@@ -122,6 +122,10 @@ func ValidatePlan(doc *PlanDoc, root string) []validator.Issue {
 			}
 		}
 		issues = append(issues, adrRefIssues(f, adrs)...)
+		// The design the spec-author writes must acknowledge the governing ADRs the
+		// plan bound this feat to — see designConformance. This is the mechanical
+		// backstop for the trimmed brief, which no longer inlines ADR bodies.
+		issues = append(issues, designConformance(root, f, adrs)...)
 	}
 
 	// docs/adr well-formedness (R3.2), surfaced only WHERE the directory exists.
@@ -176,6 +180,50 @@ func glossaryIssues(root string, doc *PlanDoc) []validator.Issue {
 	}
 	for _, gi := range gl.Issues() {
 		out = append(out, validator.Issue{File: "docs/glossary.md", Line: gi.Line, Msg: gi.Msg})
+	}
+	return out
+}
+
+// designConformance is the mechanical backstop that makes it safe to trim the
+// ADR bodies out of the feat brief. The brief used to inline each governing ADR's
+// body so a design could not silently ignore the decisions it was bound to; with
+// the bodies gone (fetched instead via `csdd graph explain adr:<slug>`), this
+// check holds the design to the same standard — for every adr:<slug> the plan
+// bound the feat to, the authored specs/<feat>/design.md must cite it.
+//
+// It is silent when design.md is not yet generated (a plan validated before any
+// spec is authored has nothing to check), silent for feats with no governing
+// ADRs, and silent for ADRs already reported malformed or broken by adrRefIssues
+// — only well-formed, resolvable governors are conformance-checked here. The
+// match is permissive (a bare substring of the slug counts): the check exists to
+// catch a design that ignores a governor entirely, not to police citation
+// format, and a gate that cries wolf is a gate someone turns off.
+func designConformance(root string, f Feat, adrs *ADRSet) []validator.Issue {
+	if len(f.ADRRefs) == 0 {
+		return nil
+	}
+	body, err := os.ReadFile(filepath.Join(paths.Specs(root), f.Slug, "design.md"))
+	if err != nil {
+		return nil // design not authored yet — nothing to conform
+	}
+	design := string(body)
+	var out []validator.Issue
+	for _, slug := range f.ADRRefs {
+		if !ValidADRSlug(slug) {
+			continue // already reported by adrRefIssues
+		}
+		if _, res := adrs.Resolve(slug); res != ADRResolved {
+			continue // broken/ambiguous already reported
+		}
+		if strings.Contains(design, slug) {
+			continue
+		}
+		out = append(out, validator.Issue{
+			File: "specs/" + f.Slug + "/design.md",
+			Msg: "design.md does not cite governing ADR 'adr:" + slug + "' (declared in this feat's Refs) — " +
+				"the brief no longer inlines ADR bodies, so the design must reference each governor; " +
+				"cite it as `adr:" + slug + "`, or run `csdd graph explain adr:" + slug + "` for the body",
+		})
 	}
 	return out
 }

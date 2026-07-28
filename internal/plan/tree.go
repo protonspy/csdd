@@ -104,6 +104,20 @@ type gitTrees struct {
 	root string // the repository root — also the tree the run integrates into
 	slug string // plan slug, so two plans in one repo never share a branch
 	base string // the branch the run integrates into (resolved at preflight)
+	// logf reports what the keeper decided on its own. Only the generated-artifact
+	// resolution uses it, and it must: silently settling a conflict git refused is
+	// exactly the kind of thing an operator has to be able to see in the run log.
+	// Nil in tests that construct the keeper directly.
+	logf func(string, ...any)
+	// entry is the lean CLAUDE.md written into each worktree, or "" to leave the
+	// repository's own in place. See writeEntryDoc.
+	entry string
+}
+
+func (g gitTrees) say(format string, a ...any) {
+	if g.logf != nil {
+		g.logf(format, a...)
+	}
 }
 
 // treesDir is where a plan's worktrees live: under the runner's own transient state
@@ -166,7 +180,7 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 		// may predate the marker existing, or something may have cleaned .csdd/ out.
 		// Skipping this because the tree is "already there" is how the isolation goes
 		// back to being a fiction through the one path that does not create it.
-		return path, markWorkspace(path)
+		return path, g.prepare(path)
 	}
 	// Clear both kinds of debris a killed run leaves: a registration git still
 	// holds, and the directory itself. `git worktree add` refuses a target that is
@@ -183,7 +197,7 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 		if out, err := runGit(g.root, "worktree", "add", path, branch); err != nil {
 			return "", fmt.Errorf("could not restore the worktree for %s from %s: %w: %s", feat, branch, err, out)
 		}
-		return path, markWorkspace(path)
+		return path, g.prepare(path)
 	}
 	base, err := g.baseCommit()
 	if err != nil {
@@ -192,7 +206,56 @@ func (g gitTrees) Ensure(feat string) (string, error) {
 	if out, err := runGit(g.root, "worktree", "add", "-b", branch, path, base); err != nil {
 		return "", fmt.Errorf("could not create the worktree for %s: %w: %s", feat, err, out)
 	}
-	return path, markWorkspace(path)
+	return path, g.prepare(path)
+}
+
+// prepare makes a freshly-created or restored worktree usable by a session: it
+// marks it as its own workspace root and, when the run carries one, swaps in the
+// lean plan-session CLAUDE.md.
+func (g gitTrees) prepare(path string) error {
+	if err := markWorkspace(path); err != nil {
+		return err
+	}
+	g.writeEntryDoc(path)
+	return nil
+}
+
+// writeEntryDoc replaces the worktree's CLAUDE.md with the plan-session one.
+//
+// Every turn of every session re-reads that file, and the repository's version is
+// written for interactive development with a human at the gate — so in a plan run
+// it is both the largest fixed cost in the context and the wrong instruction set.
+// Swapping it per worktree fixes both without touching the file a human works
+// against.
+//
+// The swap is made invisible to git with `update-index --skip-worktree`, which is
+// per-worktree state: the session cannot commit it, the merge cannot carry it back,
+// and `git status` stays clean so the uncommitted-work check is unaffected. That
+// only works on a TRACKED file, so an untracked CLAUDE.md is left alone rather than
+// created — writing one would show up as untracked work and fail the very check
+// that protects a delivered feat.
+//
+// Every failure here is reported and swallowed. A session reading the repository's
+// CLAUDE.md is more expensive, never incorrect, and losing the run over an
+// optimization would be the worse trade.
+func (g gitTrees) writeEntryDoc(path string) {
+	if g.entry == "" {
+		return
+	}
+	rel := paths.EntryFile
+	if _, err := runGit(path, "ls-files", "--error-unmatch", "--", rel); err != nil {
+		g.say("  · %s is not tracked; the plan-session CLAUDE.md was not injected", rel)
+		return
+	}
+	if out, err := runGit(path, "update-index", "--skip-worktree", "--", rel); err != nil {
+		g.say("  · could not detach %s from the index (%s); leaving the repository's own in place", rel, strings.TrimSpace(out))
+		return
+	}
+	if err := os.WriteFile(filepath.Join(path, rel), []byte(g.entry), 0o644); err != nil {
+		// Put the tracked copy back rather than leave the tree half-swapped.
+		_, _ = runGit(path, "update-index", "--no-skip-worktree", "--", rel)
+		g.say("  · could not write the plan-session %s (%v); leaving the repository's own in place", rel, err)
+	}
 }
 
 // markWorkspace creates the .csdd/ directory that makes a worktree resolve as a
@@ -276,17 +339,108 @@ func (g gitTrees) Integrate(feat string) error {
 		return &UncommittedWorkError{Feat: feat, Branch: branch, Paths: withoutRunnerState(dirty)}
 	}
 	out, err := runGit(g.root, "merge", "--no-ff", "--no-edit",
-		"-m", fmt.Sprintf("Merge feat %s of plan %s", feat, g.slug), branch)
+		"-m", mergeMessage(feat, g.slug), branch)
 	if err == nil {
 		return nil
 	}
-	conflicts, _ := runGit(g.root, "diff", "--name-only", "--diff-filter=U")
+	raw, _ := runGit(g.root, "diff", "--name-only", "--diff-filter=U")
+	conflicts := gitLines(raw)
+	generated, authored := partitionConflicts(conflicts)
+	// A conflict only in generated files is not a disagreement about the work — it
+	// is two sessions having rebuilt the same derived artifact from different trees.
+	// Settle it here rather than handing the feat back: the alternative costs an
+	// entire session to re-do work that was already finished and correct.
+	if len(conflicts) > 0 && len(authored) == 0 {
+		if err := g.resolveGenerated(generated); err == nil {
+			g.say("  ↺ %s: auto-resolved %d generated artifact(s) in the merge (%s) — "+
+				"they are rebuilt by `csdd graph build`, not authored",
+				feat, len(generated), strings.Join(generated, ", "))
+			return nil
+		}
+		// Resolution failed; fall through and roll back, which is always safe.
+	}
 	// Roll back before returning: leaving the base half-merged would make the next
 	// feat's worktree, and the next merge, operate on a tree nobody chose.
 	if _, abortErr := runGit(g.root, "merge", "--abort"); abortErr != nil {
 		return fmt.Errorf("merging %s failed and could not be rolled back: %v: %s", branch, abortErr, out)
 	}
-	return &MergeConflictError{Feat: feat, Branch: branch, Files: gitLines(conflicts), Detail: out}
+	// Report the files the SESSION has to deal with. A generated artifact in this
+	// list would send the next session to rebuild something it does not own, and the
+	// handoff is read literally.
+	files := authored
+	if len(files) == 0 {
+		files = conflicts
+	}
+	return &MergeConflictError{Feat: feat, Branch: branch, Files: files, Detail: out}
+}
+
+// generatedPrefixes are the repository subtrees csdd GENERATES rather than
+// authors, in git's forward-slash spelling. `docs/graph/` is the only one that is
+// also committed: paths.go calls it "the only generated subtree" and CLAUDE.md
+// makes the CLI its only writer, while `.csdd/` is transient and never tracked.
+//
+// The distinction is what makes auto-resolution safe. A generated file has no
+// authorial intent to lose — whichever side wins, the content is wrong the moment
+// the merge lands and right again the next time it is rebuilt. An authored file is
+// the opposite, so it is never touched here.
+var generatedPrefixes = []string{paths.DocsSeg + "/" + paths.DocsGraphSeg + "/"}
+
+// partitionConflicts splits conflicting paths into the generated ones this keeper
+// may settle by itself and the authored ones only the session can.
+func partitionConflicts(files []string) (generated, authored []string) {
+	for _, f := range files {
+		p := strings.TrimSpace(filepath.ToSlash(f))
+		if p == "" {
+			continue
+		}
+		if isGeneratedPath(p) {
+			generated = append(generated, p)
+			continue
+		}
+		authored = append(authored, p)
+	}
+	return generated, authored
+}
+
+func isGeneratedPath(p string) bool {
+	for _, prefix := range generatedPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveGenerated finishes an in-progress merge by taking the base's copy of every
+// conflicting generated path.
+//
+// Taking `--ours` rather than the feat's version is deliberate and, for a derived
+// artifact, not really a choice: neither side describes the merged tree, so the only
+// honest state is "stale until rebuilt", and preferring the base keeps the run's
+// history reading as one line of development. A path the base deleted cannot be
+// checked out, so it is removed instead — the same resolution, spelled the way git
+// needs it.
+func (g gitTrees) resolveGenerated(paths []string) error {
+	for _, p := range paths {
+		if _, err := runGit(g.root, "checkout", "--ours", "--", p); err != nil {
+			if out, rmErr := runGit(g.root, "rm", "--force", "--quiet", "--", p); rmErr != nil {
+				return fmt.Errorf("could not resolve the generated path %s: %v: %s", p, rmErr, out)
+			}
+			continue
+		}
+		if out, err := runGit(g.root, "add", "--", p); err != nil {
+			return fmt.Errorf("could not stage the resolved path %s: %v: %s", p, err, out)
+		}
+	}
+	// Anything still unmerged means the partition missed a path; completing the
+	// merge then would commit a conflicted tree, which is worse than rolling back.
+	if left, err := runGit(g.root, "diff", "--name-only", "--diff-filter=U"); err == nil && len(gitLines(left)) > 0 {
+		return fmt.Errorf("paths are still unmerged after resolving generated artifacts: %s", strings.TrimSpace(left))
+	}
+	if out, err := runGit(g.root, "commit", "--no-edit"); err != nil {
+		return fmt.Errorf("could not complete the merge after resolving generated artifacts: %v: %s", err, out)
+	}
+	return nil
 }
 
 // Discard removes the feat's worktree and prunes git's administrative record of it.
