@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,4 +95,43 @@ func waitHealthy(t *testing.T, base string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("server never became healthy")
+}
+
+// A wildcard bind must not advertise the address Go reads back off its
+// dual-stack socket ("[::]:port"): that URL is unopenable, and with auth on it
+// is also the base of the magic link the user is told to click.
+func TestAdvertisedURLRewritesWildcardBind(t *testing.T) {
+	ln, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	got := advertisedURL(ln, "0.0.0.0")
+	if strings.Contains(got, "[::]") || strings.Contains(got, "0.0.0.0") {
+		t.Fatalf("advertised an unreachable wildcard address: %s", got)
+	}
+	host, port, err := net.SplitHostPort(strings.TrimPrefix(got, "http://"))
+	if err != nil {
+		t.Fatalf("advertised URL is not host:port: %s (%v)", got, err)
+	}
+	if host == "" {
+		t.Fatalf("advertised URL has no host: %s", got)
+	}
+	if want := strconv.Itoa(tcpPort(ln)); port != want {
+		t.Errorf("advertised port = %s, want %s (the bound port)", port, want)
+	}
+}
+
+// A concrete bind is already reachable as-is and must be reported verbatim.
+func TestAdvertisedURLKeepsExplicitHost(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	if got, want := advertisedURL(ln, "127.0.0.1"), "http://"+ln.Addr().String(); got != want {
+		t.Errorf("advertisedURL = %s, want %s", got, want)
+	}
 }
