@@ -101,11 +101,7 @@ func planRun(args []string, templates embed.FS) int {
 		render.Err(fmt.Sprintf("--squad-limit must be between 1 and %d (got %d)", planSquadLimitMax, squadLimit))
 		return 1
 	}
-	// `none` is how a human spells "no enrichment pass"; the runner reads an empty
-	// model as disabled.
-	if strings.EqualFold(strings.TrimSpace(enrichModel), "none") {
-		enrichModel = ""
-	}
+	enrichModel = normalizeEnrichModel(enrichModel)
 	if autonomous {
 		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
 	}
@@ -521,14 +517,26 @@ func planNext(args []string) int {
 	}
 }
 
+// normalizeEnrichModel maps `none` — how a human spells "no context pass" — onto
+// the empty model every enrichment caller already reads as disabled. It is shared
+// so `plan run` and `plan brief` cannot disagree about what `none` means: for a
+// while only the runner honored it, and `plan brief --enrich-model none` spawned a
+// session for a model literally named "none".
+func normalizeEnrichModel(model string) string {
+	if strings.EqualFold(strings.TrimSpace(model), "none") {
+		return ""
+	}
+	return model
+}
+
 func planBrief(args []string) int {
 	fs := flag.NewFlagSet("plan brief", flag.ContinueOnError)
 	var root, feat, enrichModel string
 	var refresh bool
 	addRoot(fs, &root)
 	fs.StringVar(&feat, "feat", "", "Feat to brief (default: the sequencer's next feat).")
-	fs.BoolVar(&refresh, "refresh", false, "Re-run the context pass for this feat before printing, replacing its stored pack. This is the same pass `plan run` makes before dispatching a feat, so it is how you review — and, by editing .csdd/plan/<slug>/briefs/<feat>.json, correct — what a session will be handed.")
-	fs.StringVar(&enrichModel, "enrich-model", "sonnet", "Model --refresh runs the context pass on (claude --model).")
+	fs.BoolVar(&refresh, "refresh", false, "Discard this feat's stored context pack and run the pass again, even when the stored one is still current. Without it the pass runs only when there is nothing usable on disk — a stored pack whose plan row has not changed is reused as-is.")
+	fs.StringVar(&enrichModel, "enrich-model", "sonnet", "Model the context pass runs on (claude --model). `none` turns the pass off and briefs from the plan alone.")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -561,25 +569,56 @@ func planBrief(args []string) int {
 		}
 		target = f
 	}
-	// --refresh runs the pass against the workspace itself rather than a worktree:
-	// there is no run in flight to have cut one, and the tree a human is looking at
-	// is the tree they are asking about. Diagnostics go to stderr so the brief on
-	// stdout stays a clean artifact to pipe or diff.
+	// The discovered half is not an extra. Without it the brief is the plan restated
+	// — the feat row a human already wrote — and the session rediscovers the tree at
+	// orchestrator prices, which is the whole cost the pass exists to avoid. So the
+	// pass runs BY DEFAULT here, exactly as it does before `plan run` dispatches a
+	// feat. `--enrich-model none` is how a caller that must not spawn a model — CI, a
+	// scripted diff — opts out.
+	//
+	// A pack already on disk is kept, and that is a stronger rule here than in the
+	// runner: it is reused even when the feat's row has moved on since it was
+	// written. Regenerating costs a model call, briefing is something a human does
+	// repeatedly while editing a plan, and re-spending on every one of those edits is
+	// not a default anybody would choose. A stale pack costs a line on stderr and
+	// `--refresh` is the way to replace it. (`plan run` keeps invalidating on a
+	// changed row: what it dispatches a session to build has to match what it briefed
+	// that session with.)
+	//
+	// The pass runs against the workspace itself rather than a worktree: there is no
+	// run in flight to have cut one, and the tree a human is looking at is the tree
+	// they are asking about. Diagnostics go to stderr so the brief on stdout stays a
+	// clean artifact to pipe or diff.
+	hook := plan.EnrichHook(normalizeEnrichModel(enrichModel))
 	if refresh {
+		if hook == nil {
+			render.Err("--refresh needs a model: pass --enrich-model (or drop --refresh)")
+			return 1
+		}
 		if err := plan.RemovePack(r, doc.Slug, target.Slug); err != nil {
 			render.Err(err.Error())
 			return 1
 		}
-		hook := plan.EnrichHook(enrichModel)
-		if hook == nil {
-			render.Err("--refresh needs a model: pass --enrich-model")
-			return 1
+	}
+	pack, err := plan.LoadPack(r, doc.Slug, target.Slug)
+	if err != nil {
+		render.Warn(err.Error())
+	}
+	switch {
+	case pack != nil:
+		if pack.Key != plan.PackKey(doc, target) {
+			render.Warn("the stored context pack for " + target.Slug + " predates the current plan row; `--refresh` regenerates it")
 		}
+	case hook != nil:
 		if plan.EnsurePack(r, doc, target, r, hook, func(format string, a ...any) {
 			render.Warn(strings.TrimSpace(fmt.Sprintf(format, a...)))
 		}) == nil {
 			render.Warn("the context pass produced nothing for " + target.Slug + "; briefing from the plan alone")
 		}
+	default:
+		// Nothing on disk and the pass switched off: say so, rather than printing a
+		// brief that is silently missing half of itself.
+		render.Warn("no stored context pack for " + target.Slug + " and the context pass is off (--enrich-model none); briefing from the plan alone")
 	}
 	out, err := plan.FeatBrief(r, doc, target)
 	if err != nil {

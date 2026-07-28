@@ -93,7 +93,9 @@ func TestPlanNextAndBriefCLI(t *testing.T) {
 	}
 	// brief prints the feat's mission pack: the feat itself, what governs it and the
 	// plan's gates — the development process lives in the worktree's CLAUDE.md.
-	code, out, errOut := run(t, "plan", "brief", "photos", "--root", dir)
+	// `--enrich-model none` because the context pass now runs by DEFAULT: without it
+	// this test would spawn a real `claude` on any machine that has one installed.
+	code, out, errOut := run(t, "plan", "brief", "photos", "--root", dir, "--enrich-model", "none")
 	if code != 0 {
 		t.Fatalf("plan brief failed (code=%d): %s", code, errOut)
 	}
@@ -150,5 +152,72 @@ func TestPlanNextDriftExitCode(t *testing.T) {
 	code, _, _ := run(t, "plan", "next", "photos", "--root", dir)
 	if code != 5 {
 		t.Errorf("drifted plan next should exit 5, got %d", code)
+	}
+}
+
+// TestPlanBriefNamesAMissingContextPack pins the notice that replaced a silent
+// omission.
+//
+// The discovered half of a brief — what the feat touches, what governs it, what is
+// already there — is simply absent when no context pack has been stored, and the
+// brief used to render without it and without a word. That is indistinguishable
+// from a pass that ran and found nothing, and it is exactly how a reader concludes
+// the enrichment is broken. The pass runs by default now, so the only way to reach
+// that state is to turn it off — and then it has to say so.
+func TestPlanBriefNamesAMissingContextPack(t *testing.T) {
+	dir := scaffoldApprovedPlan(t)
+	code, _, errOut := run(t, "plan", "brief", "photos", "--root", dir, "--enrich-model", "none")
+	if code != 0 {
+		t.Fatalf("plan brief exit=%d: %s", code, errOut)
+	}
+	if !strings.Contains(errOut, "no stored context pack") {
+		t.Errorf("a brief with no pack and the pass switched off must say so on stderr:\n%s", errOut)
+	}
+}
+
+// TestPlanBriefRefreshRefusesWithNoModel keeps --refresh honest: it forces the pass
+// to run, so asking for it with the pass turned off is a contradiction the CLI must
+// reject rather than silently print a stale brief for.
+func TestPlanBriefRefreshRefusesWithNoModel(t *testing.T) {
+	dir := scaffoldApprovedPlan(t)
+	code, _, errOut := run(t, "plan", "brief", "photos", "--root", dir, "--refresh", "--enrich-model", "none")
+	if code != 1 {
+		t.Fatalf("--refresh with no model should exit 1, got %d: %s", code, errOut)
+	}
+	if !strings.Contains(errOut, "--refresh needs a model") {
+		t.Errorf("the refusal should name the flag conflict:\n%s", errOut)
+	}
+}
+
+// TestPlanBriefKeepsAStoredPackEvenWhenStale pins the reuse rule that separates
+// `plan brief` from the runner: a pack on disk is what the human gets, whether or
+// not the feat's row has changed since it was written.
+//
+// Regenerating is a model call, and briefing is what a human does over and over
+// while editing a plan — invalidating on every edit turns reading a brief into a
+// recurring charge. So the staleness is REPORTED and the pack is still used;
+// `--refresh` is the way to replace it. The pass is switched off here so the test
+// spawns nothing: with a pack present it would not run either way, which is the
+// property under test.
+func TestPlanBriefKeepsAStoredPackEvenWhenStale(t *testing.T) {
+	dir := scaffoldApprovedPlan(t)
+	packs := filepath.Join(dir, ".csdd", "plan", "photos", "briefs")
+	if err := os.MkdirAll(packs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// `key` is deliberately not the current plan row's key: this pack is stale.
+	pack := `{"touches":[{"path":"app/upload.go","why":"the upload handler lives here"}],"key":"stale"}`
+	if err := os.WriteFile(filepath.Join(packs, "upload.json"), []byte(pack), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := run(t, "plan", "brief", "photos", "--root", dir, "--enrich-model", "none")
+	if code != 0 {
+		t.Fatalf("plan brief exit=%d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "the upload handler lives here") {
+		t.Errorf("the stored pack must be rendered into the brief:\n%s", out)
+	}
+	if !strings.Contains(errOut, "predates the current plan row") {
+		t.Errorf("a stale pack must be reported, not silently reused:\n%s", errOut)
 	}
 }

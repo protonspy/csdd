@@ -185,3 +185,39 @@ func TestBriefWithoutPackIsPlanOnly(t *testing.T) {
 		t.Errorf("brief should still carry the feat's objective:\n%s", out)
 	}
 }
+
+// TestBriefOpensByNamingTheRole pins the first four lines.
+//
+// The brief IS the prompt — it is fed to `claude -p` on stdin with nothing in front
+// of it — so whatever it opens with is where the session's role is established. It
+// used to open on a feat row, leaving the model to infer what it was supposed to be
+// from a table of objectives. The preamble is deliberately short: it names the role
+// and the shape of what follows, and stops. Process belongs to the plan-session
+// CLAUDE.md and the `plan-dev` skill (see TestBriefCarriesNoProcess), so a preamble
+// that starts explaining the cycle is this boundary eroding again.
+func TestBriefOpensByNamingTheRole(t *testing.T) {
+	out := briefFor(t, setupWorkspace(t, "p", briefPlan), "p", "upload")
+	if !strings.HasPrefix(out, "You are a senior software engineer.") {
+		t.Errorf("the brief must open by naming the role it is written for:\n%s", firstLines(out, 6))
+	}
+	// The role sits BEFORE the feat header — everything after it reads as material
+	// for that role rather than as a document that happened to arrive.
+	role, feat := strings.Index(out, "You are a senior software engineer"), strings.Index(out, "# Feat:")
+	if feat < 0 || role > feat {
+		t.Errorf("the role must come before the feat header:\n%s", firstLines(out, 8))
+	}
+	// Four lines, then the mission. A preamble long enough to need a heading has
+	// stopped being a preamble.
+	if head, _, _ := strings.Cut(out, "# Feat:"); strings.Count(head, "\n") > 6 {
+		t.Errorf("the role preamble should stay short, got:\n%s", head)
+	}
+}
+
+// firstLines returns at most n lines of s, for readable failure output.
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
+}
