@@ -165,7 +165,8 @@ func enrichPrompt(doc *PlanDoc, feat Feat) string {
 // the tree would re-enrich every feat after every merge for no gain.
 func PackKey(doc *PlanDoc, feat Feat) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "v%s\n%s\n%s\n%s\n%s\n%s\n%s\n", enrichSchemaVersion, doc.Slug,
+	// hash.Hash never returns an error; the discard is errcheck's price for that.
+	_, _ = fmt.Fprintf(h, "v%s\n%s\n%s\n%s\n%s\n%s\n%s\n", enrichSchemaVersion, doc.Slug,
 		feat.Slug, feat.Objective, feat.Milestone,
 		strings.Join(feat.Depends, ","), strings.Join(feat.Refs, " "))
 	return hex.EncodeToString(h.Sum(nil))[:16]
