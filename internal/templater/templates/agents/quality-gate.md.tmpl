@@ -43,11 +43,11 @@ npx -y @protonspy/csdd spec test-report <feature> --run --lang <python|typescrip
 
 No `--fast` here: coverage belongs to feat exit, and this is feat exit.
 
-The plan runner's verdict gate reads `specs/<feature>/test-report.json` to decide
-whether a `done` verdict stands. A report that exists only as prose in your reply
-leaves that file stale or absent, the verdict is rejected, and the whole feat is
-handed back for another session. Saying "the suite is green" is not the same
-artifact as the suite having been recorded green.
+`specs/<feature>/test-report.json` is the artifact a feat's completion is read
+from — by `csdd spec status`, by the graph, and by whoever reviews the PR. A
+report that exists only as prose in your reply leaves that file stale or absent,
+so the feat reads as unverified however green the run actually was. Saying "the
+suite is green" is not the same artifact as the suite having been recorded green.
 
 Do not narrow the command. A selector — `-k`, `--ignore`, `-x`, or a bare path
 like `tests/unit` — is recorded as an attention, and a report carrying an open

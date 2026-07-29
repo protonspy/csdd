@@ -130,38 +130,24 @@ func TestPlanValidateJSONExitCode(t *testing.T) {
 	}
 }
 
-// TestPlanRunSquadLimitBounds pins the flag's contract. The ceiling is not
-// arbitrary: 6 is the widest topological wave the evidence plan admits, so past it a
-// plan's own Depends graph cannot supply the parallelism and a larger number would
-// only consume the shared Claude account limit faster.
-func TestPlanRunSquadLimitBounds(t *testing.T) {
-	dir := t.TempDir()
-	for _, n := range []string{"7", "99", "-2"} {
-		code, _, errOut := run(t, "plan", "run", "photos", "--root", dir, "--squad-limit", n)
-		if code == 0 {
-			t.Errorf("--squad-limit %s should be rejected", n)
-		}
-		if !strings.Contains(errOut, "must be between 1 and 6") {
-			t.Errorf("--squad-limit %s should name the bound, got %q", n, errOut)
-		}
-	}
-}
-
 // TestMisspelledFlagNamesItsNeighbour is a usability regression from a real report:
-// `--squard-limit` produced only "flag provided but not defined", which reads as
+// a one-key typo produced only "flag provided but not defined", which reads as
 // "that option does not exist" and got the whole capability written off as missing.
+// It was reported against `--squard-limit`; that flag retired with `plan run`, so the
+// guard rides on another flagged command — the behavior under test is the CLI's, not
+// any one command's.
 func TestMisspelledFlagNamesItsNeighbour(t *testing.T) {
 	dir := t.TempDir()
-	code, _, errOut := run(t, "plan", "run", "photos", "--root", dir, "--squard-limit", "2")
+	code, _, errOut := run(t, "plan", "brief", "photos", "--root", dir, "--enrich-modle", "sonnet")
 	if code == 0 {
 		t.Errorf("an undefined flag must still fail")
 	}
-	if !strings.Contains(errOut, "did you mean --squad-limit?") {
+	if !strings.Contains(errOut, "did you mean --enrich-model?") {
 		t.Errorf("a one-transposition typo should name the flag it meant, got %q", errOut)
 	}
 
 	// A name nothing is close to gets the stock message, not a guess.
-	_, _, errOut = run(t, "plan", "run", "photos", "--root", dir, "--wildly-unrelated", "2")
+	_, _, errOut = run(t, "plan", "brief", "photos", "--root", dir, "--wildly-unrelated", "2")
 	if strings.Contains(errOut, "did you mean") {
 		t.Errorf("a distant name must not be corrected into something else, got %q", errOut)
 	}
@@ -287,7 +273,7 @@ func TestPlanListShowsDrift(t *testing.T) {
 	if !strings.Contains(out, "drift") {
 		t.Errorf("the listing should flag the drifted approval: %s", out)
 	}
-	if !strings.Contains(out+errOut, "re-approve before running") {
+	if !strings.Contains(out+errOut, "re-approve before working from it") {
 		t.Errorf("drift should carry the fix: out=%q err=%q", out, errOut)
 	}
 

@@ -291,56 +291,42 @@ A `plan.md` carries three machine-parsed sections that `csdd plan validate` chec
 
 The `Refs` column is how a feat cites its *why*: `[[wiki-page]]`, `stack:<name>`, and `adr:<slug>` tokens — each must resolve, or validation breaks. Cited decision records are inlined **in full** into that feat's run brief.
 
-### Two human gates, machine work between
+### Delivering a plan in your session
 
 ```
-csdd plan approve  ──▶  csdd plan run  ──▶  Pull Request
-   (human gate)         (csdd-controlled)     (human gate)
+csdd plan approve  ──▶  you deliver, feat by feat  ──▶  Pull Request
+   (human gate)          (your Claude Code session)      (human gate)
 ```
 
-`csdd plan run <slug>` is a **deliberately dumb, Ralph-style loop** where **one iteration = one Claude session** (default cap 100), and each session is handed **one whole feat as its mission**. The session — Claude driving csdd — owns the entire flow: it authors and approves the spec (`csdd spec generate/validate/approve`), implements every task, runs the dev-cycle, owns git (branch, `/csdd-commit`, the pre-push gate, the PR), and records any open decision it makes (a `docs/stack.md` Decided row, an ADR when the why needs more than a line). **The loop trusts the session and does not verify** — there is no runner-side gate. It hands out feats in plan order, spawns the session, and records what it declares in a per-feat ledger (`.csdd/plan/<slug>/progress.json`). Nothing parks mid-run — **every failure becomes the next session's context** (the failure trail, the predecessor's handoff), which is what makes the loop self-correcting.
-
-The session's verdict declares one of three intents: `done` (the whole feat is delivered and the session's own checks — `csdd spec validate`, `csdd graph analyze --strict`, the plan's Quality Gates — pass), `continue` (honest partial work; the summary is the handoff to the next session on the same feat), or `blocked` (the feat turned out to need another feat of this plan that has not landed — it parks without spending an attempt, and the discovered edge is recorded in `.csdd/plan/<slug>/discovered-deps.json`, never written back into `plan.md`).
-
-What a session is handed is **the feat, not the method**. The brief opens by naming the role it is written for — the whole thing is fed to `claude -p` as the prompt, so its first lines are where the session's role is set — then carries the feat row, its governing refs, the seeds, the Executor Notes and the plan's Quality Gates; the development process — the session's authority to approve its own phases, the cycle, what it delegates, the git it owns and what makes a `done` acceptable — lives in the plan-session `CLAUDE.md` written into each worktree and in the `plan-dev` skill, both of which the session reads every turn anyway.
-
-Before a feat is dispatched, a **context pass** (`--enrich-model`, default `sonnet`) reads its worktree once and records what the feat touches, which decisions and stack rows govern it, what is already there and what is not, into `.csdd/plan/<slug>/briefs/<feat>.json`. Every path and every `adr:`/`stack:` citation is checked against the workspace before it is stored — an unverifiable claim is dropped, not rendered — and the pack is keyed to the feat row, so a feat's later attempts reuse it instead of rediscovering the same tree at the orchestrator's price. `csdd plan brief <slug> --feat F` prints the brief and runs the pass itself when the feat has no pack yet, which is how you review (and, by editing the JSON, correct) what a session will be handed. A pack already on disk is reused as-is — even when the feat's row has since changed, which is only reported, since briefing is something you do repeatedly while editing a plan and regenerating costs a model call; `--refresh` is how you replace it. `--enrich-model none` turns the pass off and briefs from the plan alone.
-
-Feats are handed out in **dependency order**, not table order: the `Depends` column the plan already declares is what schedules the run, so a feat is only dispatched once everything it builds on is delivered. If a feat is blocked, everything downstream of it is reported as unreachable with the root cause named, instead of being dispatched into a tree where its foundation does not exist.
-
-**A serial run works in your checkout.** At `--squad-limit 1` (the default) one session runs at a time, in the repository itself — the environment your suite needs is already installed there. The worktrees below are what a *squad* pays for isolation: a worktree carries only tracked files, so it starts without `node_modules/`, `.venv/` or any other build cache git ignores, and rebuilding those per feat buys a serial run nothing, since it has no peer to collide with.
-
-`--squad-limit N` (2..6) runs up to **N sessions at once, each on its own feat and each in its own git worktree**. Filesystem isolation is what makes it safe: every concurrent session gets a worktree under `.csdd/plan/<slug>/trees/<feat>` on branch `csdd/<slug>/<feat>`, so no two agents ever share an index, a build, or a half-written file. Scheduling is the `Depends` graph alone — the `(P)` column is **not** consulted, because it used to mean "consents to share a working tree" and feats no longer share one.
-
-Because a plan is a DAG, isolation alone is not enough: `c` depends on `a` and `b`, and a worktree cut from an untouched base would contain neither. So the runner **merges a feat into the run's base the moment its `done` clears the verdict gate**, and every later worktree is cut from that updated base. The branch survives the merge; the worktree is removed. The human PR gate still sits where it always did, after the run, over the base branch — the session commits on its feat's branch and does not open one.
-
-Two things can send a finished feat back instead of landing it, both as partial work with a handoff rather than as failures. A **merge conflict** means a peer landed while this feat was in flight, so the next session rebases. **Uncommitted work** means the session produced every artifact but never committed: the verdict gate reads files, integration carries commits, and a feat recorded delivered on an empty merge would lose the work when its worktree is discarded.
-
-This makes git a **precondition**: `plan run` refuses a workspace that is not the root of a git repository, is on a detached HEAD, or has uncommitted changes (the run merges into that tree). Only the sessions overlap — the ledger, the journal and the run's bookkeeping are still written by a single writer, in the order sessions finish — and a squad run switches the live view to append-only lines, each tagged `[<feat>]`, because an in-place redraw from several sessions paints over itself.
-
-The run ends five ways: the plan **completes** (every feat is in the ledger), the **iteration cap** is hit (the wallet guard), the **stall guard** trips (default: 10 consecutive *failed* sessions — a session error, not a large feat mid-flight), the session **cannot be started at all** (5 consecutive spawn failures — a broken environment, not a broken plan), or a preflight refusal (unapproved or drifted plan).
-
-A run is **resumable**: re-running `csdd plan run <slug>` after a crash or a Ctrl-C picks up where it stopped. Delivered feats come from the ledger and the spec tree; how many attempts each unfinished feat has spent, the handoff its last session left, and which feats already exhausted their bound are rebuilt from the append-only session record (`.csdd/plan/<slug>/sessions.jsonl`) — so an interruption neither resets a feat's attempt budget nor throws away the handoff.
+There is no runner. An approved plan is a **queue with a dependency graph**, and you
+work it in your own session, one feat at a time:
 
 ```bash
-csdd plan list                             # every plan: approval state + delivered/total feats (--json)
-csdd plan status <slug>                    # feats, milestones, what's next
-csdd plan run    <slug>                     # bypass-mode loop — alerts + asks if the sandbox isn't verified
-csdd plan run    <slug> --yes               # pre-accept the unverified-sandbox alert (non-interactive)
-                        --session-budget 5   # per-session USD cap · --max-iterations (100) · --stall (10)
-                        --squad-limit 3      # 3 sessions at once, one git worktree each (default 1: serial, in this checkout)
-                        --enrich-model none  # skip the per-feat context pass (default: sonnet)
-csdd plan brief  <slug> --feat F            # print what the session gets (enriches on first use)
-csdd plan brief  <slug> --feat F --refresh  # discard the stored context pack and run the pass again
+csdd plan status <slug>                    # milestones, delivered, what is ready
+csdd plan next   <slug>                    # the feat whose Depends are all satisfied
+csdd plan brief  <slug> --feat <feat>      # that feat's context — the mission
 ```
 
-#### When a run ends without completing
+The **`plan-dev` skill** is the method: create the spec, drive `requirements → design
+→ tasks` with the `spec-author` sub-agent (you review, the human approves each phase),
+delegate every leaf task to `implementer` under the spec's `development_flow`, run the
+Tier-3 gate through `quality-gate` plus `code-reviewer` at feat exit, and
+`/csdd-commit` the slices. One feat per pass — the next one is your call, not a loop's.
 
-There are no block markers to clear. Just `csdd plan run <slug>` again — it resumes from the ledger, re-handing whatever feat is not yet marked done, and the first session on a previously-failed feat is pointed at its failure log under `.csdd/plan/<slug>/failures/<feat>.log` (every attempt's untruncated output). `docs/plans/<slug>/log.md` journals every feat outcome for the audit trail.
+The **phase gates stay human**. `csdd plan approve` authorizes the *plan* — which feats
+exist and under what constraints — not the specs you write from it.
 
-### 🔒 `sandbox` — isolation before autonomy
+> **Where the autonomous loop went.** `csdd plan run` drove this headlessly — a session
+> per feat, a verdict gate, worktrees, an attempt budget. Measured against the same work
+> done in-session it cost an order of magnitude more and often delivered nothing: every
+> session was rebuilt from zero per feat *and* per attempt, so all discovery was re-paid
+> at orchestrator prices, and a `done` the gate refused threw away a session already paid
+> for. The command now refuses with a pointer here. The runner code stays in the tree —
+> the idea may come back, and it should come back as a revert, not a rewrite.
 
-`plan run` always drives Claude in bypass mode (`--dangerously-skip-permissions`), so it wants a **proven** sandbox: when `sandbox doctor` fails, the runner shows the failing checks and asks before continuing — declining closes the run.
+### 🔒 `sandbox` — isolation before bypass mode
+
+Any bypass-mode work (`--dangerously-skip-permissions`) wants a **proven** sandbox rather than a trusted one: `csdd sandbox doctor` runs the checks and fails loudly when isolation cannot be proven.
 
 ```bash
 csdd sandbox init --hardened   # scaffold a default-deny-egress devcontainer (--feature, --allow-domain)

@@ -23,7 +23,7 @@ import (
 func apiBase() string { return strings.TrimSpace(os.Getenv("TELEGRAM_API_BASE")) }
 
 // runTelegram dispatches `csdd telegram {init,run}`: a read-only, outbound-only
-// bridge that relays plan-run progress and spec-status changes to a Telegram
+// bridge that relays spec-status changes and plan journals to a Telegram
 // chat. Like `csdd web`, it never authors artifacts — it is a view over the
 // workspace, delivered as messages.
 func runTelegram(args []string) int {

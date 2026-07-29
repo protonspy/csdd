@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -13,13 +12,12 @@ import (
 	"github.com/protonspy/csdd/internal/paths"
 	"github.com/protonspy/csdd/internal/plan"
 	"github.com/protonspy/csdd/internal/render"
-	"github.com/protonspy/csdd/internal/telegram"
 	"github.com/protonspy/csdd/internal/templater"
 	"github.com/protonspy/csdd/internal/workspace"
 )
 
-// runPlan dispatches `csdd plan <action> ...`. M1 ships init/validate/status;
-// approve/next/brief/generate/run land in later milestones (§5.8).
+// runPlan dispatches `csdd plan <action> ...`. `run` is answered by a refusal:
+// the autonomous loop it drove is discontinued (see planRun).
 func runPlan(args []string, templates embed.FS) int {
 	action, rest, err := parseAction("plan", args)
 	if err != nil {
@@ -48,7 +46,7 @@ func runPlan(args []string, templates embed.FS) int {
 	case "generate":
 		return planGenerate(rest, templates)
 	case "run":
-		return planRun(rest, templates)
+		return planRun(rest)
 	case "cost":
 		return planCost(rest)
 	case "verify":
@@ -59,138 +57,27 @@ func runPlan(args []string, templates embed.FS) int {
 	}
 }
 
-func planRun(args []string, templates embed.FS) int {
-	fs := flag.NewFlagSet("plan run", flag.ContinueOnError)
-	var root, model, effort, enrichModel string
-	var autonomous, assumeYes, noTelegram bool
-	var sessionBudget float64
-	var maxIterations, stall, featAttempts, maxRetries, maxRepairs, squadLimit int
-	var sessionIdle time.Duration
-	addRoot(fs, &root)
-	fs.BoolVar(&assumeYes, "yes", false, "Skip the unverified-sandbox prompt: accept running --dangerously-skip-permissions even when `sandbox doctor` fails.")
-	fs.BoolVar(&noTelegram, "no-telegram", false, "Do not auto-start the Telegram notifier even when a bot is configured (.csdd/bot.json).")
-	fs.BoolVar(&autonomous, "autonomous", false, "Deprecated no-op: plan run always runs bypass-mode (--dangerously-skip-permissions).")
-	fs.StringVar(&model, "model", "opus", "Model the orchestrating session runs on (claude --model): sonnet|opus|haiku|fable or a full model ID. It reviews and decides the spec; spec authoring is delegated to the `spec-author` sub-agent (sonnet) and task implementation to the `implementer` sub-agent (each on its own, cheaper model). Empty inherits the ambient default.")
-	fs.StringVar(&effort, "effort", "medium", "Reasoning effort the orchestrating session runs at (claude --effort): low|medium|high|xhigh|max. Empty inherits the ambient default.")
-	fs.StringVar(&enrichModel, "enrich-model", "sonnet", "Model the per-feat context pass runs on (claude --model). Before each feat is dispatched it reads the worktree once and records what the feat touches, what governs it and what is already there, so the orchestrator does not rediscover it every attempt. `none` turns the pass off and briefs from the plan alone.")
-	fs.Float64Var(&sessionBudget, "session-budget", 0, "Per-session cap in USD (claude --max-budget-usd). Default 0 = no cap; the session runs under the Claude account's own limits.")
-	fs.IntVar(&maxIterations, "max-iterations", 30, "Sessions the run may spend; one iteration is one claude session.")
-	fs.IntVar(&stall, "stall", 10, "Stop early after this many consecutive sessions without a step advancing.")
-	fs.DurationVar(&sessionIdle, "session-idle", 0, "Kill a session that makes no progress — no event stream output and no CPU — for this long (default 15m). Not a time limit: real work of any duration keeps resetting it.")
-	fs.IntVar(&featAttempts, "feat-attempts", 0, "Stop handing out ONE feat after this many sessions and surface it as blocked (default 4). Bounds a feat whose `done` the verdict gate keeps refusing.")
-	fs.IntVar(&squadLimit, "squad-limit", 0, "Maximum claude sessions running at once (1..6, default 1). At 1 the run is serial and works in this checkout, where the environment your suite needs is already installed. Above 1 each feat gets its own git worktree — cut from and merged back into the run's base branch, which requires a clean repository, and which starts without anything git ignores (node_modules/, .venv/, build caches).")
-	fs.IntVar(&maxRetries, "max-retries", 0, "Deprecated no-op: each iteration is one session, and the next iteration is the retry.")
-	fs.IntVar(&maxRepairs, "max-repairs", 0, "Deprecated no-op: the self-correcting loop replaced repair sessions.")
-	positionals, err := parseFlags(fs, args)
-	if err != nil {
-		return failOnFlagParse(err)
-	}
-	if len(positionals) < 1 {
-		render.Err("usage: " + prog() + " plan run SLUG [--model M] [--effort E] [--yes] [--session-budget N] [--max-iterations N] [--stall N] [--feat-attempts N]")
-		return 1
-	}
-	if err := validateEffort(effort); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	// 0 means "unset" so the runner's default applies; anything else must land in
-	// 1..6. The ceiling is the widest topological wave a real plan admitted — past
-	// it a plan cannot use the concurrency, and the shared Claude account limit is
-	// consumed that much faster for nothing.
-	if squadLimit < 0 || squadLimit > planSquadLimitMax {
-		render.Err(fmt.Sprintf("--squad-limit must be between 1 and %d (got %d)", planSquadLimitMax, squadLimit))
-		return 1
-	}
-	enrichModel = normalizeEnrichModel(enrichModel)
-	if autonomous {
-		render.Warn("--autonomous is deprecated and now a no-op: plan run always runs bypass-mode")
-	}
-	if maxRetries != 0 || maxRepairs != 0 {
-		render.Warn("--max-retries/--max-repairs are deprecated no-ops: every failure feeds the next session, bounded by --max-iterations and --stall")
-	}
-	slug := positionals[0]
-	if err := workspace.SafeName(slug, "plan"); err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	r, err := workspace.Resolve(root)
-	if err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	// Auto-start the Telegram notifier for the life of the run when a bot is
-	// configured, so run progress reaches the chat without a separate
-	// `csdd telegram run`. No-op when unconfigured or suppressed with --no-telegram.
-	if !noTelegram {
-		stopTelegram := startPlanTelegram(r)
-		defer stopTelegram()
-	}
-
-	sum, err := plan.Run(plan.RunOptions{
-		Root:          r,
-		Slug:          slug,
-		AssumeYes:     assumeYes,
-		SessionBudget: sessionBudget,
-		Model:         model,
-		Effort:        effort,
-		MaxIterations: maxIterations,
-		Stall:         stall,
-		FeatAttempts:  featAttempts,
-		SessionIdle:   sessionIdle,
-		SquadLimit:    squadLimit,
-		EnrichModel:   enrichModel,
-		WorktreeEntry: planEntryDoc(templates),
-		Out:           os.Stdout,
-	})
-	if err != nil {
-		render.Err(err.Error())
-		return 1
-	}
-	// Surface the run outcome as a distinct exit code (R9.4/R9.7); the summary is
-	// already printed by the runner.
-	return sum.Outcome
-}
-
-// planSquadLimitMax is the hard ceiling on --squad-limit. It is not arbitrary: the
-// widest topological wave the evidence plan (`agency-telegram-platform`, 31 feats)
-// admits is 6, so beyond it a plan's own Depends graph cannot supply the
-// parallelism, and the only effect of a larger number would be to burn the shared
-// Claude account limit faster.
-const planSquadLimitMax = 6
-
-// startPlanTelegram auto-starts the read-only Telegram notifier for the duration
-// of a plan run when a bot is configured (.csdd/bot.json). The notifier polls the
-// run journal (docs/plans/<slug>/log.md) the runner appends to, so each feat's
-// done/progress/failed line — and every spec approval the sessions make — reaches
-// the chat live. It returns a stop function that cancels the notifier and lets it
-// flush the run's final journal lines. When no bot is configured (or the config is
-// invalid) it is a silent no-op: Telegram stays opt-in via `csdd telegram init`.
-func startPlanTelegram(root string) func() {
-	cfg, err := telegram.Load(root)
-	if err != nil || cfg.Validate() != nil {
-		return func() {}
-	}
-	notifier := telegram.NewNotifier(telegram.Options{
-		Root:     root,
-		Client:   telegram.NewClient(cfg.Token, cfg.ChatID, apiBase()),
-		Interval: time.Duration(cfg.IntervalSeconds) * time.Second,
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_ = notifier.Run(ctx)
-	}()
-	render.Info("telegram bot configured — relaying plan-run status to chat " + cfg.ChatID)
-	return func() {
-		cancel()
-		// Bound the wait so a slow or unreachable Telegram never wedges the CLI
-		// after the run itself has finished.
-		select {
-		case <-done:
-		case <-time.After(6 * time.Second):
-		}
-	}
+// planRun answers `csdd plan run`, which is discontinued.
+//
+// The command drove an autonomous loop: one headless `claude -p` session per feat,
+// a verdict gate, an attempt budget, a worktree each. Measured against the same
+// work done interactively it cost an order of magnitude more and frequently
+// delivered nothing — a session was rebuilt from zero per feat AND per attempt, so
+// every discovery was re-paid at orchestrator prices and a `done` the gate refused
+// threw a whole paid session away. That is the design, not a defect in it.
+//
+// It is a refusal rather than an "unknown action" because a user who types this has
+// a plan in front of them and needs to know where the work moved, not that they
+// mistyped. The runner itself (internal/plan) is untouched and still tested: the
+// idea is on standby, and reviving it should be a revert rather than a rewrite.
+func planRun(args []string) int {
+	// The whole message goes to stderr: this command produces no stdout artifact,
+	// and a refusal's guidance belongs on the same stream as the refusal.
+	render.Err("`" + prog() + " plan run` is discontinued — a plan is delivered in your own session now.\n" +
+		"    " + prog() + " plan next <slug>              # which feat is ready\n" +
+		"    " + prog() + " plan brief <slug> --feat F    # that feat's mission\n" +
+		"  Work it with the `plan-dev` skill, approving each spec phase yourself.")
+	return 1
 }
 
 // requireWorkspaceMarker enforces R1.3: every plan command operates inside an
@@ -320,7 +207,7 @@ func printPlanList(sums []plan.Summary) {
 		switch {
 		case s.Drift:
 			// Drift outranks approval in the column: the approval exists but no
-			// longer binds the current plan.md, which is what `plan run` refuses on.
+			// longer binds the current plan.md, which is what `plan next` reports as drift.
 			approval = "drift"
 			drifted = true
 		case s.Approved:
@@ -336,7 +223,7 @@ func printPlanList(sums []plan.Summary) {
 		fmt.Printf("  %-*s  %-8s  %-9s  %s\n", maxName, s.Slug, approval, feats, s.Name)
 	}
 	if drifted {
-		render.Warn("drift: plan.md/seeds changed since approval — re-approve before running")
+		render.Warn("drift: plan.md/seeds changed since approval — re-approve before working from it")
 	}
 }
 
@@ -519,7 +406,7 @@ func planNext(args []string) int {
 
 // normalizeEnrichModel maps `none` — how a human spells "no context pass" — onto
 // the empty model every enrichment caller already reads as disabled. It is shared
-// so `plan run` and `plan brief` cannot disagree about what `none` means: for a
+// so every enrichment caller spells it the same way: for a
 // while only the runner honored it, and `plan brief --enrich-model none` spawned a
 // session for a model literally named "none".
 func normalizeEnrichModel(model string) string {
@@ -572,18 +459,15 @@ func planBrief(args []string) int {
 	// The discovered half is not an extra. Without it the brief is the plan restated
 	// — the feat row a human already wrote — and the session rediscovers the tree at
 	// orchestrator prices, which is the whole cost the pass exists to avoid. So the
-	// pass runs BY DEFAULT here, exactly as it does before `plan run` dispatches a
-	// feat. `--enrich-model none` is how a caller that must not spawn a model — CI, a
-	// scripted diff — opts out.
+	// pass runs BY DEFAULT here. `--enrich-model none` is how a caller that must not
+	// spawn a model — CI, a scripted diff — opts out.
 	//
 	// A pack already on disk is kept, and that is a stronger rule here than in the
 	// runner: it is reused even when the feat's row has moved on since it was
 	// written. Regenerating costs a model call, briefing is something a human does
 	// repeatedly while editing a plan, and re-spending on every one of those edits is
 	// not a default anybody would choose. A stale pack costs a line on stderr and
-	// `--refresh` is the way to replace it. (`plan run` keeps invalidating on a
-	// changed row: what it dispatches a session to build has to match what it briefed
-	// that session with.)
+	// `--refresh` is the way to replace it.
 	//
 	// The pass runs against the workspace itself rather than a worktree: there is no
 	// run in flight to have cut one, and the tree a human is looking at is the tree
@@ -635,7 +519,7 @@ func planGenerate(args []string, templates embed.FS) int {
 	var force, requireApproved bool
 	addRoot(fs, &root)
 	addForce(fs, &force)
-	fs.BoolVar(&requireApproved, "require-approved", false, "Fail unless the plan is approved and drift-free (used by `plan run`).")
+	fs.BoolVar(&requireApproved, "require-approved", false, "Fail unless the plan is approved and drift-free.")
 	positionals, err := parseFlags(fs, args)
 	if err != nil {
 		return failOnFlagParse(err)
@@ -964,17 +848,4 @@ func thousands(n int) string {
 		b.WriteRune(r)
 	}
 	return b.String()
-}
-
-// planEntryDoc is the lean CLAUDE.md each feat's worktree gets for the duration of
-// the run. A template that will not render is not worth failing a run over: the
-// sessions fall back to the repository's own file, which is more expensive to read
-// and still correct enough to work from.
-func planEntryDoc(templates embed.FS) string {
-	doc, err := templater.PlanEntry(templates)
-	if err != nil {
-		render.Warn("could not load the plan-session CLAUDE.md; sessions will read the repository's own: " + err.Error())
-		return ""
-	}
-	return doc
 }

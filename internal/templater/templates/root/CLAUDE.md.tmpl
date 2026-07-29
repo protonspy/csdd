@@ -29,14 +29,6 @@ depends on:
 5. **When a rule blocks you, stop and surface it** — report the blocked item to
    the human. Do not route around the gate.
 
-**One sanctioned exception — the autonomous `csdd plan run` loop.** The human
-authorized the whole plan up front (`csdd plan approve`), so a session there
-self-approves its own *validated* spec phases (authoring delegated to the
-`spec-author` sub-agent, each task to the `implementer`) and does not stop for a
-human at a gate — rules 2, 4, and 5 govern *interactive* development. The
-session still validates every phase before approving it. See the `plan-dev`
-skill.
-
 ## Driving csdd — the MCP tools are the default
 
 `csdd init` registers a **`csdd` MCP server** in `.mcp.json` — a stdio server
@@ -89,7 +81,7 @@ npx @protonspy/csdd spec approve  FEATURE --phase {requirements|design|tasks} [-
 npx @protonspy/csdd spec status   FEATURE                                 # show + validate
 npx @protonspy/csdd spec {list,show,validate,delete} FEATURE
 npx @protonspy/csdd graph {build,query,explain,path,analyze} …           # knowledge graph
-npx @protonspy/csdd plan {init,run,status,brief,validate,approve,cost,verify} …
+npx @protonspy/csdd plan {init,list,status,next,brief,generate,validate,approve} …
 ```
 
 You can also create **skills**, **custom sub-agents**, and register **MCP

@@ -43,7 +43,7 @@ func sandboxInit(args []string, templates embed.FS) int {
 	addRoot(fs, &root)
 	fs.Var(&features, "feature", "Add a toolchain devcontainer feature (repeatable): "+strings.Join(plan.SandboxFeatureNames(), "|"))
 	fs.Var(&allowDomains, "allow-domain", "Add a host to the egress allow-list (repeatable).")
-	fs.BoolVar(&hardened, "hardened", false, "Restrict the vscode user's sudo to the firewall script (recommended for unattended `plan run`).")
+	fs.BoolVar(&hardened, "hardened", false, "Restrict the vscode user's sudo to the firewall script (recommended for unattended, bypass-mode agent work).")
 	addForce(fs, &force)
 	if _, err := parseFlags(fs, args); err != nil {
 		return failOnFlagParse(err)

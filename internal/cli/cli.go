@@ -149,7 +149,7 @@ RESOURCES
   destroy                     Tear the workspace back down (.claude/, CLAUDE.md, .mcp.json, pre-push); keeps specs/. Asks to confirm; --force to skip.
   steering {init,create,list,show,delete,validate}
   spec     {init,list,show,status,generate,approve,validate,test-report,delete}
-  plan     {init,list,validate,approve,status,next,brief,generate,run,unblock}   Plans decompose an initiative into feats (docs/plans/<slug>/); each feat becomes one spec.
+  plan     {init,list,validate,approve,status,next,brief,generate}   Plans decompose an initiative into feats (docs/plans/<slug>/); each feat becomes one spec.
   sandbox  {init,doctor}                        Scaffold a hardened default-deny-egress devcontainer; doctor proves isolation before bypass mode.
   skill    {create,list,show,add-reference,add-script,add-asset,validate,delete}
   agent    {create,list,show,delete}
@@ -159,7 +159,7 @@ RESOURCES
   codewiki {lint}                      The repo-derived wiki document under docs/raw/ (citation + structure lint).
   export   {kiro,codex}                Convert the workspace to Kiro / Codex format.
   web                         Launch a read-only web dashboard (live spec progress + file viewer).
-  telegram {init,run}         Relay plan-run progress + spec-status changes to a Telegram chat (read-only, outbound-only).
+  telegram {init,run}         Relay spec-status changes + plan journals to a Telegram chat (read-only, outbound-only).
 
 GLOBAL FLAGS
   --root PATH        Project root (default: nearest enclosing .claude/).
@@ -202,7 +202,7 @@ EXAMPLES
   %[1]s web                                                  # serve the live dashboard; prints the local URL
   %[1]s web --tunnel                                         # expose it publicly (pinggy by default; forces auth)
   %[1]s telegram init                                        # save bot token + chat_id to .csdd/bot.json (gitignored)
-  %[1]s telegram run                                         # relay plan-run + spec-status updates to Telegram
+  %[1]s telegram run                                         # relay spec-status + plan journal updates to Telegram
 `, prog())
 }
 

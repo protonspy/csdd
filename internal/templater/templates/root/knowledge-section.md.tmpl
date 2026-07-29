@@ -66,12 +66,11 @@ an initiative into **feats**, each becoming exactly one spec.
   stack, decomposes into feats, and lints with `csdd plan validate` — ending at a
   validated plan for you to `csdd plan approve`. A single feature stays on the
   lighter `quick-prd` on-ramp.
-- **Never edit an approved plan, and never execute approvals, during a run.**
-  `csdd plan run` is a dumb loop plus a verifier: it runs no gates itself, but
-  checks the artifacts behind a `done` verdict, and owns a per-feat ledger and
-  journals — while the session controls the whole flow: it
-  authors and approves the spec, runs the csdd dev-cycle, and owns git (branch,
-  `/csdd-commit`, the PR). Don't edit `plan.md`/`plan.json` — editing an approved
+- **Never edit an approved plan while you are delivering from it.** An approved
+  plan is the contract the feat you are working was authorized against; `csdd`
+  owns `plan.json` and the state under `.csdd/`. You deliver a feat from it —
+  author its spec through the phase gates, run the csdd dev-cycle, own git
+  (branch, `/csdd-commit`, the PR). Don't edit `plan.md`/`plan.json` — editing an approved
   plan is real drift and stops autonomy until re-approval.
 - **The loop trusts the session's judgment, and verifies its artifacts.** A `done`
   verdict is accepted only when every task box is `[x]`, the spec is approved and

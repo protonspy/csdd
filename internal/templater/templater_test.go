@@ -1,6 +1,7 @@
 package templater
 
 import (
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -634,6 +635,54 @@ func TestAgentEffortLadder(t *testing.T) {
 		}
 		if !strings.Contains(body, want) {
 			t.Errorf("%s should carry %q", name, want)
+		}
+	}
+}
+
+// TestNoShippedArtifactMentionsPlanRun sweeps everything `csdd init` writes into a
+// workspace for the retired command.
+//
+// `csdd plan run` drove an autonomous loop and is discontinued; the CLI answers it
+// with a refusal. What makes that stick is not the refusal but this sweep: the
+// command was named across a skill, three sandbox files, two PRD surfaces, an agent
+// and the root CLAUDE.md, and an instruction that survives in a shipped artifact is
+// an instruction a model will follow — it will read "run the loop" long after the
+// loop stopped existing. A hit here means a reference crept back in an edit.
+//
+// The one deliberate exception is templates/plan/CLAUDE.md.tmpl, which is the
+// runner's own entry document. The runner is on standby, not deleted, and that file
+// is never installed into a workspace — nothing reads it unless the loop comes back.
+func TestNoShippedArtifactMentionsPlanRun(t *testing.T) {
+	sets := map[string]func(fs.FS) (map[string]string, error){
+		"agents":   AgentFiles,
+		"skills":   SkillFiles,
+		"rules":    RuleFiles,
+		"commands": CommandFiles,
+		"workflow": WorkflowTemplateFiles,
+	}
+	for label, load := range sets {
+		files, err := load(FS)
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		for name, body := range files {
+			if strings.Contains(body, "plan run") {
+				t.Errorf("%s/%s still instructs `plan run`; the loop is discontinued", label, name)
+			}
+		}
+	}
+	root, err := Static(FS, "templates/root/CLAUDE.md.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(root, "plan run") {
+		t.Error("the root CLAUDE.md still mentions `plan run`")
+	}
+	// The human gate is unconditional again: the exception that let a plan session
+	// approve its own spec phases existed only for the loop.
+	for _, gone := range []string{"sanctioned exception", "self-approves"} {
+		if strings.Contains(root, gone) {
+			t.Errorf("the root CLAUDE.md still carries the autonomous-loop carve-out (%q)", gone)
 		}
 	}
 }

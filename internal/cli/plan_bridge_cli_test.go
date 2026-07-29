@@ -124,21 +124,27 @@ func TestPlanGenerateRequireApprovedFails(t *testing.T) {
 	}
 }
 
-func TestPlanRunPreflightCLI(t *testing.T) {
-	dir := freshWorkspace(t)
-	if code, _, e := run(t, "plan", "init", "photos", "--root", dir); code != 0 {
-		t.Fatalf("init failed: %s", e)
+// TestPlanRunIsDiscontinued pins the refusal that replaced the autonomous loop.
+//
+// It refuses rather than reporting an unknown action because a user who types this
+// has a plan in front of them: what they need is where the work moved, not that they
+// mistyped. So the message is asserted for the path forward — the two commands that
+// pick and brief a feat, and the skill that delivers it — and not merely for failing.
+// It refuses on an APPROVED plan, which is the case that used to run: there is no
+// preflight left to hide behind.
+func TestPlanRunIsDiscontinued(t *testing.T) {
+	dir := scaffoldApprovedPlan(t)
+	code, out, errOut := run(t, "plan", "run", "photos", "--root", dir)
+	if code != 1 {
+		t.Errorf("plan run should exit 1, got %d (out=%q err=%q)", code, out, errOut)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "docs", "plans", "photos", "plan.md"), []byte(authoredPlan), 0o644); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(errOut, "discontinued") {
+		t.Errorf("the refusal should say the command is discontinued, got %q", errOut)
 	}
-	// Unapproved plan: run refuses before ever spawning a session.
-	code, _, errOut := run(t, "plan", "run", "photos", "--root", dir)
-	if code == 0 {
-		t.Errorf("plan run should refuse an unapproved plan")
-	}
-	if !strings.Contains(errOut, "not approved") {
-		t.Errorf("expected not-approved preflight error, got %q", errOut)
+	for _, want := range []string{"plan next", "plan brief", "plan-dev"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("the refusal should point at %q, got %q", want, errOut)
+		}
 	}
 }
 

@@ -16,7 +16,6 @@ func TestPRDSkillAndCommandsInstalled(t *testing.T) {
 		".claude/commands/prd.md",
 		".claude/commands/csdd-plan-validate.md",
 		".claude/commands/csdd-plan-status.md",
-		".claude/commands/csdd-plan-run.md",
 	}
 	for _, p := range mustExist {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
